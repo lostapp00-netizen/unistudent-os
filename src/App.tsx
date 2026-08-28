@@ -33,6 +33,7 @@ export function App() {
   const clearData = useAppStore(state => state.clearData);
 
   useEffect(() => {
+    document.title = "unistudent-os";
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session?.user?.id) {
