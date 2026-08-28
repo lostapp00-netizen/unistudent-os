@@ -56,7 +56,7 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
   };
 
   return (
-    <div className={`w-full flex items-center gap-2 overflow-x-auto ${showOptionsId ? 'pb-28 -mb-26' : 'pb-2'} scrollbar-hide`}>
+    <div className={`relative z-30 w-full flex items-center gap-2 overflow-x-auto ${showOptionsId ? 'pb-28 -mb-26' : 'pb-2'} scrollbar-hide`}>
       <button
         onClick={() => setActiveGroupId('all')}
         className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl transition-all text-sm font-medium border ${
@@ -84,7 +84,7 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
       <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-800 mx-1 flex-shrink-0"></div>
 
       {groups.map(group => (
-        <div key={group.id} className="relative flex-shrink-0 group/item flex items-center">
+        <div key={group.id} className={`relative flex-shrink-0 group/item flex items-center ${showOptionsId === group.id ? 'z-40' : 'z-10'}`}>
           {editingId === group.id ? (
             <div className="flex items-center gap-1 bg-white dark:bg-zinc-900 border border-indigo-500 rounded-xl px-2 py-1 shadow-sm">
               <input
@@ -127,13 +127,13 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
                 {showOptionsId === group.id && (
                   <>
                     <div 
-                      className="fixed inset-0 z-10" 
+                      className="fixed inset-0 z-40" 
                       onClick={(e) => { e.stopPropagation(); setShowOptionsId(null); }}
                     />
-                    <div className={`absolute z-20 ${isAr ? 'right-0' : 'left-0'} top-full mt-1 w-36 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg py-1`}>
+                    <div className={`absolute z-50 ${isAr ? 'right-0' : 'left-0'} top-full mt-1.5 w-36 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl py-1 divide-y divide-zinc-100 dark:divide-zinc-800`}>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleEdit(group); }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors text-left"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors text-left rtl:text-right"
                       >
                         <Edit2 size={14} /> {isAr ? 'تعديل' : 'Edit'}
                       </button>
@@ -144,7 +144,7 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
                           if (activeGroupId === group.id) setActiveGroupId('all');
                           setShowOptionsId(null);
                         }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors text-left"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors text-left rtl:text-right"
                       >
                         <Trash2 size={14} /> {isAr ? 'حذف' : 'Delete'}
                       </button>

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { v4 as uuidv4 } from 'uuid';
 import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group } from '../types';
 import { db } from '../lib/db';
 
@@ -95,6 +96,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       db.getDriveFiles(userId)
     ]);
 
+    // Groups Initialization
+    let finalGroups = groups;
+    const isGroupsInitialized = localStorage.getItem(`unistudent_groups_initialized_${userId}`);
+    if (!isGroupsInitialized && groups.length === 0) {
+      const defaultGroups: Group[] = [
+        { id: uuidv4(), name: 'Study', color: 'indigo' },
+        { id: uuidv4(), name: 'Work', color: 'emerald' },
+        { id: uuidv4(), name: 'Personal', color: 'amber' }
+      ];
+      finalGroups = defaultGroups;
+      for (const g of defaultGroups) {
+        db.addGroup(userId, g).catch(console.error);
+      }
+      localStorage.setItem(`unistudent_groups_initialized_${userId}`, 'true');
+    }
+
     set({
       userId,
       isInitialized: true,
@@ -104,11 +121,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       notes,
       appointments,
       scheduleItems,
-      groups: groups.length > 0 ? groups : [
-        { id: '1', name: 'Study', color: 'indigo' },
-        { id: '2', name: 'Work', color: 'emerald' },
-        { id: '3', name: 'Personal', color: 'amber' }
-      ],
+      groups: finalGroups,
       files
     });
   },
@@ -267,26 +280,35 @@ export const useAppStore = create<AppState>((set, get) => ({
   addGroup: (group) => {
     const { userId } = get();
     if (!userId) return;
+    localStorage.setItem(`unistudent_groups_initialized_${userId}`, 'true');
     set((state) => ({ groups: [...state.groups, group] }));
     db.addGroup(userId, group);
   },
   updateGroup: (id, updatedFields) => {
-    const { userId } = get();
+    const { userId, groups } = get();
     if (!userId) return;
-    set((state) => ({ groups: state.groups.map(g => g.id === id ? { ...g, ...updatedFields } : g) }));
-    db.updateGroup(userId, id, updatedFields);
+    set({ groups: groups.map(g => g.id === id ? { ...g, ...updatedFields } : g) });
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (isUuid) {
+      db.updateGroup(userId, id, updatedFields).catch(console.error);
+    }
   },
   deleteGroup: async (id) => {
-    const { userId } = get();
+    const { userId, groups } = get();
     if (!userId) return;
-    const previousGroups = get().groups;
-    set((state) => ({ groups: state.groups.filter(g => g.id !== id) }));
-    try {
-      await db.deleteGroup(userId, id);
-    } catch (e) {
-      console.error('Failed to delete group in DB:', e);
-      set({ groups: previousGroups }); // Revert
-      alert('حدث خطأ أثناء حذف المجموعة. يرجى المحاولة لاحقاً.');
+    localStorage.setItem(`unistudent_groups_initialized_${userId}`, 'true');
+    const previousGroups = groups;
+    set({ groups: groups.filter(g => g.id !== id) });
+    
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (isUuid) {
+      try {
+        await db.deleteGroup(userId, id);
+      } catch (e) {
+        console.error('Failed to delete group in DB:', e);
+        set({ groups: previousGroups });
+        alert('حدث خطأ أثناء حذف المجموعة. يرجى المحاولة لاحقاً.');
+      }
     }
   }
 }));
