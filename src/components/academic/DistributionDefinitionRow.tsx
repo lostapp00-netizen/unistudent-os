@@ -81,16 +81,18 @@ export function DistributionDefinitionRow({ distribution, isSubjectFinished, rem
           {distribution.maxMarks} {isRtl ? 'درجة' : 'Marks'}
         </div>
         {!isSubjectFinished && (
-          <div className="flex items-center gap-1 border-r border-zinc-200 dark:border-zinc-700 pr-3 mr-1">
+          <div className="flex items-center gap-1.5 border-r rtl:border-l rtl:border-r-0 border-zinc-200 dark:border-zinc-700 pr-3 rtl:pl-3 rtl:pr-0 mr-1 rtl:ml-1 rtl:mr-0">
             <button 
               onClick={() => setIsEditing(true)}
-              className="p-1.5 text-zinc-400 hover:text-indigo-500 transition-colors rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+              className="p-1.5 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-xl transition-all shadow-xs"
+              title={isRtl ? 'تعديل' : 'Edit'}
             >
               <Edit2 className="w-4 h-4" />
             </button>
             <button 
               onClick={() => onDelete(distribution.id)}
-              className="p-1.5 text-zinc-400 hover:text-rose-500 transition-colors rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20"
+              className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs"
+              title={isRtl ? 'حذف' : 'Delete'}
             >
               <Trash2 className="w-4 h-4" />
             </button>

@@ -166,9 +166,21 @@ export function Schedule() {
                         const pColor = item.priority ? priorityBorders[item.priority] : priorityBorders.medium;
                         return (
                           <div key={item.id} className={`bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border-l-4 ${pColor} border-y border-y-zinc-200 dark:border-y-zinc-700/50 border-r border-r-zinc-200 dark:border-r-zinc-700/50 relative group`}>
-                            <div className="absolute top-3 left-3 rtl:right-3 rtl:left-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => openEdit(item)} className="p-1.5 text-zinc-400 hover:text-indigo-500 bg-white dark:bg-zinc-700 rounded-lg shadow-sm"><Edit2 size={14}/></button>
-                              <button onClick={() => deleteScheduleItem(item.id)} className="p-1.5 text-zinc-400 hover:text-red-500 bg-white dark:bg-zinc-700 rounded-lg shadow-sm"><Trash2 size={14}/></button>
+                            <div className="absolute top-3 left-3 rtl:right-3 rtl:left-auto flex items-center gap-1.5 transition-opacity">
+                              <button 
+                                onClick={() => openEdit(item)} 
+                                className="p-1.5 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 rounded-xl shadow-xs transition-colors"
+                                title={settings.language === 'ar' ? 'تعديل' : 'Edit'}
+                              >
+                                <Edit2 size={13}/>
+                              </button>
+                              <button 
+                                onClick={() => deleteScheduleItem(item.id)} 
+                                className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 rounded-xl shadow-xs transition-colors"
+                                title={settings.language === 'ar' ? 'حذف' : 'Delete'}
+                              >
+                                <Trash2 size={13}/>
+                              </button>
                             </div>
                             
                             <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-2">

@@ -214,9 +214,21 @@ export function NotesTab() {
           <div key={note.id} className={`bg-white dark:bg-zinc-900 rounded-3xl p-5 border shadow-sm flex flex-col ${priorityColors[note.priority]}`}>
             <div className="flex justify-between items-start mb-3">
               <h4 className="font-bold text-lg leading-tight">{note.title}</h4>
-              <div className="flex gap-1 ml-2">
-                <button onClick={() => handleEdit(note)} className="p-1.5 text-zinc-500 hover:text-indigo-600 hover:bg-white/50 rounded-lg"><Edit2 size={14}/></button>
-                <button onClick={() => deleteNote(note.id)} className="p-1.5 text-zinc-500 hover:text-rose-600 hover:bg-white/50 rounded-lg"><Trash2 size={14}/></button>
+              <div className="flex gap-1.5 ml-2 rtl:mr-2 rtl:ml-0">
+                <button 
+                  onClick={() => handleEdit(note)} 
+                  className="p-1.5 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-xl transition-all shadow-xs"
+                  title={settings.language === 'ar' ? 'تعديل' : 'Edit'}
+                >
+                  <Edit2 size={14}/>
+                </button>
+                <button 
+                  onClick={() => deleteNote(note.id)} 
+                  className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs"
+                  title={settings.language === 'ar' ? 'حذف' : 'Delete'}
+                >
+                  <Trash2 size={14}/>
+                </button>
               </div>
             </div>
             <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-4 whitespace-pre-wrap flex-1">{note.content}</p>

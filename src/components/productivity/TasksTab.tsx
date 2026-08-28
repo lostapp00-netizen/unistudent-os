@@ -261,9 +261,21 @@ export function TasksTab() {
                   </div>
                 )}
               </div>
-              <div className="flex items-center">
-                <button onClick={() => handleEdit(task)} className="p-2 text-zinc-400 hover:text-indigo-500 transition-colors rounded-xl"><Edit2 size={18} /></button>
-                <button onClick={() => deleteTask(task.id)} className="p-2 text-zinc-400 hover:text-rose-500 transition-colors rounded-xl"><Trash2 size={18} /></button>
+              <div className="flex items-center gap-1.5">
+                <button 
+                  onClick={() => handleEdit(task)} 
+                  className="p-2 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all rounded-xl shadow-xs"
+                  title={settings.language === 'ar' ? 'تعديل' : 'Edit'}
+                >
+                  <Edit2 size={16} />
+                </button>
+                <button 
+                  onClick={() => deleteTask(task.id)} 
+                  className="p-2 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all rounded-xl shadow-xs"
+                  title={settings.language === 'ar' ? 'حذف' : 'Delete'}
+                >
+                  <Trash2 size={16} />
+                </button>
               </div>
             </div>
           </div>

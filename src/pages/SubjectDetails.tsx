@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuidv4 } from 'uuid';
-import { ChevronRight, ArrowLeft, ArrowRight, Trophy, PieChart, Plus, Trash2, CheckSquare, StickyNote, ChevronLeft } from 'lucide-react';
+import { ChevronRight, ArrowLeft, ArrowRight, Trophy, PieChart, Plus, Trash2, Edit2, CheckSquare, StickyNote, ChevronLeft } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { calculateSubjectGrade } from '../lib/academic';
 import { GradeDistributionItem } from '../types';
@@ -13,12 +13,21 @@ export function SubjectDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { subjects, tasks, notes, settings, updateSubject } = useAppStore();
+  const { subjects, tasks, notes, settings, updateSubject, deleteSubject } = useAppStore();
   
   const subject = subjects.find(s => s.id === id);
   
   const [newDistName, setNewDistName] = useState('');
   const [newDistMarks, setNewDistMarks] = useState<number | ''>('');
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    code: '',
+    creditHours: 3,
+    totalMarks: 100,
+    yearIndex: 1,
+    semesterIndex: 1
+  });
 
   if (!subject) {
     return (
@@ -89,6 +98,31 @@ export function SubjectDetails() {
     updateSubject(subject.id, { status: newStatus });
   };
 
+  const handleOpenEditSubject = () => {
+    setEditForm({
+      name: subject.name,
+      code: subject.code,
+      creditHours: subject.creditHours,
+      totalMarks: subject.totalMarks,
+      yearIndex: subject.yearIndex,
+      semesterIndex: subject.semesterIndex
+    });
+    setShowEditModal(true);
+  };
+
+  const handleSaveEditSubject = () => {
+    if (!editForm.name.trim() || !editForm.code.trim()) return;
+    updateSubject(subject.id, {
+      name: editForm.name.trim(),
+      code: editForm.code.trim(),
+      creditHours: Number(editForm.creditHours),
+      totalMarks: Number(editForm.totalMarks),
+      yearIndex: Number(editForm.yearIndex),
+      semesterIndex: Number(editForm.semesterIndex)
+    });
+    setShowEditModal(false);
+  };
+
   return (
     <div className="flex flex-col min-h-full gap-6 pb-8">
       <header className="flex items-center gap-4">
@@ -103,25 +137,50 @@ export function SubjectDetails() {
           <p className="text-zinc-500 mt-1">الساعات: {subject.creditHours} | الدرجة الكلية: {subject.totalMarks}</p>
         </div>
         <div className="flex-1"></div>
-        <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800/50 p-1 rounded-xl">
-          <button 
-            onClick={() => updateSubject(subject.id, { includeInGpa: subject.includeInGpa === false ? true : false })}
-            className={`px-3 md:px-4 py-2 rounded-lg text-sm font-bold transition-all ${subject.includeInGpa !== false ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800/50 p-1 rounded-xl">
+            <button 
+              onClick={() => updateSubject(subject.id, { includeInGpa: subject.includeInGpa === false ? true : false })}
+              className={`px-3 md:px-4 py-2 rounded-lg text-sm font-bold transition-all ${subject.includeInGpa !== false ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+            >
+              {isRtl ? (subject.includeInGpa !== false ? 'متضمن في المعدل' : 'مستبعد من المعدل') : (subject.includeInGpa !== false ? 'Included in GPA' : 'Excluded from GPA')}
+            </button>
+            <div className="w-px bg-zinc-200 dark:bg-zinc-700 mx-1 my-2"></div>
+            <button 
+              onClick={() => toggleStatus('current')}
+              className={`px-3 md:px-4 py-2 rounded-lg text-sm font-bold transition-all ${!isFinished ? 'bg-white dark:bg-zinc-900 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+            >
+              {isRtl ? 'حالي' : 'Current'}
+            </button>
+            <button 
+              onClick={() => toggleStatus('finished')}
+              className={`px-3 md:px-4 py-2 rounded-lg text-sm font-bold transition-all ${isFinished ? 'bg-emerald-500 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+            >
+              {isRtl ? 'نهائي' : 'Final'}
+            </button>
+          </div>
+
+          <button
+            onClick={handleOpenEditSubject}
+            className="p-2.5 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-xl transition-all shadow-xs flex items-center gap-1.5 text-sm font-bold"
+            title={isRtl ? 'تعديل بيانات المادة' : 'Edit Subject'}
           >
-            {isRtl ? (subject.includeInGpa !== false ? 'متضمن في المعدل' : 'مستبعد من المعدل') : (subject.includeInGpa !== false ? 'Included in GPA' : 'Excluded from GPA')}
+            <Edit2 size={16} />
+            <span className="hidden sm:inline">{isRtl ? 'تعديل المادة' : 'Edit Subject'}</span>
           </button>
-          <div className="w-px bg-zinc-200 dark:bg-zinc-700 mx-1 my-2"></div>
-          <button 
-            onClick={() => toggleStatus('current')}
-            className={`px-3 md:px-4 py-2 rounded-lg text-sm font-bold transition-all ${!isFinished ? 'bg-white dark:bg-zinc-900 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+
+          <button
+            onClick={() => {
+              if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذه المادة؟' : 'Are you sure you want to delete this subject?')) {
+                deleteSubject(subject.id);
+                navigate('/academic/subjects');
+              }
+            }}
+            className="p-2.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs flex items-center gap-1.5 text-sm font-bold"
+            title={isRtl ? 'حذف المادة' : 'Delete Subject'}
           >
-            {isRtl ? 'حالي' : 'Current'}
-          </button>
-          <button 
-            onClick={() => toggleStatus('finished')}
-            className={`px-3 md:px-4 py-2 rounded-lg text-sm font-bold transition-all ${isFinished ? 'bg-emerald-500 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
-          >
-            {isRtl ? 'نهائي' : 'Final'}
+            <Trash2 size={16} />
+            <span className="hidden sm:inline">{isRtl ? 'حذف المادة' : 'Delete'}</span>
           </button>
         </div>
       </header>
@@ -281,8 +340,100 @@ export function SubjectDetails() {
             </div>
           </div>
         </div>
+      </div>
+      </div>
+
+      {showEditModal && (
+        <div className="fixed inset-0 bg-zinc-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 md:p-8 w-full max-w-md shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[90vh]">
+            <h2 className="text-2xl font-bold mb-6">
+              {isRtl ? 'تعديل بيانات المادة' : 'Edit Subject Details'}
+            </h2>
+            <div className="overflow-y-auto pr-2 space-y-4 flex-1 hide-scrollbar">
+              <div>
+                <label className="block text-sm font-medium mb-1">{t('subject_name')}</label>
+                <input 
+                  type="text" 
+                  value={editForm.name} 
+                  onChange={e => setEditForm({...editForm, name: e.target.value})} 
+                  className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">{t('subject_code')}</label>
+                <input 
+                  type="text" 
+                  value={editForm.code} 
+                  onChange={e => setEditForm({...editForm, code: e.target.value})} 
+                  className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">{t('year')}</label>
+                  <select 
+                    value={editForm.yearIndex} 
+                    onChange={e => setEditForm({...editForm, yearIndex: Number(e.target.value)})} 
+                    className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {Array.from({ length: settings.totalYears }).map((_, i) => (
+                      <option key={i} value={i + 1}>{t('year')} {i + 1}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">{t('semester')}</label>
+                  <select 
+                    value={editForm.semesterIndex} 
+                    onChange={e => setEditForm({...editForm, semesterIndex: Number(e.target.value)})} 
+                    className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {Array.from({ length: settings.semestersPerYear }).map((_, i) => (
+                      <option key={i} value={i + 1}>{t('semester')} {i + 1}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">{t('credit_hours')}</label>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    value={editForm.creditHours} 
+                    onChange={e => setEditForm({...editForm, creditHours: Number(e.target.value)})} 
+                    className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">{t('total_marks')}</label>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    value={editForm.totalMarks} 
+                    onChange={e => setEditForm({...editForm, totalMarks: Number(e.target.value)})} 
+                    className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="mt-8 flex gap-3">
+              <button 
+                onClick={() => setShowEditModal(false)} 
+                className="flex-1 px-4 py-2 rounded-xl text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+              >
+                {t('cancel')}
+              </button>
+              <button 
+                onClick={handleSaveEditSubject} 
+                className="flex-1 px-4 py-2 rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 transition-colors font-medium"
+              >
+                {isRtl ? 'حفظ التعديلات' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
         </div>
-    </div>
+      )}
     </div>
   );
 }

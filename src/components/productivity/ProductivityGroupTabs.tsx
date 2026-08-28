@@ -133,7 +133,7 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
                     <div className={`absolute z-20 ${isAr ? 'right-0' : 'left-0'} top-full mt-1 w-36 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg py-1`}>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleEdit(group); }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors text-left"
                       >
                         <Edit2 size={14} /> {isAr ? 'تعديل' : 'Edit'}
                       </button>
@@ -144,7 +144,7 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
                           if (activeGroupId === group.id) setActiveGroupId('all');
                           setShowOptionsId(null);
                         }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors text-left"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors text-left"
                       >
                         <Trash2 size={14} /> {isAr ? 'حذف' : 'Delete'}
                       </button>

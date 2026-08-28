@@ -62,12 +62,20 @@ export function GroupsManager() {
             ) : (
               <>
                 <span className="font-medium px-2">{group.name}</span>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => handleEdit(group)} className="p-2 text-zinc-500 hover:text-indigo-600 hover:bg-white dark:hover:bg-zinc-700 rounded-lg transition-colors">
-                    <Edit2 size={16} />
+                <div className="flex items-center gap-1.5">
+                  <button 
+                    onClick={() => handleEdit(group)} 
+                    className="p-1.5 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-xl transition-all shadow-xs"
+                    title={settings.language === 'ar' ? 'تعديل' : 'Edit'}
+                  >
+                    <Edit2 size={15} />
                   </button>
-                  <button onClick={() => deleteGroup(group.id)} className="p-2 text-zinc-500 hover:text-rose-600 hover:bg-white dark:hover:bg-zinc-700 rounded-lg transition-colors">
-                    <Trash2 size={16} />
+                  <button 
+                    onClick={() => deleteGroup(group.id)} 
+                    className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs"
+                    title={settings.language === 'ar' ? 'حذف' : 'Delete'}
+                  >
+                    <Trash2 size={15} />
                   </button>
                 </div>
               </>

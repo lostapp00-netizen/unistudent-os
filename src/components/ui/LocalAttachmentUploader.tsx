@@ -78,9 +78,10 @@ export function LocalAttachmentUploader({ attachments, onChange }: LocalAttachme
               <button
                 type="button"
                 onClick={() => handleRemove(att.id, att.b2FileId)}
-                className="text-zinc-400 hover:text-rose-500 transition-colors p-1"
+                className="p-1 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-lg transition-colors"
+                title="حذف"
               >
-                <X size={16} />
+                <X size={15} />
               </button>
             </div>
           ))}

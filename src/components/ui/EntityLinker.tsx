@@ -45,9 +45,9 @@ export function EntityLinker({
     selectedSubjectIds.forEach(id => {
       const s = subjects.find(x => x.id === id);
       if (s) items.push(
-        <span key={`sub-${id}`} className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 text-xs px-2 py-1 rounded-lg flex items-center gap-1 font-medium">
+        <span key={`sub-${id}`} className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 text-xs px-2 py-1 rounded-lg flex items-center gap-1 font-medium border border-indigo-200 dark:border-indigo-800/40">
           <BookOpen size={12} /> {s.name}
-          {onChangeSubjects && <button onClick={(e) => { e.stopPropagation(); onChangeSubjects(selectedSubjectIds.filter(x => x !== id)); }} className="hover:text-rose-500"><X size={12} /></button>}
+          {onChangeSubjects && <button onClick={(e) => { e.stopPropagation(); onChangeSubjects(selectedSubjectIds.filter(x => x !== id)); }} className="hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 p-0.5 rounded transition-colors"><X size={12} /></button>}
         </span>
       );
     });
@@ -55,9 +55,9 @@ export function EntityLinker({
     selectedNoteIds.forEach(id => {
       const n = notes.find(x => x.id === id);
       if (n) items.push(
-        <span key={`not-${id}`} className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-xs px-2 py-1 rounded-lg flex items-center gap-1 font-medium">
+        <span key={`not-${id}`} className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-xs px-2 py-1 rounded-lg flex items-center gap-1 font-medium border border-amber-200 dark:border-amber-800/40">
           <StickyNote size={12} /> {n.title}
-          {onChangeNotes && <button onClick={(e) => { e.stopPropagation(); onChangeNotes(selectedNoteIds.filter(x => x !== id)); }} className="hover:text-rose-500"><X size={12} /></button>}
+          {onChangeNotes && <button onClick={(e) => { e.stopPropagation(); onChangeNotes(selectedNoteIds.filter(x => x !== id)); }} className="hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 p-0.5 rounded transition-colors"><X size={12} /></button>}
         </span>
       );
     });
@@ -65,9 +65,9 @@ export function EntityLinker({
     selectedTaskIds.forEach(id => {
       const tsk = tasks.find(x => x.id === id);
       if (tsk) items.push(
-        <span key={`tsk-${id}`} className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs px-2 py-1 rounded-lg flex items-center gap-1 font-medium">
+        <span key={`tsk-${id}`} className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs px-2 py-1 rounded-lg flex items-center gap-1 font-medium border border-emerald-200 dark:border-emerald-800/40">
           <CheckSquare size={12} /> {tsk.title}
-          {onChangeTasks && <button onClick={(e) => { e.stopPropagation(); onChangeTasks(selectedTaskIds.filter(x => x !== id)); }} className="hover:text-rose-500"><X size={12} /></button>}
+          {onChangeTasks && <button onClick={(e) => { e.stopPropagation(); onChangeTasks(selectedTaskIds.filter(x => x !== id)); }} className="hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 p-0.5 rounded transition-colors"><X size={12} /></button>}
         </span>
       );
     });
@@ -75,9 +75,9 @@ export function EntityLinker({
     selectedFileIds.forEach(id => {
       const f = driveFiles.find(x => x.id === id);
       if (f) items.push(
-        <span key={`fil-${id}`} className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-xs px-2 py-1 rounded-lg flex items-center gap-1 font-medium">
+        <span key={`fil-${id}`} className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-xs px-2 py-1 rounded-lg flex items-center gap-1 font-medium border border-blue-200 dark:border-blue-800/40">
           <FileText size={12} /> {f.name}
-          {onChangeFiles && <button onClick={(e) => { e.stopPropagation(); onChangeFiles(selectedFileIds.filter(x => x !== id)); }} className="hover:text-rose-500"><X size={12} /></button>}
+          {onChangeFiles && <button onClick={(e) => { e.stopPropagation(); onChangeFiles(selectedFileIds.filter(x => x !== id)); }} className="hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 p-0.5 rounded transition-colors"><X size={12} /></button>}
         </span>
       );
     });

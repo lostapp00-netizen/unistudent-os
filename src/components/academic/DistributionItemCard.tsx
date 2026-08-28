@@ -83,7 +83,8 @@ export function DistributionItemCard({ distribution, isSubjectFinished, onUpdate
           {!isEditing && !isSubjectFinished && (
             <button
               onClick={() => setIsEditing(true)}
-              className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200 p-2 rounded-xl transition-colors flex items-center gap-1 text-xs font-bold"
+              className="bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 border border-indigo-500/30 p-2 rounded-xl transition-colors flex items-center gap-1 text-xs font-bold"
+              title={isRtl ? 'تعديل الدرجة' : 'Edit Marks'}
             >
               <Edit2 className="w-4 h-4" />
             </button>

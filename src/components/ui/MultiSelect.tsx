@@ -59,7 +59,8 @@ export function MultiSelect({ options, selectedIds, onChange, placeholder }: Mul
                 {opt.label}
                 <button 
                   onClick={(e) => removeOption(e, opt.id)}
-                  className="hover:text-rose-500 transition-colors"
+                  className="hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 p-0.5 rounded transition-colors"
+                  title="إزالة"
                 >
                   <X size={12} />
                 </button>

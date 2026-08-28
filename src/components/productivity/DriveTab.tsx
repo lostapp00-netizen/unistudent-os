@@ -178,7 +178,7 @@ export function DriveTab() {
                           window.open(file.url, '_blank');
                         }
                       }}
-                      className="p-2 text-zinc-400 hover:text-indigo-500 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+                      className="p-2 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all rounded-xl shadow-xs"
                       title={t('download_file') || 'Download'}
                     >
                       <Download size={18} />
@@ -186,7 +186,8 @@ export function DriveTab() {
                   )}
                   <button
                     onClick={(e) => handleDelete(e, file)}
-                    className="p-2 text-zinc-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                    className="p-2 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all rounded-xl shadow-xs"
+                    title={t('delete') || 'حذف'}
                   >
                     <Trash2 size={18} />
                   </button>

@@ -103,18 +103,20 @@ export function GradingScaleRow({ grade, onUpdate, onDelete }: Props) {
       <td className="py-2 px-3">{grade.maxPercentage}</td>
       <td className="py-2 px-3">{grade.points.toFixed(2)}</td>
       <td className="py-2 px-2">
-        <div className="flex items-center justify-center gap-1">
+        <div className="flex items-center justify-center gap-1.5">
           <button 
             onClick={() => setIsEditing(true)}
-            className="p-1.5 text-zinc-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-zinc-700 rounded-lg transition-colors"
+            className="p-1.5 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-xl transition-all shadow-xs"
+            title="Edit"
           >
-            <Edit2 size={16} />
+            <Edit2 size={14} />
           </button>
           <button 
             onClick={() => onDelete(grade.id)}
-            className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-white dark:hover:bg-zinc-700 rounded-lg transition-colors"
+            className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs"
+            title="Delete"
           >
-            <Trash2 size={16} />
+            <Trash2 size={14} />
           </button>
         </div>
       </td>
