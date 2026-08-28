@@ -82,19 +82,43 @@ export const db = {
   async getTasks(userId: string) {
     const { data, error } = await supabase.from('tasks').select('*').eq('user_id', userId);
     if (error) console.error('Error fetching tasks:', error);
-    return (data || []).map(mapTaskFromDB);
+    const extras = getEntityExtras(userId, 'tasks');
+    return (data || []).map(row => {
+      const task = mapTaskFromDB(row);
+      const extra = extras[task.id] || {};
+      return {
+        ...task,
+        attachments: (extra.attachments && extra.attachments.length > 0) ? extra.attachments : task.attachments,
+        linkedNoteIds: (extra.linkedNoteIds && extra.linkedNoteIds.length > 0) ? extra.linkedNoteIds : task.linkedNoteIds,
+        linkedFileIds: (extra.linkedFileIds && extra.linkedFileIds.length > 0) ? extra.linkedFileIds : task.linkedFileIds,
+        linkedSubjectIds: (extra.linkedSubjectIds && extra.linkedSubjectIds.length > 0) ? extra.linkedSubjectIds : task.linkedSubjectIds,
+      };
+    });
   },
   async addTask(userId: string, task: Task) {
+    saveEntityExtra(userId, 'tasks', task.id, {
+      attachments: task.attachments || [],
+      linkedNoteIds: task.linkedNoteIds || [],
+      linkedFileIds: task.linkedFileIds || [],
+      linkedSubjectIds: task.linkedSubjectIds || [],
+    });
     const { error } = await supabase.from('tasks').insert([mapTaskToDB(userId, task)]);
     if (error) console.error('Error adding task:', error);
   },
   async updateTask(userId: string, id: string, task: Partial<Task>) {
+    saveEntityExtra(userId, 'tasks', id, {
+      ...(task.attachments !== undefined ? { attachments: task.attachments } : {}),
+      ...(task.linkedNoteIds !== undefined ? { linkedNoteIds: task.linkedNoteIds } : {}),
+      ...(task.linkedFileIds !== undefined ? { linkedFileIds: task.linkedFileIds } : {}),
+      ...(task.linkedSubjectIds !== undefined ? { linkedSubjectIds: task.linkedSubjectIds } : {}),
+    });
     const payload = mapTaskToDB(userId, task as Task);
     delete (payload as any).user_id;
     const { error } = await supabase.from('tasks').update(payload).eq('id', id).eq('user_id', userId);
     if (error) console.error('Error updating task:', error);
   },
   async deleteTask(userId: string, id: string) {
+    removeEntityExtra(userId, 'tasks', id);
     const { error } = await supabase.from('tasks').delete().eq('id', id).eq('user_id', userId);
     if (error) console.error('Error deleting task:', error);
   },
@@ -103,19 +127,46 @@ export const db = {
   async getNotes(userId: string) {
     const { data, error } = await supabase.from('notes').select('*').eq('user_id', userId);
     if (error) console.error('Error fetching notes:', error);
-    return (data || []).map(mapNoteFromDB);
+    const extras = getEntityExtras(userId, 'notes');
+    return (data || []).map(row => {
+      const note = mapNoteFromDB(row);
+      const extra = extras[note.id] || {};
+      return {
+        ...note,
+        priority: extra.priority || note.priority,
+        attachments: (extra.attachments && extra.attachments.length > 0) ? extra.attachments : note.attachments,
+        linkedTaskIds: (extra.linkedTaskIds && extra.linkedTaskIds.length > 0) ? extra.linkedTaskIds : note.linkedTaskIds,
+        linkedFileIds: (extra.linkedFileIds && extra.linkedFileIds.length > 0) ? extra.linkedFileIds : note.linkedFileIds,
+        linkedSubjectIds: (extra.linkedSubjectIds && extra.linkedSubjectIds.length > 0) ? extra.linkedSubjectIds : note.linkedSubjectIds,
+      };
+    });
   },
   async addNote(userId: string, note: Note) {
+    saveEntityExtra(userId, 'notes', note.id, {
+      priority: note.priority,
+      attachments: note.attachments || [],
+      linkedTaskIds: note.linkedTaskIds || [],
+      linkedFileIds: note.linkedFileIds || [],
+      linkedSubjectIds: note.linkedSubjectIds || [],
+    });
     const { error } = await supabase.from('notes').insert([mapNoteToDB(userId, note)]);
     if (error) console.error('Error adding note:', error);
   },
   async updateNote(userId: string, id: string, note: Partial<Note>) {
+    saveEntityExtra(userId, 'notes', id, {
+      ...(note.priority !== undefined ? { priority: note.priority } : {}),
+      ...(note.attachments !== undefined ? { attachments: note.attachments } : {}),
+      ...(note.linkedTaskIds !== undefined ? { linkedTaskIds: note.linkedTaskIds } : {}),
+      ...(note.linkedFileIds !== undefined ? { linkedFileIds: note.linkedFileIds } : {}),
+      ...(note.linkedSubjectIds !== undefined ? { linkedSubjectIds: note.linkedSubjectIds } : {}),
+    });
     const payload = mapNoteToDB(userId, note as Note);
     delete (payload as any).user_id;
     const { error } = await supabase.from('notes').update(payload).eq('id', id).eq('user_id', userId);
     if (error) console.error('Error updating note:', error);
   },
   async deleteNote(userId: string, id: string) {
+    removeEntityExtra(userId, 'notes', id);
     const { error } = await supabase.from('notes').delete().eq('id', id).eq('user_id', userId);
     if (error) console.error('Error deleting note:', error);
   },
@@ -124,19 +175,43 @@ export const db = {
   async getAppointments(userId: string) {
     const { data, error } = await supabase.from('appointments').select('*').eq('user_id', userId);
     if (error) console.error('Error fetching appointments:', error);
-    return (data || []).map(mapAppointmentFromDB);
+    const extras = getEntityExtras(userId, 'appointments');
+    return (data || []).map(row => {
+      const appt = mapAppointmentFromDB(row);
+      const extra = extras[appt.id] || {};
+      return {
+        ...appt,
+        priority: extra.priority || appt.priority,
+        attachments: (extra.attachments && extra.attachments.length > 0) ? extra.attachments : appt.attachments,
+        linkedFileIds: (extra.linkedFileIds && extra.linkedFileIds.length > 0) ? extra.linkedFileIds : appt.linkedFileIds,
+        linkedSubjectIds: (extra.linkedSubjectIds && extra.linkedSubjectIds.length > 0) ? extra.linkedSubjectIds : appt.linkedSubjectIds,
+      };
+    });
   },
   async addAppointment(userId: string, appointment: Appointment) {
+    saveEntityExtra(userId, 'appointments', appointment.id, {
+      priority: appointment.priority,
+      attachments: appointment.attachments || [],
+      linkedFileIds: appointment.linkedFileIds || [],
+      linkedSubjectIds: appointment.linkedSubjectIds || [],
+    });
     const { error } = await supabase.from('appointments').insert([mapAppointmentToDB(userId, appointment)]);
     if (error) console.error('Error adding appointment:', error);
   },
   async updateAppointment(userId: string, id: string, appointment: Partial<Appointment>) {
+    saveEntityExtra(userId, 'appointments', id, {
+      ...(appointment.priority !== undefined ? { priority: appointment.priority } : {}),
+      ...(appointment.attachments !== undefined ? { attachments: appointment.attachments } : {}),
+      ...(appointment.linkedFileIds !== undefined ? { linkedFileIds: appointment.linkedFileIds } : {}),
+      ...(appointment.linkedSubjectIds !== undefined ? { linkedSubjectIds: appointment.linkedSubjectIds } : {}),
+    });
     const payload = mapAppointmentToDB(userId, appointment as Appointment);
     delete (payload as any).user_id;
     const { error } = await supabase.from('appointments').update(payload).eq('id', id).eq('user_id', userId);
     if (error) console.error('Error updating appointment:', error);
   },
   async deleteAppointment(userId: string, id: string) {
+    removeEntityExtra(userId, 'appointments', id);
     const { error } = await supabase.from('appointments').delete().eq('id', id).eq('user_id', userId);
     if (error) console.error('Error deleting appointment:', error);
   },
@@ -145,13 +220,33 @@ export const db = {
   async getScheduleItems(userId: string) {
     const { data, error } = await supabase.from('schedule_items').select('*').eq('user_id', userId);
     if (error) console.error('Error fetching schedule_items:', error);
-    return (data || []).map(mapScheduleItemFromDB);
+    const extras = getEntityExtras(userId, 'schedule_items');
+    return (data || []).map(row => {
+      const item = mapScheduleItemFromDB(row);
+      const extra = extras[item.id] || {};
+      return {
+        ...item,
+        priority: extra.priority || item.priority,
+        groupId: extra.groupId !== undefined ? extra.groupId : item.groupId,
+        attachments: (extra.attachments && extra.attachments.length > 0) ? extra.attachments : item.attachments,
+      };
+    });
   },
   async addScheduleItem(userId: string, item: ScheduleItem) {
+    saveEntityExtra(userId, 'schedule_items', item.id, {
+      priority: item.priority,
+      groupId: item.groupId,
+      attachments: item.attachments || [],
+    });
     const { error } = await supabase.from('schedule_items').insert([mapScheduleItemToDB(userId, item)]);
     if (error) console.error('Error adding schedule_item:', error);
   },
   async updateScheduleItem(userId: string, id: string, item: Partial<ScheduleItem>) {
+    saveEntityExtra(userId, 'schedule_items', id, {
+      ...(item.priority !== undefined ? { priority: item.priority } : {}),
+      ...(item.groupId !== undefined ? { groupId: item.groupId } : {}),
+      ...(item.attachments !== undefined ? { attachments: item.attachments } : {}),
+    });
     const payload = mapScheduleItemToDB(userId, item as ScheduleItem);
     delete (payload as any).user_id;
     
@@ -159,6 +254,7 @@ export const db = {
     if (error) console.error('Error updating schedule_item:', error);
   },
   async deleteScheduleItem(userId: string, id: string) {
+    removeEntityExtra(userId, 'schedule_items', id);
     const { error } = await supabase.from('schedule_items').delete().eq('id', id).eq('user_id', userId);
     if (error) console.error('Error deleting schedule_item:', error);
   },
@@ -216,6 +312,36 @@ export const db = {
     if (error) console.error('Error deleting drive_file:', error);
   }
 };
+
+// --- Local Extra Caching Helpers ---
+function getEntityExtras(userId: string, entityType: string): Record<string, any> {
+  try {
+    const raw = localStorage.getItem(`unistudent_${entityType}_extras_${userId}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveEntityExtra(userId: string, entityType: string, entityId: string, extras: any) {
+  try {
+    const all = getEntityExtras(userId, entityType);
+    all[entityId] = { ...(all[entityId] || {}), ...extras };
+    localStorage.setItem(`unistudent_${entityType}_extras_${userId}`, JSON.stringify(all));
+  } catch (e) {
+    console.error(`Error caching ${entityType} extras:`, e);
+  }
+}
+
+function removeEntityExtra(userId: string, entityType: string, entityId: string) {
+  try {
+    const all = getEntityExtras(userId, entityType);
+    delete all[entityId];
+    localStorage.setItem(`unistudent_${entityType}_extras_${userId}`, JSON.stringify(all));
+  } catch (e) {
+    console.error(`Error removing ${entityType} extras:`, e);
+  }
+}
 
 // --- Mapping Helpers ---
 function mapSettingsFromDB(row: any): UserSettings {

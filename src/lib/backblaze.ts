@@ -59,11 +59,41 @@ export async function deleteFromB2(path: string): Promise<void> {
 /**
  * Generates a presigned download URL for private buckets
  */
-export async function getPresignedDownloadUrl(path: string): Promise<string> {
+export async function getPresignedDownloadUrl(path: string, downloadFilename?: string): Promise<string> {
   const command = new GetObjectCommand({
     Bucket: BUCKET_NAME,
     Key: path,
+    ResponseContentDisposition: downloadFilename 
+      ? `attachment; filename="${encodeURIComponent(downloadFilename)}"`
+      : undefined
   });
 
   return await getSignedUrl(b2Client, command, { expiresIn: 3600 });
+}
+
+/**
+ * Downloads a file directly to the user's device
+ */
+export async function triggerBrowserDownload(url: string, filename: string): Promise<void> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Fetch failed');
+    const blob = await res.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    window.URL.revokeObjectURL(blobUrl);
+    document.body.removeChild(link);
+  } catch (e) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 }

@@ -170,17 +170,28 @@ export function Appointments() {
             {app.attachments && app.attachments.length > 0 && (
               <div className="mt-2 pl-2 flex flex-wrap gap-2 border-t border-zinc-100 dark:border-zinc-800 pt-2">
                 {app.attachments.map(att => (
-                  <a 
+                  <button 
                     key={att.id} 
-                    href={att.url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-2 py-1 rounded transition-colors"
-                    onClick={(e) => e.stopPropagation()}
+                    type="button"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (att.b2FileId) {
+                        try {
+                          const { getPresignedDownloadUrl } = await import('../../lib/backblaze');
+                          const url = await getPresignedDownloadUrl(att.b2FileId);
+                          window.open(url, '_blank');
+                        } catch {
+                          if (att.url) window.open(att.url, '_blank');
+                        }
+                      } else if (att.url) {
+                        window.open(att.url, '_blank');
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-2 py-1 rounded-lg transition-colors border border-zinc-200 dark:border-zinc-700 font-medium cursor-pointer"
                   >
-                    <FileText size={12} />
+                    <FileText size={12} className="text-amber-500" />
                     <span className="truncate max-w-[120px]">{att.name}</span>
-                  </a>
+                  </button>
                 ))}
               </div>
             )}

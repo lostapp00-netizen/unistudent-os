@@ -126,16 +126,25 @@ export function SubjectDetails() {
   return (
     <div className="flex flex-col min-h-full gap-6 pb-8">
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start sm:items-center gap-3">
           <button 
             onClick={() => navigate('/academic')}
-            className="p-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors flex-shrink-0"
+            className="p-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors flex-shrink-0 mt-0.5 sm:mt-0"
           >
             <BackIcon className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
           </button>
-          <div className="min-w-0">
-            <h1 className="text-2xl sm:text-3xl font-extrabold truncate">{subject.name} <span className="text-zinc-400 font-normal text-lg sm:text-xl">({subject.code})</span></h1>
-            <p className="text-zinc-500 text-xs sm:text-sm mt-0.5">الساعات: {subject.creditHours} | الدرجة الكلية: {subject.totalMarks}</p>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl sm:text-3xl font-extrabold text-zinc-900 dark:text-zinc-100 break-words leading-snug">
+              {subject.name}
+            </h1>
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-zinc-500 text-xs sm:text-sm mt-1.5 font-medium">
+              <span className="bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-bold px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-900/50">
+                {subject.code}
+              </span>
+              <span>الساعات: <strong className="text-zinc-700 dark:text-zinc-300">{subject.creditHours}</strong></span>
+              <span className="text-zinc-300 dark:text-zinc-700 hidden sm:inline">•</span>
+              <span>الدرجة الكلية: <strong className="text-zinc-700 dark:text-zinc-300">{subject.totalMarks}</strong></span>
+            </div>
           </div>
         </div>
 
