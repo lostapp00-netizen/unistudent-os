@@ -38,35 +38,37 @@ export function DistributionDefinitionRow({ distribution, isSubjectFinished, rem
 
   if (isEditing) {
     return (
-      <div className="flex items-center gap-3 p-4 bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-200 dark:border-indigo-800/50 rounded-2xl">
-        <div className="flex-1 flex gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-4 bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-200 dark:border-indigo-800/50 rounded-2xl">
+        <div className="flex-1 flex gap-2">
           <input 
             type="text" 
             value={tempName}
             onChange={e => setTempName(e.target.value)}
-            className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
             placeholder={isRtl ? 'اسم التقييم...' : 'Name...'}
           />
           <input 
             type="number" 
             value={tempMarks}
             onChange={e => setTempMarks(e.target.value === '' ? '' : Number(e.target.value))}
-            className="w-24 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-24 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 text-center font-bold"
             placeholder={isRtl ? 'الدرجة' : 'Marks'}
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 justify-end">
           <button 
             onClick={handleSave}
-            className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+            className="flex-1 sm:flex-none px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors flex items-center justify-center gap-1 text-sm font-bold shadow-xs"
           >
             <Save className="w-4 h-4" />
+            <span className="sm:hidden">{isRtl ? 'حفظ' : 'Save'}</span>
           </button>
           <button 
             onClick={handleCancel}
-            className="p-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-lg hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors"
+            className="flex-1 sm:flex-none px-4 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors flex items-center justify-center gap-1 text-sm font-bold"
           >
             <X className="w-4 h-4" />
+            <span className="sm:hidden">{isRtl ? 'إلغاء' : 'Cancel'}</span>
           </button>
         </div>
       </div>

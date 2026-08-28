@@ -125,36 +125,38 @@ export function SubjectDetails() {
 
   return (
     <div className="flex flex-col min-h-full gap-6 pb-8">
-      <header className="flex items-center gap-4">
-        <button 
-          onClick={() => navigate('/academic')}
-          className="p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-        >
-          <BackIcon className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
-        </button>
-        <div>
-          <h1 className="text-3xl font-extrabold">{subject.name} <span className="text-zinc-400 font-normal text-xl">({subject.code})</span></h1>
-          <p className="text-zinc-500 mt-1">الساعات: {subject.creditHours} | الدرجة الكلية: {subject.totalMarks}</p>
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => navigate('/academic')}
+            className="p-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors flex-shrink-0"
+          >
+            <BackIcon className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-2xl sm:text-3xl font-extrabold truncate">{subject.name} <span className="text-zinc-400 font-normal text-lg sm:text-xl">({subject.code})</span></h1>
+            <p className="text-zinc-500 text-xs sm:text-sm mt-0.5">الساعات: {subject.creditHours} | الدرجة الكلية: {subject.totalMarks}</p>
+          </div>
         </div>
-        <div className="flex-1"></div>
+
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800/50 p-1 rounded-xl">
             <button 
               onClick={() => updateSubject(subject.id, { includeInGpa: subject.includeInGpa === false ? true : false })}
-              className={`px-3 md:px-4 py-2 rounded-lg text-sm font-bold transition-all ${subject.includeInGpa !== false ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+              className={`px-3 md:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${subject.includeInGpa !== false ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
             >
               {isRtl ? (subject.includeInGpa !== false ? 'متضمن في المعدل' : 'مستبعد من المعدل') : (subject.includeInGpa !== false ? 'Included in GPA' : 'Excluded from GPA')}
             </button>
-            <div className="w-px bg-zinc-200 dark:bg-zinc-700 mx-1 my-2"></div>
+            <div className="w-px bg-zinc-200 dark:bg-zinc-700 mx-0.5 my-1.5"></div>
             <button 
               onClick={() => toggleStatus('current')}
-              className={`px-3 md:px-4 py-2 rounded-lg text-sm font-bold transition-all ${!isFinished ? 'bg-white dark:bg-zinc-900 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+              className={`px-3 md:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${!isFinished ? 'bg-white dark:bg-zinc-900 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
             >
               {isRtl ? 'حالي' : 'Current'}
             </button>
             <button 
               onClick={() => toggleStatus('finished')}
-              className={`px-3 md:px-4 py-2 rounded-lg text-sm font-bold transition-all ${isFinished ? 'bg-emerald-500 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+              className={`px-3 md:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${isFinished ? 'bg-emerald-500 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
             >
               {isRtl ? 'نهائي' : 'Final'}
             </button>
@@ -162,11 +164,11 @@ export function SubjectDetails() {
 
           <button
             onClick={handleOpenEditSubject}
-            className="p-2.5 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-xl transition-all shadow-xs flex items-center gap-1.5 text-sm font-bold"
+            className="p-2 sm:p-2.5 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-xl transition-all shadow-xs flex items-center gap-1.5 text-xs sm:text-sm font-bold"
             title={isRtl ? 'تعديل بيانات المادة' : 'Edit Subject'}
           >
             <Edit2 size={16} />
-            <span className="hidden sm:inline">{isRtl ? 'تعديل المادة' : 'Edit Subject'}</span>
+            <span className="inline">{isRtl ? 'تعديل' : 'Edit'}</span>
           </button>
 
           <button
@@ -176,11 +178,11 @@ export function SubjectDetails() {
                 navigate('/academic/subjects');
               }
             }}
-            className="p-2.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs flex items-center gap-1.5 text-sm font-bold"
+            className="p-2 sm:p-2.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs flex items-center gap-1.5 text-xs sm:text-sm font-bold"
             title={isRtl ? 'حذف المادة' : 'Delete Subject'}
           >
             <Trash2 size={16} />
-            <span className="hidden sm:inline">{isRtl ? 'حذف المادة' : 'Delete'}</span>
+            <span className="inline">{isRtl ? 'حذف' : 'Delete'}</span>
           </button>
         </div>
       </header>
@@ -189,7 +191,7 @@ export function SubjectDetails() {
         
         {/* Grade Distribution Manager */}
         <div className="md:col-span-8 flex flex-col gap-6">
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-4 sm:p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl">
                 <PieChart className="w-5 h-5" />
@@ -197,34 +199,39 @@ export function SubjectDetails() {
               <h2 className="text-xl font-bold">{t('distributions')}</h2>
             </div>
             
-            <div className="mb-6 flex gap-4 p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-              <div className="flex-1">
+            <div className="mb-6 flex flex-col sm:flex-row gap-3 p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800">
+              <div className="flex-1 min-w-0">
                 <input 
                   type="text" 
                   disabled={isFinished}
-                  placeholder={t('distribution_name')}
+                  placeholder={isRtl ? 'اسم بند التقييم (مثلاً: ميدترم، أعمال سنة)...' : 'Distribution name (e.g. Midterm)...'}
                   value={newDistName}
                   onChange={e => setNewDistName(e.target.value)}
-                  className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                  className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
                 />
               </div>
-              <div className="w-32">
-                <input 
-                  type="number" 
-                  disabled={isFinished}
-                  placeholder={t('marks')}
-                  value={newDistMarks}
-                  onChange={e => setNewDistMarks(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
-                />
+              <div className="flex items-center gap-2">
+                <div className="flex-1 sm:w-32 sm:flex-none">
+                  <input 
+                    type="number" 
+                    min="1"
+                    disabled={isFinished}
+                    placeholder={isRtl ? 'الدرجة' : 'Marks'}
+                    value={newDistMarks}
+                    onChange={e => setNewDistMarks(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 text-center font-bold"
+                  />
+                </div>
+                <button 
+                  onClick={handleAddDistribution}
+                  disabled={remainingMarks === 0 || isFinished || !newDistName.trim() || !newDistMarks}
+                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 text-white flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl transition-colors font-bold text-sm flex-shrink-0 shadow-sm"
+                  title={isRtl ? 'إضافة بند التقييم' : 'Add Distribution'}
+                >
+                  <Plus className="w-5 h-5" />
+                  <span>{isRtl ? 'إضافة' : 'Add'}</span>
+                </button>
               </div>
-              <button 
-                onClick={handleAddDistribution}
-                disabled={remainingMarks === 0 || isFinished}
-                className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 text-white flex items-center justify-center px-4 py-2 rounded-xl transition-colors"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
             </div>
 
             <div className="space-y-3">
