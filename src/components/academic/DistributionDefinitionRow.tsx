@@ -1,0 +1,102 @@
+import React, { useState } from 'react';
+import { Edit2, Save, Trash2, X } from 'lucide-react';
+import { GradeDistributionItem } from '../../types';
+
+interface Props {
+  distribution: GradeDistributionItem;
+  isSubjectFinished: boolean;
+  remainingMarks: number;
+  onUpdate: (id: string, name: string, maxMarks: number) => void;
+  onDelete: (id: string) => void;
+  isRtl: boolean;
+}
+
+export function DistributionDefinitionRow({ distribution, isSubjectFinished, remainingMarks, onUpdate, onDelete, isRtl }: Props) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [tempName, setTempName] = useState(distribution.name);
+  const [tempMarks, setTempMarks] = useState<number | ''>(distribution.maxMarks);
+
+  const handleSave = () => {
+    if (!tempName.trim() || tempMarks === '' || tempMarks <= 0) return;
+    
+    // Check if new marks exceed remaining possible marks (considering we are returning our own old maxMarks to the pool)
+    const extraNeeded = Number(tempMarks) - distribution.maxMarks;
+    if (extraNeeded > remainingMarks) {
+      alert(isRtl ? `الدرجات المتبقية المتاحة هي ${remainingMarks + distribution.maxMarks} فقط.` : `Only ${remainingMarks + distribution.maxMarks} marks available.`);
+      return;
+    }
+
+    onUpdate(distribution.id, tempName, Number(tempMarks));
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setTempName(distribution.name);
+    setTempMarks(distribution.maxMarks);
+    setIsEditing(false);
+  };
+
+  if (isEditing) {
+    return (
+      <div className="flex items-center gap-3 p-4 bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-200 dark:border-indigo-800/50 rounded-2xl">
+        <div className="flex-1 flex gap-3">
+          <input 
+            type="text" 
+            value={tempName}
+            onChange={e => setTempName(e.target.value)}
+            className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            placeholder={isRtl ? 'اسم التقييم...' : 'Name...'}
+          />
+          <input 
+            type="number" 
+            value={tempMarks}
+            onChange={e => setTempMarks(e.target.value === '' ? '' : Number(e.target.value))}
+            className="w-24 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            placeholder={isRtl ? 'الدرجة' : 'Marks'}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={handleSave}
+            className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+          >
+            <Save className="w-4 h-4" />
+          </button>
+          <button 
+            onClick={handleCancel}
+            className="p-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-lg hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl">
+      <div className="font-medium text-zinc-700 dark:text-zinc-200">{distribution.name}</div>
+      <div className="flex items-center gap-3">
+        <div className="text-sm font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-3 py-1 rounded-lg">
+          {distribution.maxMarks} {isRtl ? 'درجة' : 'Marks'}
+        </div>
+        {!isSubjectFinished && (
+          <div className="flex items-center gap-1 border-r border-zinc-200 dark:border-zinc-700 pr-3 mr-1">
+            <button 
+              onClick={() => setIsEditing(true)}
+              className="p-1.5 text-zinc-400 hover:text-indigo-500 transition-colors rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+            >
+              <Edit2 className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => onDelete(distribution.id)}
+              className="p-1.5 text-zinc-400 hover:text-rose-500 transition-colors rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

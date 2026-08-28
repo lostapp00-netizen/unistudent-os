@@ -1,0 +1,6 @@
+{
+  "name": "UniStudent OS",
+  "description": "A comprehensive university student operating system for academic tracking and productivity.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
