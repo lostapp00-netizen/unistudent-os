@@ -462,14 +462,14 @@ export const db = {
       this.getAllFeedbacks()
     ]);
 
-    const rawSettings = settingsRes.data || [];
-    const rawSubjects = subjectsRes.data || [];
-    const rawTasks = tasksRes.data || [];
-    const rawNotes = notesRes.data || [];
-    const rawAppointments = appointmentsRes.data || [];
-    const rawSchedule = scheduleRes.data || [];
-    const rawGroups = groupsRes.data || [];
-    const rawFiles = filesRes.data || [];
+    const rawSettings = [...(settingsRes.data || [])];
+    const rawSubjects = [...(subjectsRes.data || [])];
+    const rawTasks = [...(tasksRes.data || [])];
+    const rawNotes = [...(notesRes.data || [])];
+    const rawAppointments = [...(appointmentsRes.data || [])];
+    const rawSchedule = [...(scheduleRes.data || [])];
+    const rawGroups = [...(groupsRes.data || [])];
+    const rawFiles = [...(filesRes.data || [])];
 
     // Collect all distinct user IDs
     const userIds = new Set<string>();
@@ -481,6 +481,59 @@ export const db = {
     rawSchedule.forEach(sc => sc.user_id && userIds.add(sc.user_id));
     rawFiles.forEach(f => f.user_id && userIds.add(f.user_id));
     feedbacks.forEach(fb => fb.userId && userIds.add(fb.userId));
+
+    // Also scan localStorage for any cached student profiles and users
+    try {
+      const knownUsersRaw = localStorage.getItem('unistudent_known_users');
+      if (knownUsersRaw) {
+        const knownUsers = JSON.parse(knownUsersRaw);
+        if (Array.isArray(knownUsers)) {
+          knownUsers.forEach((u: any) => {
+            if (u.id) {
+              userIds.add(u.id);
+              if (!rawSettings.find(s => s.user_id === u.id)) {
+                rawSettings.push({
+                  user_id: u.id,
+                  name: u.name || 'طالب مسجل',
+                  email: u.email || '',
+                  university: u.university || '',
+                  college: u.college || '',
+                  grading_scale: u.gradingScale || [],
+                  semesters: u.semesters || []
+                });
+              }
+            }
+          });
+        }
+      }
+
+      // Check all localStorage keys for cached unistudent_settings_*
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('unistudent_settings_')) {
+          const uid = key.replace('unistudent_settings_', '');
+          if (uid) {
+            userIds.add(uid);
+            if (!rawSettings.find(s => s.user_id === uid)) {
+              try {
+                const st = JSON.parse(localStorage.getItem(key) || '{}');
+                rawSettings.push({
+                  user_id: uid,
+                  name: st.name || 'طالب مسجل',
+                  email: st.email || '',
+                  university: st.university || '',
+                  college: st.college || '',
+                  grading_scale: st.gradingScale || [],
+                  semesters: st.semesters || []
+                });
+              } catch {}
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('LocalStorage admin sync fallback warning:', e);
+    }
 
     // Also check current active user
     const currentSession = await supabase.auth.getSession().catch(() => null);

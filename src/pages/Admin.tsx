@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { 
   ShieldCheck, 
   Users, 
@@ -52,10 +52,6 @@ export function Admin() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return sessionStorage.getItem('unistudent_admin_auth') === 'true';
   });
-  const [adminEmail, setAdminEmail] = useState('admin@gmail.com');
-  const [adminPassword, setAdminPassword] = useState('');
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [authLoading, setAuthLoading] = useState(false);
 
   // --- Sidebar & Tabs ---
   type TabType = 'overview' | 'students' | 'suggestions' | 'backup';
@@ -113,45 +109,6 @@ export function Admin() {
     }
   }, [isAuthenticated]);
 
-  // Handle Admin Login (supports admin@gmail.com / admin@gmail.ocm with Body22@33)
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError(null);
-    setAuthLoading(true);
-
-    const emailTrimmed = adminEmail.trim().toLowerCase();
-    const passTrimmed = adminPassword.trim();
-
-    const isDirectMatch = 
-      (emailTrimmed === 'admin@gmail.com' || emailTrimmed === 'admin@gmail.ocm' || emailTrimmed === 'admin@unistudent.com') && 
-      (passTrimmed === 'Body22@33' || passTrimmed === 'admin2026' || passTrimmed === 'unistudent');
-
-    if (isDirectMatch) {
-      setIsAuthenticated(true);
-      sessionStorage.setItem('unistudent_admin_auth', 'true');
-      setAuthLoading(false);
-      return;
-    }
-
-    try {
-      const { supabase } = await import('../lib/supabase');
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: emailTrimmed,
-        password: passTrimmed
-      });
-
-      if (!error && data.session) {
-        setIsAuthenticated(true);
-        sessionStorage.setItem('unistudent_admin_auth', 'true');
-        setAuthLoading(false);
-        return;
-      }
-    } catch (err) {}
-
-    setAuthError(isAr ? 'بيانات الدخول غير صحيحة. يرجى التأكد من البريد وكلمة المرور.' : 'Invalid credentials. Please verify your email and password.');
-    setAuthLoading(false);
-  };
-
   const handleLogout = async () => {
     setIsAuthenticated(false);
     sessionStorage.removeItem('unistudent_admin_auth');
@@ -159,8 +116,13 @@ export function Admin() {
       const { supabase } = await import('../lib/supabase');
       await supabase.auth.signOut();
     } catch {}
-    navigate('/auth');
+    window.location.href = '/auth';
   };
+
+  // --- Redirect to unified /auth if not logged in ---
+  if (!isAuthenticated) {
+    return <Navigate to="/auth" replace />;
+  }
 
   // Copy helper
   const handleCopy = (text: string, id: string) => {
@@ -442,76 +404,6 @@ export function Admin() {
     setFeedbackToDelete(null);
     await fetchData();
   };
-
-  // --- Render Authentication Gate if not logged in ---
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col items-center justify-center p-4">
-        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 max-w-md w-full shadow-xl text-center space-y-6">
-          <div className="w-16 h-16 rounded-2xl bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex items-center justify-center mx-auto shadow-sm">
-            <ShieldCheck size={36} />
-          </div>
-
-          <div>
-            <h1 className="text-2xl font-black text-zinc-900 dark:text-white">
-              {isAr ? 'بوابة إدارة المنصة (الأدمن)' : 'Admin Portal Access'}
-            </h1>
-            <p className="text-xs text-zinc-500 mt-1">
-              {isAr 
-                ? 'يرجى تسجيل الدخول ببيانات حساب الأدمن للوصول إلى لوحة التحكم' 
-                : 'Enter your administrator credentials to access platform data'}
-            </p>
-          </div>
-
-          {authError && (
-            <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded-xl text-rose-700 dark:text-rose-300 text-xs font-bold">
-              {authError}
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} className="space-y-4 text-left rtl:text-right">
-            <div>
-              <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
-                {isAr ? 'البريد الإلكتروني للأدمن' : 'Admin Email'}
-              </label>
-              <input
-                type="email"
-                required
-                value={adminEmail}
-                onChange={(e) => setAdminEmail(e.target.value)}
-                placeholder="admin@gmail.com"
-                className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-2xl outline-none focus:ring-2 focus:ring-purple-500 transition-all text-zinc-900 dark:text-white text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
-                {isAr ? 'كلمة المرور' : 'Password'}
-              </label>
-              <input
-                type="password"
-                required
-                autoFocus
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-2xl outline-none focus:ring-2 focus:ring-purple-500 transition-all text-zinc-900 dark:text-white text-sm"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={authLoading}
-              className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 mt-2"
-            >
-              {authLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <LogIn size={18} />}
-              <span>{isAr ? 'تسجيل الدخول للأدمن' : 'Authenticate'}</span>
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
 
   // Navigation Items for Admin Sidebar
   const navItems = [

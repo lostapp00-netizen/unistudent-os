@@ -124,6 +124,28 @@ export const useAppStore = create<AppState>((set, get) => ({
       db.upsertSettings(userId, { email });
     }
 
+    try {
+      const knownRaw = localStorage.getItem('unistudent_known_users');
+      const knownList: any[] = knownRaw ? JSON.parse(knownRaw) : [];
+      const userProfile = {
+        id: userId,
+        email: email || mergedSettings.email,
+        name: mergedSettings.name,
+        university: mergedSettings.university,
+        college: mergedSettings.college,
+        gradingScale: mergedSettings.gradingScale,
+        semesters: mergedSettings.semesters,
+        lastSeen: new Date().toISOString()
+      };
+      const existingIdx = knownList.findIndex((u: any) => u.id === userId);
+      if (existingIdx >= 0) {
+        knownList[existingIdx] = userProfile;
+      } else {
+        knownList.push(userProfile);
+      }
+      localStorage.setItem('unistudent_known_users', JSON.stringify(knownList));
+    } catch {}
+
     set({
       userId,
       userEmail: email || null,

@@ -31,12 +31,15 @@ export function Auth() {
     }
 
     try {
+      sessionStorage.removeItem('unistudent_admin_auth');
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email: emailTrimmed, password: passwordTrimmed });
         if (error) throw error;
+        window.location.href = '/';
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { error } = await supabase.auth.signUp({ email: emailTrimmed, password: passwordTrimmed });
         if (error) throw error;
+        window.location.href = '/';
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred during authentication');

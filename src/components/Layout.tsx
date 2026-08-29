@@ -258,7 +258,9 @@ export function Layout() {
 
           <button
             onClick={async () => {
+              sessionStorage.removeItem('unistudent_admin_auth');
               await supabase.auth.signOut();
+              window.location.href = '/auth';
             }}
             className={cn(
               "p-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-all flex items-center gap-2",
