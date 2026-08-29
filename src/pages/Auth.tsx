@@ -45,7 +45,18 @@ export function Auth() {
         setSignUpSuccessEmail(emailTrimmed);
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred during authentication');
+      const rawMsg = err.message || '';
+      if (rawMsg.includes('rate limit') || rawMsg.includes('rate_limit')) {
+        setError('تم تجاوز الحد المسموح لإرسال رسائل البريد الإلكتروني مؤقتاً (Rate limit). يرجى الانتظار دقيقة أو تعطيل Confirm email من إعدادات Supabase.');
+      } else if (rawMsg.includes('Invalid login credentials')) {
+        setError('بيانات الدخول غير صحيحة. يرجى التأكد من البريد الإلكتروني وكلمة المرور.');
+      } else if (rawMsg.includes('User already registered')) {
+        setError('هذا البريد الإلكتروني مسجل بالفعل. يرجى التبديل لتسجيل الدخول.');
+      } else if (rawMsg.includes('at least 6 characters')) {
+        setError('يجب أن تتكون كلمة المرور من 6 أحرف/أرقام على الأقل.');
+      } else {
+        setError(rawMsg || 'حدث خطأ أثناء المصادقة. يرجى المحاولة لاحقاً.');
+      }
     } finally {
       setLoading(false);
     }
