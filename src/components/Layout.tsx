@@ -4,8 +4,9 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, BookOpen, Calendar, LayoutDashboard, Settings, Sun, Moon, 
   ChevronDown, ChevronRight, CheckSquare, StickyNote, HardDrive, 
-  Clock, AlertTriangle, Library, ListTodo, Menu, X, Calculator, Target, ShieldCheck } from 'lucide-react';
+  Clock, AlertTriangle, Library, ListTodo, Menu, X, Calculator, Target, LogOut } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { supabase } from '../lib/supabase';
 import { getWarningThreshold, isSubjectAtWarningRisk } from '../lib/academic';
 import { cn } from '../lib/utils';
 
@@ -233,37 +234,43 @@ export function Layout() {
             <Settings className="w-5 h-5" />
             {isSidebarOpen && t('settings')}
           </NavLink>
-
-          <NavLink
-            to="/admin"
-            className={({ isActive }) => cn(
-              "flex items-center gap-3 p-3 rounded-xl text-sm font-medium transition-colors mt-2",
-              isActive 
-                ? "bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40 font-bold" 
-                : "text-purple-600 dark:text-purple-400 hover:bg-purple-50/50 dark:hover:bg-purple-950/20"
-            )}
-          >
-            <ShieldCheck className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-            {isSidebarOpen && (settings.language === 'ar' ? 'لوحة الأدمن' : 'Admin Portal')}
-          </NavLink>
         </nav>
 
-        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
-          <button 
-            onClick={toggleTheme}
-            className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 transition-colors"
-          >
-            {settings.theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
-          
-          {isSidebarOpen && (
+        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
             <button 
-              onClick={toggleLanguage}
-              className="px-3 py-1.5 text-sm font-medium rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 transition-colors uppercase tracking-wider"
+              onClick={toggleTheme}
+              className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 transition-colors"
+              title={settings.theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
             >
-              {settings.language === 'ar' ? 'EN' : 'عربي'}
+              {settings.theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
-          )}
+            
+            {isSidebarOpen && (
+              <button 
+                onClick={toggleLanguage}
+                className="px-2.5 py-1.5 text-xs font-bold rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 transition-colors uppercase tracking-wider"
+              >
+                {settings.language === 'ar' ? 'EN' : 'عربي'}
+              </button>
+            )}
+          </div>
+
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut();
+            }}
+            className={cn(
+              "p-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-all flex items-center gap-2",
+              isSidebarOpen ? "px-3 py-1.5 text-xs font-bold bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40" : ""
+            )}
+            title={settings.language === 'ar' ? 'تسجيل الخروج' : 'Logout'}
+          >
+            <LogOut className="w-4 h-4" />
+            {isSidebarOpen && (
+              <span>{settings.language === 'ar' ? 'تسجيل الخروج' : 'Logout'}</span>
+            )}
+          </button>
         </div>
       </aside>
 
