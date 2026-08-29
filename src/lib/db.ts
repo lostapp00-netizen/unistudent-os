@@ -505,6 +505,27 @@ export const db = {
           if (bData.groups && bData.groups.length > 0) rawGroups = bData.groups;
           if (bData.drive_files && bData.drive_files.length > 0) rawFiles = bData.drive_files;
           if (bData.suggestions && bData.suggestions.length > 0) feedbacks = bData.suggestions;
+
+          if (bData.auth_users && Array.isArray(bData.auth_users)) {
+            bData.auth_users.forEach((au: any) => {
+              if (au.id) {
+                const existing = rawSettings.find(s => s.user_id === au.id);
+                if (existing) {
+                  if (!existing.email || existing.email === '') existing.email = au.email;
+                } else {
+                  rawSettings.push({
+                    user_id: au.id,
+                    name: au.email ? au.email.split('@')[0] : 'طالب مسجل',
+                    email: au.email || '',
+                    university: '',
+                    college: '',
+                    grading_scale: [],
+                    semesters: []
+                  });
+                }
+              }
+            });
+          }
         }
       } catch (err) {
         console.warn('Edge function service_role fetch fallback error:', err);

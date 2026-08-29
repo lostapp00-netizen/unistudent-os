@@ -26,7 +26,7 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 1. Fetch all database tables
+    // 1. Fetch all database tables & auth users
     const [
       settingsRes,
       subjectsRes,
@@ -37,6 +37,7 @@ serve(async (req) => {
       groupsRes,
       filesRes,
       suggestionsRes,
+      authUsersRes,
     ] = await Promise.all([
       supabase.from("settings").select("*"),
       supabase.from("subjects").select("*"),
@@ -47,7 +48,15 @@ serve(async (req) => {
       supabase.from("groups").select("*"),
       supabase.from("drive_files").select("*"),
       supabase.from("suggestions").select("*"),
+      supabase.auth.admin.listUsers().catch(() => ({ data: { users: [] } })),
     ]);
+
+    const realAuthUsers = (authUsersRes?.data?.users || []).map((u: any) => ({
+      id: u.id,
+      email: u.email || "",
+      created_at: u.created_at || "",
+      last_sign_in_at: u.last_sign_in_at || "",
+    }));
 
     const backupPayload = {
       version: "1.0.0",
@@ -63,6 +72,7 @@ serve(async (req) => {
         groups: groupsRes.data || [],
         drive_files: filesRes.data || [],
         suggestions: suggestionsRes.data || [],
+        auth_users: realAuthUsers,
       },
       summary: {
         totalSettings: settingsRes.data?.length || 0,
