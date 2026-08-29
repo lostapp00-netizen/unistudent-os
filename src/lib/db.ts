@@ -27,6 +27,8 @@ export const db = {
     if (settings.initialCumulativeGpa !== undefined) payload.initial_cumulative_gpa = settings.initialCumulativeGpa;
     if (settings.initialCompletedCreditHours !== undefined) payload.initial_completed_credit_hours = settings.initialCompletedCreditHours;
     if (settings.setupMode !== undefined) payload.setup_mode = settings.setupMode;
+    if (settings.warningGradeLetter !== undefined) payload.warning_grade_letter = settings.warningGradeLetter;
+    if (settings.warningGpaPoints !== undefined) payload.warning_gpa_points = settings.warningGpaPoints;
 
     try {
       localStorage.setItem(`unistudent_settings_${userId}`, JSON.stringify(settings));
@@ -39,6 +41,8 @@ export const db = {
         delete payload.initial_cumulative_gpa;
         delete payload.initial_completed_credit_hours;
         delete payload.setup_mode;
+        delete payload.warning_grade_letter;
+        delete payload.warning_gpa_points;
         await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
       } else {
         console.error('Error upserting settings:', error);
@@ -366,7 +370,9 @@ function mapSettingsFromDB(row: any): UserSettings {
     semesters: row.semesters || [],
     initialCumulativeGpa: row.initial_cumulative_gpa !== undefined ? row.initial_cumulative_gpa : (localExtra.initialCumulativeGpa ?? null),
     initialCompletedCreditHours: row.initial_completed_credit_hours !== undefined ? row.initial_completed_credit_hours : (localExtra.initialCompletedCreditHours ?? null),
-    setupMode: row.setup_mode || localExtra.setupMode || 'initial_gpa'
+    setupMode: row.setup_mode || localExtra.setupMode || 'initial_gpa',
+    warningGradeLetter: row.warning_grade_letter !== undefined ? row.warning_grade_letter : (localExtra.warningGradeLetter ?? 'C'),
+    warningGpaPoints: row.warning_gpa_points !== undefined ? Number(row.warning_gpa_points) : (localExtra.warningGpaPoints !== undefined ? Number(localExtra.warningGpaPoints) : 2.0)
   };
 }
 

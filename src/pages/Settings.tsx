@@ -19,7 +19,9 @@ export function Settings() {
     semesters: settings.semesters,
     initialCumulativeGpa: settings.initialCumulativeGpa,
     initialCompletedCreditHours: settings.initialCompletedCreditHours,
-    setupMode: settings.setupMode || 'initial_gpa'
+    setupMode: settings.setupMode || 'initial_gpa',
+    warningGradeLetter: settings.warningGradeLetter,
+    warningGpaPoints: settings.warningGpaPoints
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

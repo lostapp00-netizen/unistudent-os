@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectVersionsCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const BUCKET_NAME = import.meta.env.VITE_B2_BUCKET_NAME;
@@ -44,16 +44,59 @@ export async function uploadToB2(file: File, path: string): Promise<string> {
 }
 
 /**
- * Deletes a file from Backblaze B2
+ * Permanently deletes a file (including all previous versions and delete markers) from Backblaze B2
  * @param path The path/filename of the file to delete
  */
 export async function deleteFromB2(path: string): Promise<void> {
+  try {
+    // List all versions and delete markers for this object to perform hard delete
+    const listVersions = new ListObjectVersionsCommand({
+      Bucket: BUCKET_NAME,
+      Prefix: path,
+    });
+    const versionsRes = await b2Client.send(listVersions);
+    const versions = versionsRes.Versions?.filter(v => v.Key === path) || [];
+    const deleteMarkers = versionsRes.DeleteMarkers?.filter(d => d.Key === path) || [];
+
+    if (versions.length > 0 || deleteMarkers.length > 0) {
+      await Promise.all([
+        ...versions.map(v => 
+          b2Client.send(new DeleteObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: path,
+            VersionId: v.VersionId,
+          }))
+        ),
+        ...deleteMarkers.map(d => 
+          b2Client.send(new DeleteObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: path,
+            VersionId: d.VersionId,
+          }))
+        ),
+      ]);
+      return;
+    }
+  } catch (err) {
+    console.warn('Could not list/hard-delete versions from B2, falling back to standard delete:', err);
+  }
+
+  // Standard delete fallback
   const command = new DeleteObjectCommand({
     Bucket: BUCKET_NAME,
     Key: path,
   });
 
   await b2Client.send(command);
+}
+
+/**
+ * Permanently deletes multiple files from Backblaze B2
+ */
+export async function deleteMultipleFromB2(paths: (string | undefined)[]): Promise<void> {
+  const validPaths = paths.filter((p): p is string => Boolean(p && p.trim().length > 0));
+  if (validPaths.length === 0) return;
+  await Promise.allSettled(validPaths.map(p => deleteFromB2(p)));
 }
 
 /**

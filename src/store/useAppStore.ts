@@ -20,6 +20,8 @@ const defaultSettings: UserSettings = {
   initialCumulativeGpa: null,
   initialCompletedCreditHours: null,
   setupMode: 'initial_gpa',
+  warningGradeLetter: 'C',
+  warningGpaPoints: 2.0,
 };
 
 export interface AppState {
@@ -190,8 +192,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     db.addDriveFile(userId, file);
   },
   deleteFile: (id) => {
-    const { userId } = get();
+    const { userId, files } = get();
     if (!userId) return;
+    const target = files.find(f => f.id === id);
+    if (target?.b2FileId) {
+      import('../lib/backblaze').then(({ deleteFromB2 }) => {
+        deleteFromB2(target.b2FileId!).catch(console.error);
+      }).catch(console.error);
+    }
     set((state) => ({ files: state.files.filter(f => f.id !== id) }));
     db.deleteDriveFile(userId, id);
   },
@@ -204,14 +212,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     db.addNote(userId, note);
   },
   updateNote: (id, updatedFields) => {
-    const { userId } = get();
+    const { userId, notes } = get();
     if (!userId) return;
+    if (updatedFields.attachments) {
+      const current = notes.find(n => n.id === id);
+      if (current?.attachments?.length) {
+        const newIds = new Set((updatedFields.attachments || []).map(a => a.id));
+        const removed = current.attachments.filter(a => !newIds.has(a.id));
+        if (removed.length > 0) {
+          import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
+            deleteMultipleFromB2(removed.map(a => a.b2FileId)).catch(console.error);
+          }).catch(console.error);
+        }
+      }
+    }
     set((state) => ({ notes: state.notes.map(n => n.id === id ? { ...n, ...updatedFields } : n) }));
     db.updateNote(userId, id, updatedFields);
   },
   deleteNote: (id) => {
-    const { userId } = get();
+    const { userId, notes } = get();
     if (!userId) return;
+    const target = notes.find(n => n.id === id);
+    if (target?.attachments?.length) {
+      import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
+        deleteMultipleFromB2(target.attachments!.map(a => a.b2FileId)).catch(console.error);
+      }).catch(console.error);
+    }
     set((state) => ({ notes: state.notes.filter(n => n.id !== id) }));
     db.deleteNote(userId, id);
   },
@@ -224,14 +250,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     db.addTask(userId, task);
   },
   updateTask: (id, updatedFields) => {
-    const { userId } = get();
+    const { userId, tasks } = get();
     if (!userId) return;
+    if (updatedFields.attachments) {
+      const current = tasks.find(t => t.id === id);
+      if (current?.attachments?.length) {
+        const newIds = new Set((updatedFields.attachments || []).map(a => a.id));
+        const removed = current.attachments.filter(a => !newIds.has(a.id));
+        if (removed.length > 0) {
+          import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
+            deleteMultipleFromB2(removed.map(a => a.b2FileId)).catch(console.error);
+          }).catch(console.error);
+        }
+      }
+    }
     set((state) => ({ tasks: state.tasks.map(t => t.id === id ? { ...t, ...updatedFields } : t) }));
     db.updateTask(userId, id, updatedFields);
   },
   deleteTask: (id) => {
-    const { userId } = get();
+    const { userId, tasks } = get();
     if (!userId) return;
+    const target = tasks.find(t => t.id === id);
+    if (target?.attachments?.length) {
+      import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
+        deleteMultipleFromB2(target.attachments!.map(a => a.b2FileId)).catch(console.error);
+      }).catch(console.error);
+    }
     set((state) => ({ tasks: state.tasks.filter(t => t.id !== id) }));
     db.deleteTask(userId, id);
   },
@@ -244,14 +288,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     db.addAppointment(userId, appointment);
   },
   updateAppointment: (id, updatedFields) => {
-    const { userId } = get();
+    const { userId, appointments } = get();
     if (!userId) return;
+    if (updatedFields.attachments) {
+      const current = appointments.find(a => a.id === id);
+      if (current?.attachments?.length) {
+        const newIds = new Set((updatedFields.attachments || []).map(a => a.id));
+        const removed = current.attachments.filter(a => !newIds.has(a.id));
+        if (removed.length > 0) {
+          import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
+            deleteMultipleFromB2(removed.map(a => a.b2FileId)).catch(console.error);
+          }).catch(console.error);
+        }
+      }
+    }
     set((state) => ({ appointments: state.appointments.map(a => a.id === id ? { ...a, ...updatedFields } : a) }));
     db.updateAppointment(userId, id, updatedFields);
   },
   deleteAppointment: (id) => {
-    const { userId } = get();
+    const { userId, appointments } = get();
     if (!userId) return;
+    const target = appointments.find(a => a.id === id);
+    if (target?.attachments?.length) {
+      import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
+        deleteMultipleFromB2(target.attachments!.map(a => a.b2FileId)).catch(console.error);
+      }).catch(console.error);
+    }
     set((state) => ({ appointments: state.appointments.filter(a => a.id !== id) }));
     db.deleteAppointment(userId, id);
   },
@@ -264,14 +326,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     db.addScheduleItem(userId, item);
   },
   updateScheduleItem: (id, updatedFields) => {
-    const { userId } = get();
+    const { userId, scheduleItems } = get();
     if (!userId) return;
+    if (updatedFields.attachments) {
+      const current = scheduleItems.find(s => s.id === id);
+      if (current?.attachments?.length) {
+        const newIds = new Set((updatedFields.attachments || []).map(a => a.id));
+        const removed = current.attachments.filter(a => !newIds.has(a.id));
+        if (removed.length > 0) {
+          import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
+            deleteMultipleFromB2(removed.map(a => a.b2FileId)).catch(console.error);
+          }).catch(console.error);
+        }
+      }
+    }
     set((state) => ({ scheduleItems: state.scheduleItems.map(s => s.id === id ? { ...s, ...updatedFields } : s) }));
     db.updateScheduleItem(userId, id, updatedFields);
   },
   deleteScheduleItem: (id) => {
-    const { userId } = get();
+    const { userId, scheduleItems } = get();
     if (!userId) return;
+    const target = scheduleItems.find(s => s.id === id);
+    if (target?.attachments?.length) {
+      import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
+        deleteMultipleFromB2(target.attachments!.map(a => a.b2FileId)).catch(console.error);
+      }).catch(console.error);
+    }
     set((state) => ({ scheduleItems: state.scheduleItems.filter(s => s.id !== id) }));
     db.deleteScheduleItem(userId, id);
   },

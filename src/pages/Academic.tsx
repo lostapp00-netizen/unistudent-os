@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore } from '../store/useAppStore';
-import { calculateSubjectGrade, calculateGPA } from '../lib/academic';
+import { calculateSubjectGrade, calculateGPA, getWarningThreshold, isSubjectAtWarningRisk } from '../lib/academic';
 import { Subject } from '../types';
 import { Plus, ChevronLeft, ChevronRight, AlertTriangle, Filter, Check, Edit2, Trash2 } from 'lucide-react';
 
@@ -113,10 +113,10 @@ export function Academic() {
   const semesterGPA = calculateGPA(subjects, settings.gradingScale, filterYears.length === 1 ? filterYears[0] : undefined, filterSemesters.length === 1 ? filterSemesters[0] : undefined);
   const totalGPA = calculateGPA(subjects, settings.gradingScale);
 
-  const warningSubjects = filteredSubjects.filter(s => {
-    const grade = calculateSubjectGrade(s, settings.gradingScale);
-    return grade && grade.points < 2.0;
-  });
+  const threshold = getWarningThreshold(settings);
+  const warningSubjects = filteredSubjects.filter(s => 
+    isSubjectAtWarningRisk(s, settings.gradingScale, threshold.points)
+  );
 
   const toggleYear = (y: number) => {
     setFilterYears(prev => prev.includes(y) ? prev.filter(yr => yr !== y) : [...prev, y]);
@@ -288,11 +288,28 @@ export function Academic() {
             {warningSubjects.length > 0 ? (
               <ul className="space-y-3">
                 {warningSubjects.map(s => {
-                  const g = calculateSubjectGrade(s, settings.gradingScale);
+                  let g = calculateSubjectGrade(s, settings.gradingScale);
+                  if (!g && s.finalGradeLetter) {
+                    const rule = settings.gradingScale.find(r => r.letter === s.finalGradeLetter);
+                    if (rule) {
+                      g = {
+                        totalAchieved: 0,
+                        percentage: rule.minPercentage,
+                        letter: rule.letter,
+                        points: rule.points
+                      };
+                    }
+                  }
                   return (
-                    <li key={s.id} className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-amber-100 dark:border-amber-900/30 text-sm">
-                      <span className="font-bold block mb-1">{s.name}</span>
-                      <span className="text-zinc-500">{isAr ? `التقدير الحالي: ${g?.letter}. تحتاج لخطة تعويض للوصول لمعدل آمن.` : `Current grade: ${g?.letter}. Needs recovery plan.`}</span>
+                    <li key={s.id} className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-amber-100 dark:border-amber-900/30 text-sm flex items-center justify-between gap-3">
+                      <div>
+                        <span className="font-bold block text-zinc-900 dark:text-zinc-100">{s.name}</span>
+                        <span className="text-xs text-zinc-500">{isAr ? `المعدل: ${(g?.points || 0).toFixed(2)} • الحد: ${threshold.points.toFixed(2)} (${threshold.letter})` : `GPA: ${(g?.points || 0).toFixed(2)} • Threshold: ${threshold.points.toFixed(2)} (${threshold.letter})`}</span>
+                      </div>
+                      <div className="flex flex-col items-center justify-center px-2 py-1 rounded-lg bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 font-bold text-xs">
+                        <span>{g?.letter || 'F'}</span>
+                        <span className="text-[9px] opacity-80">{(g?.points || 0).toFixed(1)}</span>
+                      </div>
                     </li>
                   );
                 })}

@@ -84,3 +84,81 @@ export function calculateGPA(
   if (totalCreditHours === 0) return 0;
   return Number((totalPointsAndHours / totalCreditHours).toFixed(2));
 }
+
+export function getMatchingGradeRuleByLetter(letter: string, scale: GradeRule[]): GradeRule | undefined {
+  if (!scale || scale.length === 0) return undefined;
+  return scale.find(r => r.letter.trim().toLowerCase() === letter.trim().toLowerCase());
+}
+
+export function getMatchingGradeRuleByPoints(points: number, scale: GradeRule[]): GradeRule | undefined {
+  if (!scale || scale.length === 0) return undefined;
+  
+  // Sort descending by points
+  const sorted = [...scale].sort((a, b) => b.points - a.points);
+  
+  // 1. Exact match
+  const exact = sorted.find(r => Math.abs(r.points - points) < 0.01);
+  if (exact) return exact;
+
+  // 2. Find the rule with highest points <= given points
+  const lowerOrEqual = sorted.find(r => r.points <= points);
+  if (lowerOrEqual) return lowerOrEqual;
+
+  // 3. Fallback to the lowest rule (e.g. F)
+  return sorted[sorted.length - 1];
+}
+
+export function getWarningThreshold(settings: {
+  warningGradeLetter?: string;
+  warningGpaPoints?: number;
+  gradingScale?: GradeRule[];
+}): { points: number; letter: string; rule?: GradeRule } {
+  const scale = settings.gradingScale || [];
+  
+  if (settings.warningGpaPoints !== undefined && settings.warningGpaPoints !== null) {
+    const points = Number(settings.warningGpaPoints);
+    const rule = getMatchingGradeRuleByPoints(points, scale);
+    return {
+      points,
+      letter: settings.warningGradeLetter || rule?.letter || 'C',
+      rule
+    };
+  }
+
+  if (settings.warningGradeLetter) {
+    const rule = getMatchingGradeRuleByLetter(settings.warningGradeLetter, scale);
+    if (rule) {
+      return {
+        points: rule.points,
+        letter: rule.letter,
+        rule
+      };
+    }
+  }
+
+  // Default to 2.0 / C
+  const defaultRule = getMatchingGradeRuleByPoints(2.0, scale) || getMatchingGradeRuleByLetter('C', scale);
+  return {
+    points: defaultRule ? defaultRule.points : 2.0,
+    letter: defaultRule ? defaultRule.letter : 'C',
+    rule: defaultRule
+  };
+}
+
+export function isSubjectAtWarningRisk(subject: Subject, scale: GradeRule[], thresholdPoints: number): boolean {
+  let gradeObj = calculateSubjectGrade(subject, scale);
+  if (!gradeObj && subject.finalGradeLetter) {
+    const rule = getMatchingGradeRuleByLetter(subject.finalGradeLetter, scale);
+    if (rule) {
+      gradeObj = {
+        totalAchieved: 0,
+        percentage: rule.minPercentage,
+        letter: rule.letter,
+        points: rule.points
+      };
+    }
+  }
+  if (!gradeObj) return false;
+  return gradeObj.points <= thresholdPoints;
+}
+

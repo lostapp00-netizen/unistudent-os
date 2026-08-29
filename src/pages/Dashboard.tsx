@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
-import { calculateGPA, calculateSubjectGrade } from '../lib/academic';
+import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWarningRisk } from '../lib/academic';
 import { BookOpen, AlertTriangle, CheckCircle, Clock, Filter } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -55,10 +55,10 @@ export function Dashboard() {
   const totalFileSize = files.reduce((acc, f) => acc + f.size, 0);
   const totalFileSizeMB = (totalFileSize / (1024 * 1024)).toFixed(1);
 
-  const warningSubjects = filteredSubjects.filter(s => {
-    const grade = calculateSubjectGrade(s, settings.gradingScale);
-    return grade && grade.points < 2.0;
-  });
+  const threshold = getWarningThreshold(settings);
+  const warningSubjects = filteredSubjects.filter(s => 
+    isSubjectAtWarningRisk(s, settings.gradingScale, threshold.points)
+  );
 
   const isAr = settings.language === 'ar';
 
@@ -272,18 +272,30 @@ export function Dashboard() {
             </div>
             <div className="flex gap-3 overflow-x-auto pb-2 flex-1 items-center hide-scrollbar">
               {warningSubjects.map(sub => {
-                const gradeInfo = calculateSubjectGrade(sub, settings.gradingScale);
+                let gradeInfo = calculateSubjectGrade(sub, settings.gradingScale);
+                if (!gradeInfo && sub.finalGradeLetter) {
+                  const rule = settings.gradingScale.find(r => r.letter === sub.finalGradeLetter);
+                  if (rule) {
+                    gradeInfo = {
+                      totalAchieved: 0,
+                      percentage: rule.minPercentage,
+                      letter: rule.letter,
+                      points: rule.points
+                    };
+                  }
+                }
                 return (
-                  <div key={sub.id} className="bg-white dark:bg-zinc-900 border border-rose-100 dark:border-rose-900/50 rounded-2xl p-3 min-w-[200px] flex items-center justify-between shadow-sm flex-shrink-0">
+                  <div key={sub.id} className="bg-white dark:bg-zinc-900 border border-rose-100 dark:border-rose-900/50 rounded-2xl p-3 min-w-[210px] flex items-center justify-between shadow-sm flex-shrink-0">
                     <div>
-                      <p className="font-bold text-sm text-zinc-800 dark:text-zinc-200 truncate max-w-[120px]">{sub.name}</p>
+                      <p className="font-bold text-sm text-zinc-800 dark:text-zinc-200 truncate max-w-[125px]">{sub.name}</p>
                       <p className="text-[10px] text-zinc-500">{sub.code}</p>
                     </div>
-                    <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold text-sm">
-                      {gradeInfo?.letter}
+                    <div className="flex flex-col items-center justify-center px-2 py-1 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400">
+                      <span className="font-black text-sm leading-tight">{gradeInfo?.letter || 'F'}</span>
+                      <span className="text-[9px] font-bold opacity-80">{(gradeInfo?.points || 0).toFixed(1)} GPA</span>
                     </div>
                   </div>
-                )
+                );
               })}
             </div>
           </div>

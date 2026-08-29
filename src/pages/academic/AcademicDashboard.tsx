@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
-import { calculateGPA, calculateSubjectGrade } from '../../lib/academic';
+import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWarningRisk } from '../../lib/academic';
 import { AlertTriangle, Filter, Library, Target, BookOpen, GraduationCap, TrendingDown, ArrowRight } from 'lucide-react';
 
 export function AcademicDashboard() {
@@ -43,10 +43,10 @@ export function AcademicDashboard() {
     return (grade && grade.totalAchieved > 0) || !!s.finalGradeLetter;
   });
 
-  const warningSubjects = filteredSubjects.filter(s => {
-    const grade = calculateSubjectGrade(s, settings.gradingScale);
-    return grade && grade.points < 2.0;
-  });
+  const threshold = getWarningThreshold(settings);
+  const warningSubjects = filteredSubjects.filter(s => 
+    isSubjectAtWarningRisk(s, settings.gradingScale, threshold.points)
+  );
 
   const isAr = settings.language === 'ar';
 
@@ -224,16 +224,30 @@ export function AcademicDashboard() {
           
           <div className="flex-1 space-y-4">
             {warningSubjects.slice(0, 3).map(subject => {
-              const gradeInfo = calculateSubjectGrade(subject, settings.gradingScale);
+              let gradeInfo = calculateSubjectGrade(subject, settings.gradingScale);
+              if (!gradeInfo && subject.finalGradeLetter) {
+                const rule = settings.gradingScale.find(r => r.letter === subject.finalGradeLetter);
+                if (rule) {
+                  gradeInfo = {
+                    totalAchieved: 0,
+                    percentage: rule.minPercentage,
+                    letter: rule.letter,
+                    points: rule.points
+                  };
+                }
+              }
               return (
                 <div key={subject.id} className="flex items-center gap-4 p-4 rounded-2xl bg-rose-50 dark:bg-rose-900/10 border border-rose-100 dark:border-rose-900/30">
-                  <div className="w-12 h-12 rounded-xl bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 flex items-center justify-center font-black text-lg flex-shrink-0">
-                    {gradeInfo?.letter || 'F'}
+                  <div className="flex flex-col items-center justify-center p-2 min-w-[52px] rounded-xl bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 flex-shrink-0">
+                    <span className="font-black text-lg leading-tight">{gradeInfo?.letter || 'F'}</span>
+                    <span className="text-[10px] font-bold opacity-80">{(gradeInfo?.points || 0).toFixed(1)} GPA</span>
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <h3 className="font-bold text-rose-900 dark:text-rose-200">{subject.name}</h3>
-                    <p className="text-sm text-rose-700 dark:text-rose-400/80 mt-0.5">
-                      {isAr ? 'تحتاج إلى تحسين في هذه المادة لتجنب التأثير السلبي على المعدل.' : 'Needs improvement to avoid negative GPA impact.'}
+                    <p className="text-xs text-rose-700 dark:text-rose-400/80 mt-0.5">
+                      {isAr 
+                        ? `معدل النقات (${(gradeInfo?.points || 0).toFixed(2)}) ضمن حد الإنذار (${threshold.points.toFixed(2)} - ${threshold.letter}).` 
+                        : `Grade points (${(gradeInfo?.points || 0).toFixed(2)}) is at or below warning threshold (${threshold.points.toFixed(2)} - ${threshold.letter}).`}
                     </p>
                   </div>
                 </div>
@@ -246,7 +260,11 @@ export function AcademicDashboard() {
                   <Target size={32} />
                 </div>
                 <p className="font-bold">{isAr ? 'أداؤك ممتاز!' : 'Excellent Performance!'}</p>
-                <p className="text-sm mt-1 opacity-80">{isAr ? 'لا توجد إنذارات أو مواد أقل من C.' : 'No warnings or subjects below C.'}</p>
+                <p className="text-sm mt-1 opacity-80">
+                  {isAr 
+                    ? `لا توجد إنذارات أو مواد بمعدل ${threshold.points.toFixed(2)} (${threshold.letter}) أو أقل.` 
+                    : `No warnings or subjects at or below ${threshold.letter} (${threshold.points.toFixed(2)}).`}
+                </p>
               </div>
             )}
           </div>

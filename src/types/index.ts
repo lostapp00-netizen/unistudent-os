@@ -102,6 +102,8 @@ export type UserSettings = {
   initialCumulativeGpa?: number | null;
   initialCompletedCreditHours?: number | null;
   setupMode?: 'initial_gpa' | 'manual_subjects';
+  warningGradeLetter?: string;
+  warningGpaPoints?: number;
 };
 
 
