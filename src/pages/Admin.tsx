@@ -152,9 +152,14 @@ export function Admin() {
     setAuthLoading(false);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setIsAuthenticated(false);
     sessionStorage.removeItem('unistudent_admin_auth');
+    try {
+      const { supabase } = await import('../lib/supabase');
+      await supabase.auth.signOut();
+    } catch {}
+    navigate('/auth');
   };
 
   // Copy helper
@@ -503,13 +508,6 @@ export function Admin() {
               <span>{isAr ? 'تسجيل الدخول للأدمن' : 'Authenticate'}</span>
             </button>
           </form>
-
-          <button
-            onClick={() => navigate('/')}
-            className="text-xs font-bold text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
-          >
-            {isAr ? 'العودة إلى لوحة الطالب الرئيسية' : 'Return to Student Dashboard'}
-          </button>
         </div>
       </div>
     );
@@ -602,24 +600,13 @@ export function Admin() {
         </nav>
 
         {/* Sidebar Footer */}
-        <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
-          <button
-            onClick={() => navigate('/')}
-            className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all"
-          >
-            <div className="flex items-center gap-2">
-              <LayoutDashboard size={16} />
-              <span>{isAr ? 'لوحة الطالب الرئيسية' : 'Student Dashboard'}</span>
-            </div>
-            <BackIcon size={14} />
-          </button>
-
+        <div className="p-4 border-t border-zinc-100 dark:border-zinc-800">
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all border border-rose-200/60 dark:border-rose-900/40"
+            className="w-full flex items-center justify-center gap-2 px-3.5 py-3 rounded-2xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50/70 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 transition-all border border-rose-200/60 dark:border-rose-900/40 shadow-xs"
           >
             <LogOut size={16} />
-            <span>{isAr ? 'تسجيل خروج الأدمن' : 'Logout Admin'}</span>
+            <span>{isAr ? 'تسجيل الخروج' : 'Logout'}</span>
           </button>
         </div>
       </aside>
@@ -1011,34 +998,53 @@ export function Admin() {
 
                     <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] text-zinc-400">{isAr ? 'تغيير الحالة:' : 'Change:'}</span>
-                        <button
-                          onClick={async () => {
-                            await db.updateFeedback(fb.id, { status: 'reviewed' });
-                            await fetchData();
-                          }}
-                          className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-zinc-700 dark:text-zinc-300 text-[11px] font-bold rounded-lg transition-all"
-                        >
-                          {isAr ? 'مراجعة' : 'Review'}
-                        </button>
-                        <button
-                          onClick={async () => {
-                            await db.updateFeedback(fb.id, { status: 'resolved' });
-                            await fetchData();
-                          }}
-                          className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[11px] font-bold rounded-lg transition-all"
-                        >
-                          {isAr ? 'تم الحل' : 'Resolve'}
-                        </button>
+                        <span className="text-[11px] text-zinc-400">{isAr ? 'تغيير الحالة:' : 'Status:'}</span>
+                        {fb.status !== 'reviewed' && (
+                          <button
+                            onClick={async () => {
+                              await db.updateFeedback(fb.id, { status: 'reviewed' });
+                              await fetchData();
+                            }}
+                            className="px-2.5 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-[11px] font-bold rounded-lg transition-all"
+                          >
+                            {isAr ? 'قيد المراجعة' : 'In Review'}
+                          </button>
+                        )}
+
+                        {fb.status !== 'resolved' && (
+                          <button
+                            onClick={async () => {
+                              await db.updateFeedback(fb.id, { status: 'resolved' });
+                              await fetchData();
+                            }}
+                            className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold rounded-lg border border-emerald-200 dark:border-emerald-800/40 transition-all"
+                          >
+                            {isAr ? 'تم الرد والحل' : 'Mark Resolved'}
+                          </button>
+                        )}
+
+                        {fb.status !== 'new' && (
+                          <button
+                            onClick={async () => {
+                              await db.updateFeedback(fb.id, { status: 'new' });
+                              await fetchData();
+                            }}
+                            className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 text-[11px] font-bold rounded-lg transition-all"
+                          >
+                            {isAr ? 'تعيين كـ جديد' : 'Set New'}
+                          </button>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2">
                         <a
-                          href={`mailto:${fb.userEmail}?subject=${encodeURIComponent(`رد على مقترحك: ${fb.title}`)}`}
-                          className="flex items-center gap-1 text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline"
+                          href={`mailto:${fb.userEmail}?subject=${encodeURIComponent(`رد إدارة UniStudent بخصوص: ${fb.title}`)}&body=${encodeURIComponent(`مرحباً ${fb.userName || 'طالبنا العزيز'}،\n\nبخصوص طلبك/شكوتك بعنوان "${fb.title}":\n\n`)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1 text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline bg-purple-50 dark:bg-purple-950/40 px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-800/40 transition-all"
                         >
                           <Mail size={12} />
-                          <span>{isAr ? 'مراسلة عبر الإيميل' : 'Reply via Email'}</span>
+                          <span>{isAr ? 'الرد عبر الإيميل' : 'Reply via Email'}</span>
                         </a>
 
                         <button

@@ -22,7 +22,7 @@ serve(async (req) => {
     const reqData = await req.json().catch(() => ({}));
     const targetEmail = reqData.targetEmail || "admin@gmail.com";
     const resendApiKey = Deno.env.get("RESEND_API_KEY") || reqData.resendApiKey || "re_test_backup";
-    const senderEmail = Deno.env.get("SENDER_EMAIL") || reqData.senderEmail || "onboarding@resend.dev";
+    const senderEmail = Deno.env.get("SENDER_EMAIL") || reqData.senderEmail || "lastimpro351@gmail.com";
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 

@@ -340,6 +340,29 @@ export function UserFeedbackSection() {
                   {item.content}
                 </p>
 
+                {/* Status Specific Notification Banner */}
+                {item.status === 'resolved' && (
+                  <div className="p-3 bg-emerald-50/90 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-emerald-800 dark:text-emerald-200 text-xs flex items-center gap-2.5 font-medium animate-in fade-in">
+                    <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                    <span>
+                      {isAr 
+                        ? `تم الرد على شكوتك/طلبك! برجاء مراجعة بريدك الإلكتروني (${item.userEmail || settings.email}) للاطلاع على التفاصيل والرد.`
+                        : `Your feedback has been resolved! Please check your email (${item.userEmail || settings.email}) for details.`}
+                    </span>
+                  </div>
+                )}
+
+                {item.status === 'reviewed' && (
+                  <div className="p-2.5 bg-blue-50/90 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/60 rounded-xl text-blue-800 dark:text-blue-200 text-xs flex items-center gap-2 font-medium">
+                    <Clock size={15} className="text-blue-600 shrink-0" />
+                    <span>
+                      {isAr 
+                        ? 'طلبك قيد المراجعة والمتابعة حالياً من قبل الإدارة.'
+                        : 'Your feedback is currently under review by the admin team.'}
+                    </span>
+                  </div>
+                )}
+
                 {/* Attachments view */}
                 {item.attachments && item.attachments.length > 0 && (
                   <div className="flex flex-wrap gap-2 pt-1">
