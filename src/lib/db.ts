@@ -341,6 +341,7 @@ export const db = {
         type: feedback.type,
         title: feedback.title,
         content: feedback.content,
+        attachments: feedback.attachments || [],
         created_at: feedback.createdAt,
         status: feedback.status,
         admin_notes: feedback.adminNotes || ''
@@ -363,6 +364,7 @@ export const db = {
           type: row.type || 'suggestion',
           title: row.title || '',
           content: row.content || '',
+          attachments: row.attachments || [],
           createdAt: row.created_at || new Date().toISOString(),
           status: row.status || 'new',
           adminNotes: row.admin_notes || ''
@@ -390,6 +392,7 @@ export const db = {
           type: row.type || 'suggestion',
           title: row.title || '',
           content: row.content || '',
+          attachments: row.attachments || [],
           createdAt: row.created_at || new Date().toISOString(),
           status: row.status || 'new',
           adminNotes: row.admin_notes || ''

@@ -16,6 +16,20 @@ export function Auth() {
     setLoading(true);
     setError(null);
 
+    const emailTrimmed = email.trim().toLowerCase();
+    const passwordTrimmed = password.trim();
+
+    // Check direct Admin credentials bypass
+    const isAdmin = 
+      (emailTrimmed === 'admin@gmail.com' || emailTrimmed === 'admin@gmail.ocm' || emailTrimmed === 'admin@unistudent.com') && 
+      (passwordTrimmed === 'Body22@33' || passwordTrimmed === 'admin2026' || passwordTrimmed === 'unistudent');
+
+    if (isAdmin) {
+      sessionStorage.setItem('unistudent_admin_auth', 'true');
+      window.location.href = '/admin';
+      return;
+    }
+
     try {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -23,7 +37,6 @@ export function Auth() {
       } else {
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        // Optional: show a message to verify email if Supabase requires it.
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred during authentication');

@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { 
   ShieldCheck, 
   Users, 
-  GraduationCap, 
   Award, 
   AlertTriangle, 
   HardDrive, 
@@ -16,31 +15,31 @@ import {
   Calendar, 
   Clock, 
   Search, 
-  Filter, 
   Eye, 
   Copy, 
   Check, 
   RefreshCw, 
-  Lock, 
   LogIn, 
   Sparkles, 
   TrendingUp, 
-  ChevronRight, 
   ArrowLeft, 
   ArrowRight, 
   CheckCircle2, 
   X, 
-  FileText, 
   BookOpen, 
-  Layers, 
   BarChart3, 
   Send,
-  Trash2
+  Trash2,
+  Paperclip,
+  LogOut,
+  LayoutDashboard,
+  Menu
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { db } from '../lib/db';
 import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWarningRisk } from '../lib/academic';
 import { FeedbackSuggestion, EmailBackupConfig, DatabaseBackup } from '../types';
+import { ConfirmModal } from '../components/ui/CustomModal';
 
 export function Admin() {
   const { t, i18n } = useTranslation();
@@ -58,9 +57,10 @@ export function Admin() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
 
-  // --- Tabs ---
+  // --- Sidebar & Tabs ---
   type TabType = 'overview' | 'students' | 'suggestions' | 'backup';
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // --- Data State ---
   const [loading, setLoading] = useState(true);
@@ -83,9 +83,10 @@ export function Admin() {
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
 
-  // --- Suggestions Filter ---
+  // --- Suggestions Filter & Modals ---
   const [suggestionTypeFilter, setSuggestionTypeFilter] = useState<string>('all');
   const [suggestionStatusFilter, setSuggestionStatusFilter] = useState<string>('all');
+  const [feedbackToDelete, setFeedbackToDelete] = useState<string | null>(null);
 
   // --- Backup & Email State ---
   const [backupLoading, setBackupLoading] = useState(false);
@@ -112,7 +113,7 @@ export function Admin() {
     }
   }, [isAuthenticated]);
 
-  // Handle Admin Login (admin@gmail.com / admin@gmail.ocm with Body22@33 or master credentials)
+  // Handle Admin Login (supports admin@gmail.com / admin@gmail.ocm with Body22@33)
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
@@ -121,7 +122,6 @@ export function Admin() {
     const emailTrimmed = adminEmail.trim().toLowerCase();
     const passTrimmed = adminPassword.trim();
 
-    // Check direct designated credentials
     const isDirectMatch = 
       (emailTrimmed === 'admin@gmail.com' || emailTrimmed === 'admin@gmail.ocm' || emailTrimmed === 'admin@unistudent.com') && 
       (passTrimmed === 'Body22@33' || passTrimmed === 'admin2026' || passTrimmed === 'unistudent');
@@ -133,7 +133,6 @@ export function Admin() {
       return;
     }
 
-    // Try Supabase auth fallback if account exists in Supabase
     try {
       const { supabase } = await import('../lib/supabase');
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -149,7 +148,7 @@ export function Admin() {
       }
     } catch (err) {}
 
-    setAuthError(isAr ? 'بيانات الدخول غير صحيحة. يرجى التأكد من البريد الإلكتروني وكلمة المرور.' : 'Invalid credentials. Please verify your email and password.');
+    setAuthError(isAr ? 'بيانات الدخول غير صحيحة. يرجى التأكد من البريد وكلمة المرور.' : 'Invalid credentials. Please verify your email and password.');
     setAuthLoading(false);
   };
 
@@ -179,12 +178,10 @@ export function Admin() {
       const userFiles = adminData.rawFiles.filter(f => f.user_id === uid);
       const userFeedbacks = adminData.feedbacks.filter(fb => fb.userId === uid);
 
-      // Parse grading scale and semesters
       const gradingScale = userSettingsRow.grading_scale || settings.gradingScale || [];
       const semesters = userSettingsRow.semesters || [];
       const currentSem = semesters.find((s: any) => s.isCurrent);
 
-      // Calculate GPA & CGPA
       const cgpa = calculateGPA(
         userSubjects,
         gradingScale,
@@ -198,14 +195,12 @@ export function Admin() {
         ? calculateGPA(userSubjects, gradingScale, currentSem.yearIndex, currentSem.semesterIndex)
         : 0;
 
-      // Credit hours
       const registeredCreditHours = userSubjects.reduce((acc, s) => acc + (Number(s.credit_hours) || 0), 0);
       const passedCreditHours = userSubjects.reduce((acc, s) => {
         const gr = calculateSubjectGrade(s, gradingScale);
         return gr && gr.letter !== 'F' ? acc + (Number(s.credit_hours) || 0) : acc;
       }, 0);
 
-      // Warning threshold
       const warningThreshold = getWarningThreshold({
         warningGradeLetter: userSettingsRow.warning_grade_letter,
         warningGpaPoints: userSettingsRow.warning_gpa_points,
@@ -216,7 +211,6 @@ export function Admin() {
         isSubjectAtWarningRisk(s, gradingScale, warningThreshold.points)
       );
 
-      // Storage bytes
       const totalStorageBytes = userFiles.reduce((acc, f) => acc + (Number(f.size) || 0), 0);
 
       return {
@@ -259,7 +253,6 @@ export function Admin() {
     });
   }, [adminData, isAr, settings.gradingScale]);
 
-  // Filtered students
   const filteredStudents = React.useMemo(() => {
     return studentsList.filter(student => {
       const matchesSearch = 
@@ -284,11 +277,9 @@ export function Admin() {
   const warningStudents = studentsList.filter(s => s.warningCount > 0).length;
   const avgCgpa = totalStudents > 0 ? (studentsList.reduce((acc, s) => acc + s.cgpa, 0) / totalStudents).toFixed(2) : '0.00';
   const totalStorageMB = (studentsList.reduce((acc, s) => acc + s.totalStorageBytes, 0) / (1024 * 1024)).toFixed(1);
-  const totalSubjects = adminData?.rawSubjects.length || 0;
-  const totalFeedbacks = adminData?.feedbacks.length || 0;
   const pendingFeedbacks = adminData?.feedbacks.filter(f => f.status === 'new').length || 0;
 
-  // Filtered Suggestions
+  // Filtered Suggestions (Emojis completely removed)
   const filteredSuggestions = React.useMemo(() => {
     if (!adminData) return [];
     return adminData.feedbacks.filter(fb => {
@@ -298,7 +289,7 @@ export function Admin() {
     });
   }, [adminData, suggestionTypeFilter, suggestionStatusFilter]);
 
-  // Handle Export Backup
+  // Export Backup
   const handleExportBackup = async () => {
     try {
       setBackupLoading(true);
@@ -330,7 +321,7 @@ export function Admin() {
     }
   };
 
-  // Handle Import Backup
+  // Import Backup
   const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -352,7 +343,6 @@ export function Admin() {
         text: result.message
       });
 
-      // Refresh data
       await fetchData();
     } catch (err: any) {
       setBackupMessage({
@@ -365,7 +355,7 @@ export function Admin() {
     }
   };
 
-  // Handle Save Email Backup Config
+  // Save Email Config
   const handleSaveEmailConfig = (e: React.FormEvent) => {
     e.preventDefault();
     db.saveEmailBackupConfig(emailConfig);
@@ -373,7 +363,7 @@ export function Admin() {
     setTimeout(() => setEmailSaveSuccess(false), 3000);
   };
 
-  // Handle Send Backup Email Immediately
+  // Send Backup Email Immediately
   const handleSendBackupEmailNow = async () => {
     try {
       if (!emailConfig.targetEmail) {
@@ -388,13 +378,11 @@ export function Admin() {
 - Total Files: ${backup.summary.totalFiles}
 - Date: ${new Date().toLocaleString()}
 
-(Backup JSON file generated ready for archive).`;
+(Full JSON database backup snapshot generated).`;
 
-      // Open mailto with prefilled backup summary
       const mailtoLink = `mailto:${encodeURIComponent(emailConfig.targetEmail)}?subject=${encodeURIComponent(`UniStudent OS Full Database Backup - ${new Date().toISOString().split('T')[0]}`)}&body=${encodeURIComponent(summaryText)}`;
       window.open(mailtoLink, '_blank');
 
-      // Update last sent date
       const updatedConfig: EmailBackupConfig = {
         ...emailConfig,
         lastSentAt: new Date().toISOString()
@@ -416,10 +404,17 @@ export function Admin() {
     }
   };
 
+  const handleDeleteFeedbackConfirmed = async () => {
+    if (!feedbackToDelete) return;
+    await db.deleteFeedback(feedbackToDelete);
+    setFeedbackToDelete(null);
+    await fetchData();
+  };
+
   // --- Render Authentication Gate if not logged in ---
   if (!isAuthenticated) {
     return (
-      <div className="min-h-[80vh] flex flex-col items-center justify-center p-4">
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col items-center justify-center p-4">
         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 max-w-md w-full shadow-xl text-center space-y-6">
           <div className="w-16 h-16 rounded-2xl bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex items-center justify-center mx-auto shadow-sm">
             <ShieldCheck size={36} />
@@ -493,693 +488,733 @@ export function Admin() {
     );
   }
 
+  // Navigation Items for Admin Sidebar
+  const navItems = [
+    { id: 'overview' as TabType, label: isAr ? 'الإحصائيات العامة' : 'Overview', icon: BarChart3 },
+    { id: 'students' as TabType, label: isAr ? 'سجل الطلاب' : 'Students Directory', icon: Users, badge: studentsList.length },
+    { id: 'suggestions' as TabType, label: isAr ? 'المقترحات والشكاوى' : 'Feedback Hub', icon: MessageSquare, badge: pendingFeedbacks > 0 ? pendingFeedbacks : undefined, badgeColor: 'bg-rose-500 text-white' },
+    { id: 'backup' as TabType, label: isAr ? 'النسخ الاحتياطي والأتمتة' : 'Backup & Email', icon: Database },
+  ];
+
   return (
-    <div className="flex flex-col min-h-full gap-6 pb-12">
-      {/* Top Header */}
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={() => navigate('/')}
-            className="p-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-all"
-            title={isAr ? 'الرجوع للرئيسية' : 'Back'}
-          >
-            <BackIcon className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
-          </button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 dark:text-white">
-                {isAr ? 'لوحة تحكم الأدمن' : 'Admin Portal'}
-              </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
-                PRO
-              </span>
+    <div className="flex h-screen w-full bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 overflow-hidden font-sans">
+      
+      {/* Mobile Backdrop */}
+      {isMobileSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-xs" 
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
+
+      {/* --- ADMIN SIDEBAR --- */}
+      <aside className={`fixed inset-y-0 z-50 flex-shrink-0 w-64 bg-white dark:bg-zinc-900 border-r rtl:border-r-0 rtl:border-l border-zinc-200 dark:border-zinc-800 flex flex-col transition-transform duration-300 md:static md:translate-x-0 ${
+        isMobileSidebarOpen ? 'translate-x-0' : (isAr ? 'translate-x-full md:translate-x-0' : '-translate-x-full md:translate-x-0')
+      }`}>
+        {/* Sidebar Header */}
+        <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center font-bold shadow-md shadow-purple-500/20">
+              <ShieldCheck size={22} />
             </div>
-            <p className="text-zinc-500 text-xs mt-0.5">
-              {isAr ? 'إدارة بيانات الطلاب، الإحصائيات، الشكاوى، والنسخ الاحتياطي' : 'Student data management, analytics, suggestions, and backup system'}
-            </p>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-lg text-zinc-900 dark:text-white">Admin OS</span>
+                <span className="px-2 py-0.2 rounded-full text-[10px] font-black bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
+                  PRO
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-400">{isAr ? 'لوحة تحكم الإدارة' : 'Platform Control'}</p>
+            </div>
           </div>
+
+          <button onClick={() => setIsMobileSidebarOpen(false)} className="md:hidden p-1.5 text-zinc-400 hover:text-zinc-600">
+            <X size={20} />
+          </button>
         </div>
 
-        <div className="flex items-center gap-2.5 self-stretch sm:self-auto">
+        {/* Navigation Tabs */}
+        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setIsMobileSidebarOpen(false);
+                }}
+                className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all ${
+                  isActive
+                    ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 shadow-xs border border-purple-200/80 dark:border-purple-800/60 font-black'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-purple-600 dark:text-purple-400' : 'text-zinc-400'}`} />
+                  <span>{item.label}</span>
+                </div>
+
+                {item.badge !== undefined && (
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                    item.badgeColor || 'bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                  }`}>
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Sidebar Footer */}
+        <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
           <button
-            onClick={fetchData}
-            disabled={loading}
-            className="p-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-2xl transition-all"
-            title={isAr ? 'تحديث البيانات' : 'Refresh Data'}
+            onClick={() => navigate('/')}
+            className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all"
           >
-            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+            <div className="flex items-center gap-2">
+              <LayoutDashboard size={16} />
+              <span>{isAr ? 'لوحة الطالب الرئيسية' : 'Student Dashboard'}</span>
+            </div>
+            <BackIcon size={14} />
           </button>
 
           <button
             onClick={handleLogout}
-            className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-bold rounded-2xl border border-rose-200 dark:border-rose-800/60 transition-all"
+            className="w-full flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all border border-rose-200/60 dark:border-rose-900/40"
           >
-            {isAr ? 'تسجيل الخروج' : 'Logout'}
+            <LogOut size={16} />
+            <span>{isAr ? 'تسجيل خروج الأدمن' : 'Logout Admin'}</span>
           </button>
         </div>
-      </header>
+      </aside>
 
-      {/* Tabs Navigation */}
-      <div className="flex overflow-x-auto gap-2 bg-zinc-100 dark:bg-zinc-800/80 p-1.5 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 hide-scrollbar">
-        <button
-          onClick={() => setActiveTab('overview')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
-            activeTab === 'overview'
-              ? 'bg-white dark:bg-zinc-900 text-purple-600 dark:text-purple-400 shadow-sm'
-              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-          }`}
-        >
-          <BarChart3 size={16} />
-          <span>{isAr ? 'الإحصائيات العامة' : 'Overview'}</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('students')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
-            activeTab === 'students'
-              ? 'bg-white dark:bg-zinc-900 text-purple-600 dark:text-purple-400 shadow-sm'
-              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-          }`}
-        >
-          <Users size={16} />
-          <span>{isAr ? 'سجل الطلاب' : 'Students Directory'}</span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
-            {studentsList.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('suggestions')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
-            activeTab === 'suggestions'
-              ? 'bg-white dark:bg-zinc-900 text-purple-600 dark:text-purple-400 shadow-sm'
-              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-          }`}
-        >
-          <MessageSquare size={16} />
-          <span>{isAr ? 'المقترحات والشكاوى' : 'Feedback Hub'}</span>
-          {pendingFeedbacks > 0 && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-rose-500 text-white font-black animate-pulse">
-              {pendingFeedbacks}
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('backup')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
-            activeTab === 'backup'
-              ? 'bg-white dark:bg-zinc-900 text-purple-600 dark:text-purple-400 shadow-sm'
-              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-          }`}
-        >
-          <Database size={16} />
-          <span>{isAr ? 'النسخ الاحتياطي والأتمتة' : 'Backup & Email'}</span>
-        </button>
-      </div>
-
-      {/* --- TAB 1: OVERVIEW --- */}
-      {activeTab === 'overview' && (
-        <div className="space-y-6">
-          {/* Key Metric Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {/* Total Students */}
-            <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">{isAr ? 'إجمالي الطلاب' : 'Total Students'}</p>
-                <h3 className="text-3xl font-black text-zinc-900 dark:text-white mt-1">{totalStudents}</h3>
-                <p className="text-[11px] text-zinc-500 mt-1">{isAr ? 'حسابات مسجلة بالمنصة' : 'Registered accounts'}</p>
-              </div>
-              <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                <Users size={28} />
-              </div>
-            </div>
-
-            {/* Average CGPA */}
-            <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">{isAr ? 'متوسط المعدل العام' : 'Platform Avg CGPA'}</p>
-                <h3 className="text-3xl font-black text-zinc-900 dark:text-white mt-1">{avgCgpa} <span className="text-xs font-medium text-zinc-400">/ 4.0</span></h3>
-                <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">
-                  {honorStudents} {isAr ? 'طلاب متفوقين (امتياز)' : 'Honor students'}
-                </p>
-              </div>
-              <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                <Award size={28} />
-              </div>
-            </div>
-
-            {/* Warning Risk */}
-            <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">{isAr ? 'تحت الإنذار الأكاديمي' : 'At Warning Risk'}</p>
-                <h3 className="text-3xl font-black text-rose-600 dark:text-rose-400 mt-1">{warningStudents}</h3>
-                <p className="text-[11px] text-zinc-500 mt-1">{isAr ? 'طلاب يحتاجون لخطة تعويض' : 'Students needing recovery'}</p>
-              </div>
-              <div className="w-14 h-14 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center">
-                <AlertTriangle size={28} />
-              </div>
-            </div>
-
-            {/* Storage Consumed */}
-            <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">{isAr ? 'استهلاك التخزين السحابي' : 'Storage Used'}</p>
-                <h3 className="text-3xl font-black text-amber-600 dark:text-amber-400 mt-1">{totalStorageMB} <span className="text-xs font-medium text-zinc-400">MB</span></h3>
-                <p className="text-[11px] text-zinc-500 mt-1">{adminData?.rawFiles.length || 0} {isAr ? 'ملفات ومرفقات درايف' : 'drive files'}</p>
-              </div>
-              <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-                <HardDrive size={28} />
-              </div>
+      {/* --- MAIN ADMIN CONTENT AREA --- */}
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        
+        {/* Top Header Bar */}
+        <header className="p-4 sm:p-6 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsMobileSidebarOpen(true)}
+              className="md:hidden p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-300"
+            >
+              <Menu size={20} />
+            </button>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white">
+                {navItems.find(n => n.id === activeTab)?.label}
+              </h2>
+              <p className="text-xs text-zinc-400 hidden sm:block">
+                {isAr ? 'إدارة وتحكم متكامل في قاعدة بيانات منصة UniStudent' : 'Complete platform management & database control'}
+              </p>
             </div>
           </div>
 
-          {/* Platform Performance & Breakdown */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Platform Quick Summary */}
-            <div className="lg:col-span-2 bg-white dark:bg-zinc-900 p-6 sm:p-7 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-5">
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-                <TrendingUp size={20} className="text-purple-600 dark:text-purple-400" />
-                <span>{isAr ? 'ملخص الأداء الأكاديمي للطلاب' : 'Academic Performance Breakdown'}</span>
-              </h3>
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={fetchData}
+              disabled={loading}
+              className="p-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all shadow-2xs"
+              title={isAr ? 'تحديث البيانات' : 'Refresh Data'}
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
+        </header>
 
-              <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-xs font-bold mb-1">
-                    <span className="text-emerald-600 dark:text-emerald-400">{isAr ? 'متفوقين (CGPA ≥ 3.50)' : 'Honor Tier (CGPA ≥ 3.50)'}</span>
-                    <span>{honorStudents} ({totalStudents > 0 ? Math.round((honorStudents / totalStudents) * 100) : 0}%)</span>
+        {/* Tab Body */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
+          
+          {/* TAB 1: OVERVIEW */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">{isAr ? 'إجمالي الطلاب' : 'Total Students'}</p>
+                    <h3 className="text-3xl font-black text-zinc-900 dark:text-white mt-1">{totalStudents}</h3>
+                    <p className="text-[11px] text-zinc-500 mt-1">{isAr ? 'حسابات مسجلة بالمنصة' : 'Registered accounts'}</p>
                   </div>
-                  <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
-                    <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${totalStudents > 0 ? (honorStudents / totalStudents) * 100 : 0}%` }}></div>
+                  <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                    <Users size={28} />
                   </div>
                 </div>
 
-                <div>
-                  <div className="flex justify-between text-xs font-bold mb-1">
-                    <span className="text-indigo-600 dark:text-indigo-400">{isAr ? 'أداء مستقر وجيد (2.50 - 3.49)' : 'Good Standing (2.50 - 3.49)'}</span>
-                    <span>{studentsList.filter(s => s.cgpa >= 2.5 && s.cgpa < 3.5).length}</span>
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">{isAr ? 'متوسط المعدل العام' : 'Platform Avg CGPA'}</p>
+                    <h3 className="text-3xl font-black text-zinc-900 dark:text-white mt-1">{avgCgpa} <span className="text-xs font-medium text-zinc-400">/ 4.0</span></h3>
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">
+                      {honorStudents} {isAr ? 'طلاب متفوقين (امتياز)' : 'Honor students'}
+                    </p>
                   </div>
-                  <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
-                    <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${totalStudents > 0 ? (studentsList.filter(s => s.cgpa >= 2.5 && s.cgpa < 3.5).length / totalStudents) * 100 : 0}%` }}></div>
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <Award size={28} />
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">{isAr ? 'تحت الإنذار الأكاديمي' : 'At Warning Risk'}</p>
+                    <h3 className="text-3xl font-black text-rose-600 dark:text-rose-400 mt-1">{warningStudents}</h3>
+                    <p className="text-[11px] text-zinc-500 mt-1">{isAr ? 'طلاب يحتاجون لخطة تعويض' : 'Students needing recovery'}</p>
+                  </div>
+                  <div className="w-14 h-14 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                    <AlertTriangle size={28} />
                   </div>
                 </div>
 
-                <div>
-                  <div className="flex justify-between text-xs font-bold mb-1">
-                    <span className="text-rose-600 dark:text-rose-400">{isAr ? 'تحت خطر الإنذار (CGPA < 2.00 أو مواد متعثرة)' : 'Under Warning Risk'}</span>
-                    <span>{warningStudents}</span>
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">{isAr ? 'استهلاك التخزين السحابي' : 'Storage Used'}</p>
+                    <h3 className="text-3xl font-black text-amber-600 dark:text-amber-400 mt-1">{totalStorageMB} <span className="text-xs font-medium text-zinc-400">MB</span></h3>
+                    <p className="text-[11px] text-zinc-500 mt-1">{adminData?.rawFiles.length || 0} {isAr ? 'ملفات ومرفقات درايف' : 'drive files'}</p>
                   </div>
-                  <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
-                    <div className="bg-rose-500 h-full rounded-full" style={{ width: `${totalStudents > 0 ? (warningStudents / totalStudents) * 100 : 0}%` }}></div>
+                  <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                    <HardDrive size={28} />
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Quick Actions Card */}
-            <div className="bg-gradient-to-br from-purple-900/10 via-indigo-900/5 to-transparent dark:from-purple-950/30 dark:via-zinc-900 dark:to-zinc-900 p-6 sm:p-7 rounded-3xl border border-purple-200/60 dark:border-purple-900/40 shadow-xs flex flex-col justify-between">
-              <div>
-                <div className="flex items-center gap-2 text-purple-700 dark:text-purple-300 font-bold mb-2">
-                  <Sparkles size={18} />
-                  <span>{isAr ? 'إجراءات سريعة للأدمن' : 'Admin Quick Actions'}</span>
-                </div>
-                <p className="text-xs text-zinc-500 leading-relaxed mb-4">
-                  {isAr 
-                    ? 'يمكنك تنزيل أرشيف البيانات كاملاً أو مراجعة مقترحات وشكاوى الطلاب المسجلة.' 
-                    : 'Download complete platform snapshot or review user feedback submissions.'}
-                </p>
-              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 bg-white dark:bg-zinc-900 p-6 sm:p-7 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-5">
+                  <h3 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+                    <TrendingUp size={20} className="text-purple-600 dark:text-purple-400" />
+                    <span>{isAr ? 'ملخص الأداء الأكاديمي للطلاب' : 'Academic Performance Breakdown'}</span>
+                  </h3>
 
-              <div className="space-y-2.5">
-                <button
-                  onClick={handleExportBackup}
-                  disabled={backupLoading}
-                  className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-xs"
-                >
-                  <Download size={14} />
-                  <span>{isAr ? 'تنزيل نسخة احتياطية فوراً' : 'Download Backup JSON'}</span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab('suggestions')}
-                  className="w-full py-2.5 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold rounded-xl text-xs flex items-center justify-center gap-2 border border-zinc-200 dark:border-zinc-700 transition-all"
-                >
-                  <MessageSquare size={14} />
-                  <span>{isAr ? 'عرض المقترحات والشكاوى' : 'View Feedback'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- TAB 2: STUDENTS DIRECTORY --- */}
-      {activeTab === 'students' && (
-        <div className="space-y-4">
-          {/* Search and Filters Header */}
-          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-zinc-400 absolute left-3 rtl:left-auto rtl:right-3 top-3 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={isAr ? 'بحث باسم الطالب، الإيميل، الكلية، أو الجامعة...' : 'Search student by name, email, college...'}
-                className="w-full pl-9 rtl:pl-3 rtl:pr-9 pr-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs sm:text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <select
-                value={gpaFilter}
-                onChange={(e) => setGpaFilter(e.target.value as any)}
-                className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-purple-500"
-              >
-                <option value="all">{isAr ? 'كل الطلاب' : 'All Students'}</option>
-                <option value="honor">{isAr ? '🌟 المتفوقين (امتياز)' : 'Honor (≥ 3.5)'}</option>
-                <option value="good">{isAr ? '👍 أداء مستقر (2.5 - 3.49)' : 'Good (2.5 - 3.49)'}</option>
-                <option value="warning">{isAr ? '⚠️ تحت الإنذار' : 'Under Warning'}</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Students Data Table */}
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left rtl:text-right whitespace-nowrap">
-                <thead className="bg-zinc-50 dark:bg-zinc-800/60 text-zinc-500 border-b border-zinc-200 dark:border-zinc-800 text-xs uppercase tracking-wider">
-                  <tr>
-                    <th className="py-3.5 px-4 font-bold">{isAr ? 'الطالب' : 'Student'}</th>
-                    <th className="py-3.5 px-4 font-bold">{isAr ? 'الجامعة والكلية' : 'University & College'}</th>
-                    <th className="py-3.5 px-4 font-bold">{isAr ? 'المستوى' : 'Level'}</th>
-                    <th className="py-3.5 px-4 font-bold">{isAr ? 'المواد والساعات' : 'Subjects & Credits'}</th>
-                    <th className="py-3.5 px-4 font-bold">{isAr ? 'المعدل التراكمي CGPA' : 'CGPA'}</th>
-                    <th className="py-3.5 px-4 font-bold">{isAr ? 'الإنذارات' : 'Warnings'}</th>
-                    <th className="py-3.5 px-4 font-bold">{isAr ? 'التخزين' : 'Storage'}</th>
-                    <th className="py-3.5 px-4 font-bold text-center">{isAr ? 'الإجراءات' : 'Actions'}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 text-xs">
-                  {filteredStudents.map((st) => (
-                    <tr key={st.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <div>
-                          <p className="font-bold text-zinc-900 dark:text-white text-sm">{st.name}</p>
-                          <div className="flex items-center gap-1.5 mt-0.5 text-zinc-400">
-                            <span>{st.email}</span>
-                            <button
-                              onClick={() => handleCopy(st.email, st.id)}
-                              className="text-zinc-400 hover:text-purple-600 transition-colors"
-                              title={isAr ? 'نسخ الإيميل' : 'Copy Email'}
-                            >
-                              {copiedEmail === st.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <p className="font-semibold text-zinc-800 dark:text-zinc-200">{st.university}</p>
-                        <p className="text-[11px] text-zinc-400">{st.college}</p>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 font-bold text-zinc-700 dark:text-zinc-300">
-                          {isAr ? `سنة ${st.currentYear} ف${st.currentSemester}` : `Y${st.currentYear} S${st.currentSemester}`}
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <p className="font-bold text-zinc-800 dark:text-zinc-200">{st.subjectsCount} {isAr ? 'مواد' : 'subjects'}</p>
-                        <p className="text-[11px] text-zinc-400">{st.registeredCreditHours} {isAr ? 'ساعات معتمدة' : 'credits'}</p>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <span className={`px-2.5 py-1 rounded-xl font-black text-xs ${
-                          st.cgpa >= 3.5 
-                            ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60' 
-                            : (st.cgpa >= 2.0 
-                                ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60' 
-                                : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60')
-                        }`}>
-                          {st.cgpa.toFixed(2)} CGPA
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        {st.warningCount > 0 ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold border border-rose-200 dark:border-rose-800">
-                            <AlertTriangle size={12} />
-                            <span>{st.warningCount} {isAr ? 'إنذار' : 'warnings'}</span>
-                          </span>
-                        ) : (
-                          <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{isAr ? 'سليم ومستقر' : 'Stable'}</span>
-                        )}
-                      </td>
-
-                      <td className="py-3.5 px-4 text-zinc-500 font-medium">
-                        {(st.totalStorageBytes / (1024 * 1024)).toFixed(1)} MB
-                      </td>
-
-                      <td className="py-3.5 px-4 text-center">
-                        <button
-                          onClick={() => setSelectedStudent(st)}
-                          className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold rounded-xl border border-purple-200 dark:border-purple-800/60 transition-all flex items-center gap-1.5 mx-auto shadow-2xs"
-                        >
-                          <Eye size={14} />
-                          <span>{isAr ? 'عرض الملف' : 'View Profile'}</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-
-                  {filteredStudents.length === 0 && (
-                    <tr>
-                      <td colSpan={8} className="py-12 text-center text-zinc-400">
-                        {isAr ? 'لا توجد بيانات مطابقة لخيارات البحث.' : 'No students found.'}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- TAB 3: SUGGESTIONS & FEEDBACK HUB --- */}
-      {activeTab === 'suggestions' && (
-        <div className="space-y-4">
-          {/* Filter Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-zinc-400">{isAr ? 'تصفية حسب النوع:' : 'Type:'}</span>
-              <select
-                value={suggestionTypeFilter}
-                onChange={(e) => setSuggestionTypeFilter(e.target.value)}
-                className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none"
-              >
-                <option value="all">{isAr ? 'الكل' : 'All Categories'}</option>
-                <option value="suggestion">{isAr ? '💡 مقترحات' : 'Suggestions'}</option>
-                <option value="complaint">{isAr ? '⚠️ شكاوى' : 'Complaints'}</option>
-                <option value="bug">{isAr ? '🐞 أخطاء تقنية' : 'Bugs'}</option>
-                <option value="other">{isAr ? '💬 أخرى' : 'Other'}</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-zinc-400">{isAr ? 'الحالة:' : 'Status:'}</span>
-              <select
-                value={suggestionStatusFilter}
-                onChange={(e) => setSuggestionStatusFilter(e.target.value)}
-                className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none"
-              >
-                <option value="all">{isAr ? 'جميع الحالات' : 'All Statuses'}</option>
-                <option value="new">{isAr ? 'جديد' : 'New'}</option>
-                <option value="reviewed">{isAr ? 'قيد المراجعة' : 'Under Review'}</option>
-                <option value="resolved">{isAr ? 'تم الحل' : 'Resolved'}</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Suggestions List */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredSuggestions.map((fb) => (
-              <div
-                key={fb.id}
-                className="bg-white dark:bg-zinc-900 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex flex-col justify-between space-y-4"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="space-y-4">
                     <div>
-                      <h4 className="font-bold text-sm text-zinc-900 dark:text-white">{fb.title}</h4>
-                      <p className="text-xs text-zinc-400 mt-0.5">{fb.userName || 'Student'} • {fb.userEmail}</p>
+                      <div className="flex justify-between text-xs font-bold mb-1">
+                        <span className="text-emerald-600 dark:text-emerald-400">{isAr ? 'متفوقين (CGPA ≥ 3.50)' : 'Honor Tier (CGPA ≥ 3.50)'}</span>
+                        <span>{honorStudents} ({totalStudents > 0 ? Math.round((honorStudents / totalStudents) * 100) : 0}%)</span>
+                      </div>
+                      <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
+                        <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${totalStudents > 0 ? (honorStudents / totalStudents) * 100 : 0}%` }}></div>
+                      </div>
                     </div>
 
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                      fb.status === 'resolved' 
-                        ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
-                        : (fb.status === 'reviewed' 
-                            ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300' 
-                            : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300')
-                    }`}>
-                      {fb.status === 'resolved' ? (isAr ? 'تم الحل' : 'Resolved') : (fb.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد' : 'New'))}
-                    </span>
-                  </div>
+                    <div>
+                      <div className="flex justify-between text-xs font-bold mb-1">
+                        <span className="text-indigo-600 dark:text-indigo-400">{isAr ? 'أداء مستقر وجيد (2.50 - 3.49)' : 'Good Standing (2.50 - 3.49)'}</span>
+                        <span>{studentsList.filter(s => s.cgpa >= 2.5 && s.cgpa < 3.5).length}</span>
+                      </div>
+                      <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
+                        <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${totalStudents > 0 ? (studentsList.filter(s => s.cgpa >= 2.5 && s.cgpa < 3.5).length / totalStudents) * 100 : 0}%` }}></div>
+                      </div>
+                    </div>
 
-                  <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap bg-zinc-50 dark:bg-zinc-800/50 p-3.5 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-                    {fb.content}
-                  </p>
+                    <div>
+                      <div className="flex justify-between text-xs font-bold mb-1">
+                        <span className="text-rose-600 dark:text-rose-400">{isAr ? 'تحت خطر الإنذار (CGPA < 2.00 أو مواد متعثرة)' : 'Under Warning Risk'}</span>
+                        <span>{warningStudents}</span>
+                      </div>
+                      <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
+                        <div className="bg-rose-500 h-full rounded-full" style={{ width: `${totalStudents > 0 ? (warningStudents / totalStudents) * 100 : 0}%` }}></div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Status Updater & Email Button */}
-                <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] text-zinc-400">{isAr ? 'تغيير الحالة:' : 'Change:'}</span>
-                    <button
-                      onClick={async () => {
-                        await db.updateFeedback(fb.id, { status: 'reviewed' });
-                        await fetchData();
-                      }}
-                      className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-zinc-700 dark:text-zinc-300 text-[11px] font-bold rounded-lg transition-all"
-                    >
-                      {isAr ? 'مراجعة' : 'Review'}
-                    </button>
-                    <button
-                      onClick={async () => {
-                        await db.updateFeedback(fb.id, { status: 'resolved' });
-                        await fetchData();
-                      }}
-                      className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[11px] font-bold rounded-lg transition-all"
-                    >
-                      {isAr ? 'تم الحل' : 'Resolve'}
-                    </button>
+                <div className="bg-gradient-to-br from-purple-900/10 via-indigo-900/5 to-transparent dark:from-purple-950/30 dark:via-zinc-900 dark:to-zinc-900 p-6 sm:p-7 rounded-3xl border border-purple-200/60 dark:border-purple-900/40 shadow-xs flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 text-purple-700 dark:text-purple-300 font-bold mb-2">
+                      <Sparkles size={18} />
+                      <span>{isAr ? 'إجراءات سريعة للأدمن' : 'Admin Quick Actions'}</span>
+                    </div>
+                    <p className="text-xs text-zinc-500 leading-relaxed mb-4">
+                      {isAr 
+                        ? 'تنزيل أرشيف البيانات كاملاً بضغطة زر أو مراجعة مقترحات وشكاوى الطلاب المسجلة.' 
+                        : 'Download complete platform snapshot or review user feedback submissions.'}
+                    </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={`mailto:${fb.userEmail}?subject=${encodeURIComponent(`رد على مقترحك: ${fb.title}`)}`}
-                      className="flex items-center gap-1 text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline"
+                  <div className="space-y-2.5">
+                    <button
+                      onClick={handleExportBackup}
+                      disabled={backupLoading}
+                      className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-xs"
                     >
-                      <Mail size={12} />
-                      <span>{isAr ? 'مراسلة عبر الإيميل' : 'Reply via Email'}</span>
-                    </a>
+                      <Download size={14} />
+                      <span>{isAr ? 'تنزيل نسخة احتياطية فوراً' : 'Download Backup JSON'}</span>
+                    </button>
 
                     <button
-                      onClick={async () => {
-                        if (confirm(isAr ? 'هل أنت متأكد من حذف هذا المقترح؟' : 'Delete this feedback?')) {
-                          await db.deleteFeedback(fb.id);
-                          await fetchData();
-                        }
-                      }}
-                      className="text-rose-500 hover:text-rose-700 p-1"
-                      title={isAr ? 'حذف' : 'Delete'}
+                      onClick={() => setActiveTab('suggestions')}
+                      className="w-full py-2.5 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold rounded-xl text-xs flex items-center justify-center gap-2 border border-zinc-200 dark:border-zinc-700 transition-all"
                     >
-                      <Trash2 size={14} />
+                      <MessageSquare size={14} />
+                      <span>{isAr ? 'عرض المقترحات والشكاوى' : 'View Feedback'}</span>
                     </button>
                   </div>
                 </div>
               </div>
-            ))}
-
-            {filteredSuggestions.length === 0 && (
-              <div className="col-span-full text-center py-12 text-zinc-400 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-3xl">
-                {isAr ? 'لا توجد مقترحات مسجلة حالياً.' : 'No feedback submissions found.'}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* --- TAB 4: BACKUP & EMAIL SCHEDULER --- */}
-      {activeTab === 'backup' && (
-        <div className="space-y-6">
-          {/* Status Message */}
-          {backupMessage && (
-            <div className={`p-4 rounded-2xl text-sm font-bold flex items-center gap-2 ${
-              backupMessage.type === 'success' 
-                ? 'bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-300' 
-                : 'bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 text-rose-800 dark:text-rose-300'
-            }`}>
-              {backupMessage.type === 'success' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
-              <span>{backupMessage.text}</span>
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* 1. Direct Export & Import */}
-            <div className="bg-white dark:bg-zinc-900 p-6 sm:p-7 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-5">
-              <div className="flex items-center gap-3 pb-3 border-b border-zinc-100 dark:border-zinc-800">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
-                  <Database size={20} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-zinc-900 dark:text-white">
-                    {isAr ? 'تنزيل واستعادة النسخة الاحتياطية' : 'Full Backup & Restore'}
-                  </h3>
-                  <p className="text-xs text-zinc-500">
-                    {isAr ? 'تنزيل ملف JSON كامل لكل جداول المنصة أو استعادته مباشرة' : 'Download or upload full database JSON backup directly'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                {/* Download Backup Button */}
-                <div className="bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 flex items-center justify-between">
-                  <div>
-                    <h4 className="font-bold text-xs text-zinc-800 dark:text-zinc-200">{isAr ? 'تصدير نسخة احتياطية كاملة' : 'Export Full Snapshot'}</h4>
-                    <p className="text-[11px] text-zinc-400">{isAr ? 'تنزيل كافة الإعدادات، المواد، المهام، والملاحظات' : 'All students data, settings, and files'}</p>
-                  </div>
-                  <button
-                    onClick={handleExportBackup}
-                    disabled={backupLoading}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5"
-                  >
-                    <Download size={14} />
-                    <span>{backupLoading ? (isAr ? 'جاري التجهيز...' : 'Preparing...') : (isAr ? 'تنزيل JSON' : 'Export')}</span>
-                  </button>
-                </div>
-
-                {/* Restore Backup Input */}
-                <div className="bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 flex items-center justify-between">
-                  <div>
-                    <h4 className="font-bold text-xs text-zinc-800 dark:text-zinc-200">{isAr ? 'استعادة قاعدة البيانات' : 'Restore from Backup'}</h4>
-                    <p className="text-[11px] text-zinc-400">{isAr ? 'رفع ملف JSON تم تصديره سابقاً لاسترجاعه' : 'Upload a previously exported JSON backup'}</p>
-                  </div>
-                  <label className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer">
-                    <Upload size={14} />
-                    <span>{isAr ? 'رفع واستعادة' : 'Upload JSON'}</span>
-                    <input
-                      type="file"
-                      accept=".json"
-                      onChange={handleImportBackup}
-                      disabled={backupLoading}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            {/* 2. Automated Email Scheduler */}
-            <div className="bg-white dark:bg-zinc-900 p-6 sm:p-7 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-5">
-              <div className="flex items-center gap-3 pb-3 border-b border-zinc-100 dark:border-zinc-800">
-                <div className="w-10 h-10 rounded-2xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
-                  <Mail size={20} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-zinc-900 dark:text-white">
-                    {isAr ? 'جدولة إرسال النسخ الاحتياطية للإيميل' : 'Automated Email Backup Scheduler'}
-                  </h3>
-                  <p className="text-xs text-zinc-500">
-                    {isAr ? 'حدد البريد وتوقيت الإرسال التلقائي للنسخة الاحتياطية' : 'Configure scheduled automated backup delivery to your email'}
-                  </p>
-                </div>
-              </div>
-
-              {emailSaveSuccess && (
-                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-2">
-                  <Check size={14} />
-                  <span>{isAr ? 'تم حفظ إعدادات الجدولة بنجاح!' : 'Email backup schedule saved!'}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleSaveEmailConfig} className="space-y-3.5">
-                <div>
-                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                    {isAr ? 'البريد الإلكتروني المستلم' : 'Target Email Address'}
-                  </label>
+          {/* TAB 2: STUDENTS DIRECTORY */}
+          {activeTab === 'students' && (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-zinc-400 absolute left-3 rtl:left-auto rtl:right-3 top-3 pointer-events-none" />
                   <input
-                    type="email"
-                    required
-                    value={emailConfig.targetEmail}
-                    onChange={(e) => setEmailConfig({ ...emailConfig, targetEmail: e.target.value })}
-                    placeholder="admin@example.com"
-                    className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={isAr ? 'بحث باسم الطالب، الإيميل، الكلية، أو الجامعة...' : 'Search student by name, email, college...'}
+                    className="w-full pl-9 rtl:pl-3 rtl:pr-9 pr-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs sm:text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                      {isAr ? 'وتيرة الإرسال' : 'Frequency'}
-                    </label>
-                    <select
-                      value={emailConfig.frequency}
-                      onChange={(e) => setEmailConfig({ ...emailConfig, frequency: e.target.value as any })}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none"
-                    >
-                      <option value="daily">{isAr ? 'يومياً (Daily)' : 'Daily'}</option>
-                      <option value="weekly">{isAr ? 'أسبوعياً (Weekly)' : 'Weekly'}</option>
-                      <option value="monthly">{isAr ? 'شهرياً (Monthly)' : 'Monthly'}</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                      {isAr ? 'بدءاً من تاريخ' : 'Start Date'}
-                    </label>
-                    <input
-                      type="date"
-                      value={emailConfig.startDate}
-                      onChange={(e) => setEmailConfig({ ...emailConfig, startDate: e.target.value })}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                      {isAr ? 'الساعة' : 'Time'}
-                    </label>
-                    <input
-                      type="time"
-                      value={emailConfig.startTime}
-                      onChange={(e) => setEmailConfig({ ...emailConfig, startTime: e.target.value })}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs outline-none"
-                    />
-                  </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={gpaFilter}
+                    onChange={(e) => setGpaFilter(e.target.value as any)}
+                    className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="all">{isAr ? 'كل الطلاب' : 'All Students'}</option>
+                    <option value="honor">{isAr ? 'المتفوقين (امتياز)' : 'Honor (≥ 3.5)'}</option>
+                    <option value="good">{isAr ? 'أداء مستقر (2.5 - 3.49)' : 'Good (2.5 - 3.49)'}</option>
+                    <option value="warning">{isAr ? 'تحت الإنذار' : 'Under Warning'}</option>
+                  </select>
                 </div>
+              </div>
 
-                <div className="flex items-center justify-between pt-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={emailConfig.enabled}
-                      onChange={(e) => setEmailConfig({ ...emailConfig, enabled: e.target.checked })}
-                      className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500"
-                    />
-                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                      {isAr ? 'تفعيل الإرسال المجدول' : 'Enable Automated Schedule'}
-                    </span>
-                  </label>
+              <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left rtl:text-right whitespace-nowrap">
+                    <thead className="bg-zinc-50 dark:bg-zinc-800/60 text-zinc-500 border-b border-zinc-200 dark:border-zinc-800 text-xs uppercase tracking-wider">
+                      <tr>
+                        <th className="py-3.5 px-4 font-bold">{isAr ? 'الطالب' : 'Student'}</th>
+                        <th className="py-3.5 px-4 font-bold">{isAr ? 'الجامعة والكلية' : 'University & College'}</th>
+                        <th className="py-3.5 px-4 font-bold">{isAr ? 'المستوى' : 'Level'}</th>
+                        <th className="py-3.5 px-4 font-bold">{isAr ? 'المواد والساعات' : 'Subjects & Credits'}</th>
+                        <th className="py-3.5 px-4 font-bold">{isAr ? 'المعدل التراكمي CGPA' : 'CGPA'}</th>
+                        <th className="py-3.5 px-4 font-bold">{isAr ? 'الإنذارات' : 'Warnings'}</th>
+                        <th className="py-3.5 px-4 font-bold">{isAr ? 'التخزين' : 'Storage'}</th>
+                        <th className="py-3.5 px-4 font-bold text-center">{isAr ? 'الإجراءات' : 'Actions'}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 text-xs">
+                      {filteredStudents.map((st) => (
+                        <tr key={st.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors">
+                          <td className="py-3.5 px-4">
+                            <div>
+                              <p className="font-bold text-zinc-900 dark:text-white text-sm">{st.name}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5 text-zinc-400">
+                                <span>{st.email}</span>
+                                <button
+                                  onClick={() => handleCopy(st.email, st.id)}
+                                  className="text-zinc-400 hover:text-purple-600 transition-colors"
+                                  title={isAr ? 'نسخ الإيميل' : 'Copy Email'}
+                                >
+                                  {copiedEmail === st.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                                </button>
+                              </div>
+                            </div>
+                          </td>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleSendBackupEmailNow}
-                      className="px-3 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold text-xs rounded-xl transition-all flex items-center gap-1"
-                    >
-                      <Send size={12} />
-                      <span>{isAr ? 'إرسال تجريبي الآن' : 'Send Now'}</span>
-                    </button>
+                          <td className="py-3.5 px-4">
+                            <p className="font-semibold text-zinc-800 dark:text-zinc-200">{st.university}</p>
+                            <p className="text-[11px] text-zinc-400">{st.college}</p>
+                          </td>
 
-                    <button
-                      type="submit"
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all"
-                    >
-                      {isAr ? 'حفظ الجدولة' : 'Save Schedule'}
-                    </button>
-                  </div>
+                          <td className="py-3.5 px-4">
+                            <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 font-bold text-zinc-700 dark:text-zinc-300">
+                              {isAr ? `سنة ${st.currentYear} ف${st.currentSemester}` : `Y${st.currentYear} S${st.currentSemester}`}
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <p className="font-bold text-zinc-800 dark:text-zinc-200">{st.subjectsCount} {isAr ? 'مواد' : 'subjects'}</p>
+                            <p className="text-[11px] text-zinc-400">{st.registeredCreditHours} {isAr ? 'ساعات معتمدة' : 'credits'}</p>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <span className={`px-2.5 py-1 rounded-xl font-black text-xs ${
+                              st.cgpa >= 3.5 
+                                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60' 
+                                : (st.cgpa >= 2.0 
+                                    ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60' 
+                                    : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60')
+                            }`}>
+                              {st.cgpa.toFixed(2)} CGPA
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            {st.warningCount > 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold border border-rose-200 dark:border-rose-800">
+                                <AlertTriangle size={12} />
+                                <span>{st.warningCount} {isAr ? 'إنذار' : 'warnings'}</span>
+                              </span>
+                            ) : (
+                              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{isAr ? 'سليم ومستقر' : 'Stable'}</span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-4 text-zinc-500 font-medium">
+                            {(st.totalStorageBytes / (1024 * 1024)).toFixed(1)} MB
+                          </td>
+
+                          <td className="py-3.5 px-4 text-center">
+                            <button
+                              onClick={() => setSelectedStudent(st)}
+                              className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold rounded-xl border border-purple-200 dark:border-purple-800/60 transition-all flex items-center gap-1.5 mx-auto shadow-2xs"
+                            >
+                              <Eye size={14} />
+                              <span>{isAr ? 'عرض الملف' : 'View Profile'}</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+
+                      {filteredStudents.length === 0 && (
+                        <tr>
+                          <td colSpan={8} className="py-12 text-center text-zinc-400">
+                            {isAr ? 'لا توجد بيانات مطابقة لخيارات البحث.' : 'No students found.'}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
-              </form>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
+
+          {/* TAB 3: SUGGESTIONS & FEEDBACK HUB */}
+          {activeTab === 'suggestions' && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-zinc-400">{isAr ? 'تصفية حسب النوع:' : 'Type:'}</span>
+                  <select
+                    value={suggestionTypeFilter}
+                    onChange={(e) => setSuggestionTypeFilter(e.target.value)}
+                    className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none"
+                  >
+                    <option value="all">{isAr ? 'الكل' : 'All Categories'}</option>
+                    <option value="suggestion">{isAr ? 'اقتراحات' : 'Suggestions'}</option>
+                    <option value="complaint">{isAr ? 'شكاوى' : 'Complaints'}</option>
+                    <option value="bug">{isAr ? 'أخطاء تقنية' : 'Bugs'}</option>
+                    <option value="other">{isAr ? 'أخرى' : 'Other'}</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-zinc-400">{isAr ? 'الحالة:' : 'Status:'}</span>
+                  <select
+                    value={suggestionStatusFilter}
+                    onChange={(e) => setSuggestionStatusFilter(e.target.value)}
+                    className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none"
+                  >
+                    <option value="all">{isAr ? 'جميع الحالات' : 'All Statuses'}</option>
+                    <option value="new">{isAr ? 'جديد' : 'New'}</option>
+                    <option value="reviewed">{isAr ? 'قيد المراجعة' : 'Under Review'}</option>
+                    <option value="resolved">{isAr ? 'تم الحل' : 'Resolved'}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredSuggestions.map((fb) => (
+                  <div
+                    key={fb.id}
+                    className="bg-white dark:bg-zinc-900 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex flex-col justify-between space-y-4"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div>
+                          <h4 className="font-bold text-sm text-zinc-900 dark:text-white">{fb.title}</h4>
+                          <p className="text-xs text-zinc-400 mt-0.5">{fb.userName || 'Student'} • {fb.userEmail}</p>
+                        </div>
+
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                          fb.status === 'resolved' 
+                            ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
+                            : (fb.status === 'reviewed' 
+                                ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300' 
+                                : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300')
+                        }`}>
+                          {fb.status === 'resolved' ? (isAr ? 'تم الحل' : 'Resolved') : (fb.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد' : 'New'))}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap bg-zinc-50 dark:bg-zinc-800/50 p-3.5 rounded-2xl border border-zinc-100 dark:border-zinc-800">
+                        {fb.content}
+                      </p>
+
+                      {/* Attachments Display */}
+                      {fb.attachments && fb.attachments.length > 0 && (
+                        <div className="mt-3 space-y-1">
+                          <span className="text-[11px] font-bold text-zinc-500 flex items-center gap-1">
+                            <Paperclip size={12} />
+                            <span>{isAr ? 'المرفقات المرفوعة:' : 'Uploaded Attachments:'}</span>
+                          </span>
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {fb.attachments.map((att) => (
+                              <a
+                                key={att.id}
+                                href={att.url}
+                                download={att.name}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-purple-50 dark:hover:bg-purple-950/50 text-zinc-800 dark:text-zinc-200 hover:text-purple-600 dark:hover:text-purple-300 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold transition-all shadow-2xs"
+                              >
+                                <Paperclip size={12} className="text-purple-500" />
+                                <span className="max-w-[150px] truncate">{att.name}</span>
+                                <Download size={12} className="text-zinc-400" />
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] text-zinc-400">{isAr ? 'تغيير الحالة:' : 'Change:'}</span>
+                        <button
+                          onClick={async () => {
+                            await db.updateFeedback(fb.id, { status: 'reviewed' });
+                            await fetchData();
+                          }}
+                          className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-zinc-700 dark:text-zinc-300 text-[11px] font-bold rounded-lg transition-all"
+                        >
+                          {isAr ? 'مراجعة' : 'Review'}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await db.updateFeedback(fb.id, { status: 'resolved' });
+                            await fetchData();
+                          }}
+                          className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[11px] font-bold rounded-lg transition-all"
+                        >
+                          {isAr ? 'تم الحل' : 'Resolve'}
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={`mailto:${fb.userEmail}?subject=${encodeURIComponent(`رد على مقترحك: ${fb.title}`)}`}
+                          className="flex items-center gap-1 text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline"
+                        >
+                          <Mail size={12} />
+                          <span>{isAr ? 'مراسلة عبر الإيميل' : 'Reply via Email'}</span>
+                        </a>
+
+                        <button
+                          onClick={() => setFeedbackToDelete(fb.id)}
+                          className="text-rose-500 hover:text-rose-700 p-1"
+                          title={isAr ? 'حذف' : 'Delete'}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {filteredSuggestions.length === 0 && (
+                  <div className="col-span-full text-center py-12 text-zinc-400 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-3xl">
+                    {isAr ? 'لا توجد مقترحات مسجلة حالياً.' : 'No feedback submissions found.'}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: BACKUP & EMAIL SCHEDULER */}
+          {activeTab === 'backup' && (
+            <div className="space-y-6">
+              {backupMessage && (
+                <div className={`p-4 rounded-2xl text-sm font-bold flex items-center gap-2 ${
+                  backupMessage.type === 'success' 
+                    ? 'bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-300' 
+                    : 'bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 text-rose-800 dark:text-rose-300'
+                }`}>
+                  {backupMessage.type === 'success' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+                  <span>{backupMessage.text}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white dark:bg-zinc-900 p-6 sm:p-7 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-5">
+                  <div className="flex items-center gap-3 pb-3 border-b border-zinc-100 dark:border-zinc-800">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+                      <Database size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-base text-zinc-900 dark:text-white">
+                        {isAr ? 'تنزيل واستعادة النسخة الاحتياطية' : 'Full Backup & Restore'}
+                      </h3>
+                      <p className="text-xs text-zinc-500">
+                        {isAr ? 'تنزيل ملف JSON كامل لكل جداول المنصة أو استعادته مباشرة' : 'Download or upload full database JSON backup directly'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 flex items-center justify-between">
+                      <div>
+                        <h4 className="font-bold text-xs text-zinc-800 dark:text-zinc-200">{isAr ? 'تصدير نسخة احتياطية كاملة' : 'Export Full Snapshot'}</h4>
+                        <p className="text-[11px] text-zinc-400">{isAr ? 'تنزيل كافة الإعدادات، المواد، المهام، والملاحظات' : 'All students data, settings, and files'}</p>
+                      </div>
+                      <button
+                        onClick={handleExportBackup}
+                        disabled={backupLoading}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5"
+                      >
+                        <Download size={14} />
+                        <span>{backupLoading ? (isAr ? 'جاري التجهيز...' : 'Preparing...') : (isAr ? 'تنزيل JSON' : 'Export')}</span>
+                      </button>
+                    </div>
+
+                    <div className="bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 flex items-center justify-between">
+                      <div>
+                        <h4 className="font-bold text-xs text-zinc-800 dark:text-zinc-200">{isAr ? 'استعادة قاعدة البيانات' : 'Restore from Backup'}</h4>
+                        <p className="text-[11px] text-zinc-400">{isAr ? 'رفع ملف JSON تم تصديره سابقاً لاسترجاعه' : 'Upload a previously exported JSON backup'}</p>
+                      </div>
+                      <label className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer">
+                        <Upload size={14} />
+                        <span>{isAr ? 'رفع واستعادة' : 'Upload JSON'}</span>
+                        <input
+                          type="file"
+                          accept=".json"
+                          onChange={handleImportBackup}
+                          disabled={backupLoading}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-zinc-900 p-6 sm:p-7 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-5">
+                  <div className="flex items-center gap-3 pb-3 border-b border-zinc-100 dark:border-zinc-800">
+                    <div className="w-10 h-10 rounded-2xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
+                      <Mail size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-base text-zinc-900 dark:text-white">
+                        {isAr ? 'جدولة إرسال النسخ الاحتياطية للإيميل' : 'Automated Email Backup Scheduler'}
+                      </h3>
+                      <p className="text-xs text-zinc-500">
+                        {isAr ? 'حدد البريد وتوقيت الإرسال التلقائي للنسخة الاحتياطية' : 'Configure scheduled automated backup delivery to your email'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {emailSaveSuccess && (
+                    <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-2">
+                      <Check size={14} />
+                      <span>{isAr ? 'تم حفظ إعدادات الجدولة بنجاح!' : 'Email backup schedule saved!'}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSaveEmailConfig} className="space-y-3.5">
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                        {isAr ? 'البريد الإلكتروني المستلم' : 'Target Email Address'}
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        value={emailConfig.targetEmail}
+                        onChange={(e) => setEmailConfig({ ...emailConfig, targetEmail: e.target.value })}
+                        placeholder="admin@example.com"
+                        className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                          {isAr ? 'وتيرة الإرسال' : 'Frequency'}
+                        </label>
+                        <select
+                          value={emailConfig.frequency}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, frequency: e.target.value as any })}
+                          className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none"
+                        >
+                          <option value="daily">{isAr ? 'يومياً (Daily)' : 'Daily'}</option>
+                          <option value="weekly">{isAr ? 'أسبوعياً (Weekly)' : 'Weekly'}</option>
+                          <option value="monthly">{isAr ? 'شهرياً (Monthly)' : 'Monthly'}</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                          {isAr ? 'بدءاً من تاريخ' : 'Start Date'}
+                        </label>
+                        <input
+                          type="date"
+                          value={emailConfig.startDate}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, startDate: e.target.value })}
+                          className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                          {isAr ? 'الساعة' : 'Time'}
+                        </label>
+                        <input
+                          type="time"
+                          value={emailConfig.startTime}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, startTime: e.target.value })}
+                          className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={emailConfig.enabled}
+                          onChange={(e) => setEmailConfig({ ...emailConfig, enabled: e.target.checked })}
+                          className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500"
+                        />
+                        <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                          {isAr ? 'تفعيل الإرسال المجدول' : 'Enable Automated Schedule'}
+                        </span>
+                      </label>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSendBackupEmailNow}
+                          className="px-3 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold text-xs rounded-xl transition-all flex items-center gap-1"
+                        >
+                          <Send size={12} />
+                          <span>{isAr ? 'إرسال تجريبي الآن' : 'Send Now'}</span>
+                        </button>
+
+                        <button
+                          type="submit"
+                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all"
+                        >
+                          {isAr ? 'حفظ الجدولة' : 'Save Schedule'}
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
 
       {/* --- STUDENT DETAILS MODAL --- */}
       {selectedStudent && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-zinc-200 dark:border-zinc-800 shadow-2xl p-6 sm:p-7 space-y-6">
             <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800">
               <div className="flex items-center gap-3">
@@ -1200,7 +1235,6 @@ export function Admin() {
               </button>
             </div>
 
-            {/* Academic Snapshot */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center">
                 <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'المعدل التراكمي CGPA' : 'CGPA'}</span>
@@ -1225,7 +1259,6 @@ export function Admin() {
               </div>
             </div>
 
-            {/* Subjects Breakdown */}
             <div>
               <h4 className="font-bold text-sm text-zinc-800 dark:text-zinc-200 mb-3 flex items-center gap-2">
                 <BookOpen size={16} />
@@ -1263,24 +1296,6 @@ export function Admin() {
               </div>
             </div>
 
-            {/* Student's Feedback */}
-            {selectedStudent.raw.feedbacks.length > 0 && (
-              <div>
-                <h4 className="font-bold text-sm text-zinc-800 dark:text-zinc-200 mb-2 flex items-center gap-2">
-                  <MessageSquare size={16} />
-                  <span>{isAr ? 'المقترحات والشكاوى المرسلة من الطالب' : 'Student Feedback History'}</span>
-                </h4>
-                <div className="space-y-2">
-                  {selectedStudent.raw.feedbacks.map((fb: any) => (
-                    <div key={fb.id} className="p-3 bg-zinc-50 dark:bg-zinc-800/40 rounded-xl text-xs space-y-1">
-                      <p className="font-bold text-zinc-800 dark:text-zinc-200">{fb.title}</p>
-                      <p className="text-zinc-500">{fb.content}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             <div className="flex justify-end pt-2">
               <button
                 onClick={() => setSelectedStudent(null)}
@@ -1292,6 +1307,18 @@ export function Admin() {
           </div>
         </div>
       )}
+
+      {/* Delete Feedback Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!feedbackToDelete}
+        title={isAr ? 'حذف المقترح' : 'Delete Feedback'}
+        message={isAr ? 'هل أنت متأكد من رغبتك في حذف هذا المقترح نهائياً؟' : 'Are you sure you want to permanently delete this feedback?'}
+        confirmText={isAr ? 'نعم، حذف' : 'Delete'}
+        cancelText={isAr ? 'إلغاء' : 'Cancel'}
+        variant="danger"
+        onConfirm={handleDeleteFeedbackConfirmed}
+        onCancel={() => setFeedbackToDelete(null)}
+      />
     </div>
   );
 }

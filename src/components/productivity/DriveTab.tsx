@@ -4,6 +4,7 @@ import { FolderPlus, Upload, FileText, Folder, Trash2, ChevronLeft, Download } f
 import { useAppStore } from '../../store/useAppStore';
 import { DriveFile } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
+import { ConfirmModal, PromptModal } from '../ui/CustomModal';
 
 export function DriveTab() {
   const { t } = useTranslation();
@@ -12,14 +13,13 @@ export function DriveTab() {
   const deleteFile = useAppStore(state => state.deleteFile);
 
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<DriveFile | null>(null);
 
   const currentFolder = currentFolderId ? files.find(f => f.id === currentFolderId) : null;
   const currentFiles = files.filter(f => f.parentId === currentFolderId);
 
-  const handleCreateFolder = () => {
-    const folderName = prompt(t('create_folder') + ' - Name:');
-    if (!folderName) return;
-
+  const handleCreateFolder = (folderName: string) => {
     addFile({
       id: uuidv4(),
       name: folderName,
@@ -28,6 +28,7 @@ export function DriveTab() {
       parentId: currentFolderId,
       createdAt: new Date().toISOString().split('T')[0],
     });
+    setIsFolderModalOpen(false);
   };
 
   const [isUploading, setIsUploading] = useState(false);
@@ -57,16 +58,15 @@ export function DriveTab() {
       });
     } catch (err: any) {
       console.error('Error uploading file:', err);
-      alert('فشل رفع الملف. تأكد من إعدادات Backblaze. رسالة الخطأ: ' + (err.message || 'غير معروف'));
     } finally {
       setIsUploading(false);
       e.target.value = '';
     }
   };
 
-  const handleDelete = async (e: React.MouseEvent, file: DriveFile) => {
-    e.stopPropagation();
-    if (!window.confirm('هل أنت متأكد من الحذف؟')) return;
+  const handleConfirmDelete = async () => {
+    if (!fileToDelete) return;
+    const file = fileToDelete;
 
     if (file.type === 'file' && file.b2FileId) {
       try {
@@ -74,10 +74,10 @@ export function DriveTab() {
         await deleteFromB2(file.b2FileId);
       } catch (err) {
         console.error('Error deleting from B2:', err);
-        // Continue to delete from DB even if B2 fails, or show error
       }
     }
     deleteFile(file.id);
+    setFileToDelete(null);
   };
 
   const formatSize = (bytes: number) => {
@@ -125,7 +125,7 @@ export function DriveTab() {
         
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <button
-            onClick={handleCreateFolder}
+            onClick={() => setIsFolderModalOpen(true)}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 px-4 py-2 rounded-xl transition-colors shadow-sm"
           >
             <FolderPlus size={18} />
@@ -170,8 +170,6 @@ export function DriveTab() {
                           console.error('Download error:', err);
                           if (file.url) {
                             window.open(file.url, '_blank');
-                          } else {
-                            alert('فشل تنزيل الملف.');
                           }
                         }
                       }}
@@ -182,7 +180,10 @@ export function DriveTab() {
                     </button>
                   )}
                   <button
-                    onClick={(e) => handleDelete(e, file)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFileToDelete(file);
+                    }}
                     className="p-2 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all rounded-xl shadow-xs"
                     title={t('delete') || 'حذف'}
                   >
@@ -194,6 +195,31 @@ export function DriveTab() {
           </ul>
         )}
       </div>
+
+      {/* Create Folder Modal */}
+      <PromptModal
+        isOpen={isFolderModalOpen}
+        title={t('create_folder') || 'إنشاء مجلد جديد'}
+        placeholder="اسم المجلد..."
+        confirmText="إنشاء"
+        cancelText="إلغاء"
+        onConfirm={handleCreateFolder}
+        onCancel={() => setIsFolderModalOpen(false)}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!fileToDelete}
+        title={fileToDelete?.type === 'folder' ? 'حذف المجلد' : 'حذف الملف'}
+        message={fileToDelete?.type === 'folder' 
+          ? `هل أنت متأكد من حذف المجلد "${fileToDelete?.name}" وجميع محتوياته؟` 
+          : `هل أنت متأكد من حذف الملف "${fileToDelete?.name}" نهائياً؟`}
+        confirmText="نعم، حذف"
+        cancelText="إلغاء"
+        variant="danger"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setFileToDelete(null)}
+      />
     </div>
   );
 }

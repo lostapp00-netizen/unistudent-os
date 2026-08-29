@@ -160,6 +160,7 @@ export type FeedbackSuggestion = {
   type: 'suggestion' | 'complaint' | 'bug' | 'other';
   title: string;
   content: string;
+  attachments?: { id: string; name: string; size: number; type: string; url: string }[];
   createdAt: string;
   status: 'new' | 'reviewed' | 'resolved';
   adminNotes?: string;

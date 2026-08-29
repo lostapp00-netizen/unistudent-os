@@ -61,42 +61,45 @@ export function App() {
     return () => subscription.unsubscribe();
   }, [initialize, clearData]);
 
-  if (loading || (session && !isInitialized)) {
-    return <div className="h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">جاري تحميل البيانات...</div>;
-  }
+  const isAdminPath = window.location.pathname.startsWith('/admin');
 
-  if (!session) {
-    return <Auth />;
+  if (loading || (session && !isInitialized && !isAdminPath)) {
+    return <div className="h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">جاري تحميل البيانات...</div>;
   }
 
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Dashboard />} />
-          
-          <Route path="academic">
-            <Route index element={<AcademicDashboard />} />
-            <Route path="subjects" element={<AcademicSubjects />} />
-            <Route path="recovery" element={<AcademicRecovery />} />
-            <Route path="simulation" element={<AcademicSimulation />} />
-            <Route path="warnings" element={<AcademicWarnings />} />
-            <Route path=":id" element={<SubjectDetails />} />
+        <Route path="/admin" element={<Admin />} />
+        
+        {!session ? (
+          <Route path="*" element={<Auth />} />
+        ) : (
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Dashboard />} />
+            
+            <Route path="academic">
+              <Route index element={<AcademicDashboard />} />
+              <Route path="subjects" element={<AcademicSubjects />} />
+              <Route path="recovery" element={<AcademicRecovery />} />
+              <Route path="simulation" element={<AcademicSimulation />} />
+              <Route path="warnings" element={<AcademicWarnings />} />
+              <Route path=":id" element={<SubjectDetails />} />
+            </Route>
+            
+            <Route path="productivity">
+              <Route index element={<ProductivityDashboard />} />
+              <Route path="tasks" element={<TasksTab />} />
+              <Route path="notes" element={<NotesTab />} />
+              <Route path="drive" element={<DriveTab />} />
+              <Route path="calendar" element={<CalendarTab />} />
+              <Route path="schedule" element={<Schedule />} />
+              <Route path="appointments" element={<Appointments />} />
+            </Route>
+            
+            <Route path="settings" element={<Settings />} />
           </Route>
-          
-          <Route path="productivity">
-            <Route index element={<ProductivityDashboard />} />
-            <Route path="tasks" element={<TasksTab />} />
-            <Route path="notes" element={<NotesTab />} />
-            <Route path="drive" element={<DriveTab />} />
-            <Route path="calendar" element={<CalendarTab />} />
-            <Route path="schedule" element={<Schedule />} />
-            <Route path="appointments" element={<Appointments />} />
-          </Route>
-          
-          <Route path="settings" element={<Settings />} />
-          <Route path="admin" element={<Admin />} />
-        </Route>
+        )}
       </Routes>
     </BrowserRouter>
   );

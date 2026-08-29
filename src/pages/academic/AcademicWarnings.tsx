@@ -32,7 +32,9 @@ export function AcademicWarnings() {
 
   // Selected semester filter: 'current' | 'all' | semesterId
   const [selectedSemesterScope, setSelectedSemesterScope] = useState<'current' | 'all'>('current');
-  const [showSettingsPanel, setShowSettingsPanel] = useState(true);
+  const [isThresholdModalOpen, setIsThresholdModalOpen] = useState(false);
+  const [isEditingThreshold, setIsEditingThreshold] = useState(false);
+  const [saveSuccessToast, setSaveSuccessToast] = useState(false);
 
   const currentSemester = settings.semesters.find(s => s.isCurrent);
   const currentScale = settings.gradingScale || [];
@@ -41,6 +43,10 @@ export function AcademicWarnings() {
   const threshold = getWarningThreshold(settings);
   const currentLetter = threshold.letter;
   const currentPoints = threshold.points;
+
+  // Temp state while editing in modal
+  const [tempLetter, setTempLetter] = useState(currentLetter);
+  const [tempPoints, setTempPoints] = useState(currentPoints);
 
   // Sort grading scale for display (from high to low)
   const sortedScale = [...currentScale].sort((a, b) => b.points - a.points);
@@ -59,25 +65,50 @@ export function AcademicWarnings() {
     isSubjectAtWarningRisk(s, settings.gradingScale, currentPoints)
   );
 
-  // Handlers for bidirectional threshold updates
+  const openModal = () => {
+    setTempLetter(currentLetter);
+    setTempPoints(currentPoints);
+    setIsEditingThreshold(false);
+    setIsThresholdModalOpen(true);
+  };
+
+  // Handlers for modal threshold changes
   const handleGradeLetterChange = (letter: string) => {
     const matchedRule = getMatchingGradeRuleByLetter(letter, settings.gradingScale);
-    const points = matchedRule ? matchedRule.points : currentPoints;
-    updateSettings({
-      warningGradeLetter: letter,
-      warningGpaPoints: points
-    });
+    const points = matchedRule ? matchedRule.points : tempPoints;
+    setTempLetter(letter);
+    setTempPoints(points);
   };
 
   const handleGpaPointsChange = (val: number) => {
-    // Clamp between 0 and max points in scale (or 4.0)
     const maxScalePoints = sortedScale.length > 0 ? Math.max(...sortedScale.map(r => r.points), 4.0) : 4.0;
     const clampedPoints = Math.max(0, Math.min(maxScalePoints, Number(val.toFixed(2))));
     const matchedRule = getMatchingGradeRuleByPoints(clampedPoints, settings.gradingScale);
+    setTempPoints(clampedPoints);
+    if (matchedRule) {
+      setTempLetter(matchedRule.letter);
+    }
+  };
+
+  const handleSaveThreshold = async () => {
     updateSettings({
-      warningGradeLetter: matchedRule ? matchedRule.letter : currentLetter,
-      warningGpaPoints: clampedPoints
+      warningGradeLetter: tempLetter,
+      warningGpaPoints: tempPoints
     });
+
+    const { userId } = useAppStore.getState();
+    if (userId) {
+      const { db } = await import('../../lib/db');
+      db.upsertSettings(userId, {
+        warningGradeLetter: tempLetter,
+        warningGpaPoints: tempPoints
+      }).catch(console.error);
+    }
+
+    setIsThresholdModalOpen(false);
+    setIsEditingThreshold(false);
+    setSaveSuccessToast(true);
+    setTimeout(() => setSaveSuccessToast(false), 3000);
   };
 
   return (
@@ -130,170 +161,219 @@ export function AcademicWarnings() {
         </div>
       </header>
 
-      {/* Warning Threshold Settings Card */}
-      <section className="bg-gradient-to-br from-white via-zinc-50/50 to-amber-50/30 dark:from-zinc-900 dark:via-zinc-900/90 dark:to-amber-950/20 rounded-3xl p-6 sm:p-7 border border-amber-200/80 dark:border-amber-900/40 shadow-sm transition-all">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 border-b border-zinc-200/80 dark:border-zinc-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
-              <Sliders size={20} />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-zinc-900 dark:text-white">
-                {isAr ? 'إعدادات حد الإنذار الأكاديمي' : 'Academic Warning Threshold Settings'}
-              </h2>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                {isAr 
-                  ? 'حدد التقدير أو معدل GPA المطلوب لإطلاق الإنذار، ويتم التحويل التلقائي بينهما' 
-                  : 'Select either Grade Letter or GPA points, and they will automatically synchronize'}
-              </p>
-            </div>
-          </div>
+      {/* Success Toast */}
+      {saveSuccessToast && (
+        <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-sm font-bold flex items-center gap-2 animate-in fade-in">
+          <CheckCircle2 size={18} />
+          <span>{isAr ? 'تم حفظ وتطبيق إعدادات حد الإنذار بنجاح!' : 'Warning threshold settings saved successfully!'}</span>
+        </div>
+      )}
 
-          <div className="flex items-center gap-2 bg-amber-100/70 dark:bg-amber-900/30 px-3 py-1.5 rounded-xl text-amber-800 dark:text-amber-300 text-xs font-bold">
-            <Sparkles size={14} />
-            <span>
-              {isAr ? 'حد الإنذار الفعّال:' : 'Active Threshold:'} {currentLetter} ({currentPoints.toFixed(2)} GPA)
-            </span>
+      {/* Warning Threshold Summary Card with Settings Button */}
+      <section className="bg-gradient-to-br from-white via-zinc-50/50 to-amber-50/30 dark:from-zinc-900 dark:via-zinc-900/90 dark:to-amber-950/20 rounded-3xl p-6 sm:p-7 border border-amber-200/80 dark:border-amber-900/40 shadow-sm transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold shrink-0">
+            <Sliders size={24} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold text-zinc-900 dark:text-white">
+                {isAr ? 'حد الإنذار الأكاديمي المعتمد' : 'Active Warning Threshold'}
+              </h2>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40">
+                {currentLetter} ({currentPoints.toFixed(2)} GPA)
+              </span>
+            </div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+              {isAr 
+                ? `أي مادة يقل تقديرها عن (${currentLetter}) أو يقل معدلها عن (${currentPoints.toFixed(2)} نقاط) تعتبر في مرحلة الإنذار.`
+                : `Any subject with grade below (${currentLetter}) or GPA below (${currentPoints.toFixed(2)}) is flagged for risk.`}
+            </p>
           </div>
         </div>
 
-        {/* Dual Input Controls: Grade Letter & GPA Points */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-          {/* 1. By Grade Letter */}
-          <div className="bg-white/80 dark:bg-zinc-800/60 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 shadow-sm flex flex-col justify-between">
-            <div>
-              <label className="block text-sm font-bold text-zinc-800 dark:text-zinc-200 mb-1">
-                {isAr ? '1. التحديد حسب التقدير (Letter Grade)' : '1. Select by Letter Grade'}
-              </label>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
-                {isAr 
-                  ? 'اختر التقدير الذي يعتبر تحته إنذاراً للمادة:' 
-                  : 'Choose the grade letter threshold for warnings:'}
-              </p>
-              
-              {/* Grade Pills */}
-              <div className="flex flex-wrap gap-2">
-                {sortedScale.map(grade => {
-                  const isSelected = currentLetter === grade.letter;
-                  return (
-                    <button
-                      key={grade.id}
-                      type="button"
-                      onClick={() => handleGradeLetterChange(grade.letter)}
-                      className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 border ${
-                        isSelected
-                          ? 'bg-amber-500 text-white border-amber-600 shadow-md scale-105 ring-2 ring-amber-400/30'
-                          : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-amber-400 dark:hover:border-amber-600'
-                      }`}
-                    >
-                      <span>{grade.letter}</span>
-                      <span className={`text-[10px] font-medium opacity-80 ${isSelected ? 'text-white' : 'text-zinc-400'}`}>
-                        ({grade.points.toFixed(1)})
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+        <button
+          onClick={openModal}
+          className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs transition-all flex items-center gap-2 shrink-0 self-stretch sm:self-auto justify-center"
+        >
+          <Sliders size={16} />
+          <span>{isAr ? 'ضبط إعدادات حد الإنذار' : 'Configure Threshold'}</span>
+        </button>
+      </section>
 
-            <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-700/50 flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-400">
-              <span>{isAr ? 'النقاط المقابلة في اللائحة:' : 'Equivalent points in scale:'}</span>
-              <span className="font-bold text-amber-600 dark:text-amber-400 text-sm">
-                {currentPoints.toFixed(2)} GPA
-              </span>
-            </div>
-          </div>
-
-          {/* 2. By GPA Points */}
-          <div className="bg-white/80 dark:bg-zinc-800/60 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 shadow-sm flex flex-col justify-between">
-            <div>
-              <label className="block text-sm font-bold text-zinc-800 dark:text-zinc-200 mb-1">
-                {isAr ? '2. التحديد حسب معدل النقاط (GPA Points)' : '2. Select by GPA Points'}
-              </label>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
-                {isAr 
-                  ? 'أدخل معدل النقاط المطلوب (مثال: 2.00 أو 1.70):' 
-                  : 'Enter minimum GPA points threshold (e.g., 2.00 or 1.70):'}
-              </p>
-
+      {/* Threshold Modal */}
+      {isThresholdModalOpen && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl space-y-6 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800">
               <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+                  <Sliders size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
+                    {isAr ? 'إعدادات حد الإنذار الأكاديمي' : 'Warning Threshold Settings'}
+                  </h3>
+                  <p className="text-xs text-zinc-500">
+                    {isAr 
+                      ? 'حدد التقدير أو النقاط وسيتم التحويل التلقائي بينهما' 
+                      : 'Configure the threshold using letter grade or GPA points'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setIsThresholdModalOpen(false)}
+                className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-xl"
+              >
+                <BackIcon size={20} />
+              </button>
+            </div>
+
+            {/* Mode Banner: View vs Edit */}
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60">
+              <div className="flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                <Sparkles size={14} className="text-amber-500" />
+                <span>
+                  {isAr ? 'الحد المختار حالياً:' : 'Selected:'} {tempLetter} ({tempPoints.toFixed(2)} GPA)
+                </span>
+              </div>
+
+              {!isEditingThreshold ? (
                 <button
                   type="button"
-                  onClick={() => handleGpaPointsChange(Math.max(0, currentPoints - 0.1))}
-                  className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-bold hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors flex items-center justify-center text-lg shadow-sm"
-                  title="-0.1"
+                  onClick={() => setIsEditingThreshold(true)}
+                  className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 font-bold text-xs rounded-xl border border-indigo-200 dark:border-indigo-800/50 transition-all flex items-center gap-1.5"
                 >
-                  -
+                  <span>{isAr ? 'تعديل القيم' : 'Edit Values'}</span>
                 </button>
-                <div className="relative flex-1">
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="0"
-                    max="4.0"
-                    value={currentPoints}
-                    onChange={(e) => handleGpaPointsChange(parseFloat(e.target.value) || 0)}
-                    className="w-full text-center text-xl font-black py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                  />
-                  <span className="absolute left-3 rtl:left-auto rtl:right-3 top-2.5 text-xs text-zinc-400 font-medium pointer-events-none">
-                    GPA
+              ) : (
+                <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 rounded-lg border border-amber-200 dark:border-amber-800/40">
+                  {isAr ? 'وضع التعديل نشط' : 'Editing Mode Active'}
+                </span>
+              )}
+            </div>
+
+            {/* Dual Controls */}
+            <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${!isEditingThreshold ? 'opacity-60 pointer-events-none' : ''}`}>
+              {/* 1. Grade Letter */}
+              <div className="bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 flex flex-col justify-between">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1">
+                    {isAr ? '1. التحديد حسب التقدير' : '1. By Letter Grade'}
+                  </label>
+                  <p className="text-[11px] text-zinc-500 mb-3">
+                    {isAr ? 'اختر التقدير المعتمد للإنذار:' : 'Choose grade letter threshold:'}
+                  </p>
+
+                  <div className="flex flex-wrap gap-2">
+                    {sortedScale.map(grade => {
+                      const isSelected = tempLetter === grade.letter;
+                      return (
+                        <button
+                          key={grade.id}
+                          type="button"
+                          disabled={!isEditingThreshold}
+                          onClick={() => handleGradeLetterChange(grade.letter)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 border ${
+                            isSelected
+                              ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
+                              : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-amber-400'
+                          }`}
+                        >
+                          <span>{grade.letter}</span>
+                          <span className={`text-[10px] ${isSelected ? 'text-white' : 'text-zinc-400'}`}>
+                            ({grade.points.toFixed(1)})
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-2 border-t border-zinc-200 dark:border-zinc-700/50 flex items-center justify-between text-xs text-zinc-500">
+                  <span>{isAr ? 'النقاط المقابلة:' : 'Equivalent GPA:'}</span>
+                  <span className="font-bold text-amber-600 dark:text-amber-400 text-sm">
+                    {tempPoints.toFixed(2)} GPA
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleGpaPointsChange(currentPoints + 0.1)}
-                  className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-bold hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors flex items-center justify-center text-lg shadow-sm"
-                  title="+0.1"
-                >
-                  +
-                </button>
               </div>
 
-              {/* Quick Presets */}
-              <div className="flex items-center gap-2 mt-3">
-                <span className="text-[11px] text-zinc-400 font-medium">{isAr ? 'قيم سريعة:' : 'Presets:'}</span>
-                {[2.0, 1.7, 1.0, 2.3].map((val) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => handleGpaPointsChange(val)}
-                    className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all ${
-                      Math.abs(currentPoints - val) < 0.05
-                        ? 'bg-amber-500 text-white'
-                        : 'bg-zinc-100 dark:bg-zinc-700/60 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                    }`}
-                  >
-                    {val.toFixed(1)}
-                  </button>
-                ))}
+              {/* 2. GPA Points */}
+              <div className="bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 flex flex-col justify-between">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1">
+                    {isAr ? '2. التحديد حسب معدل النقاط' : '2. By GPA Points'}
+                  </label>
+                  <p className="text-[11px] text-zinc-500 mb-3">
+                    {isAr ? 'أدخل معدل النقاط المطلوب (مثال: 2.00):' : 'Enter GPA threshold (e.g., 2.00):'}
+                  </p>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={!isEditingThreshold}
+                      onClick={() => handleGpaPointsChange(Math.max(0, tempPoints - 0.1))}
+                      className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 font-bold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 transition-colors flex items-center justify-center"
+                    >
+                      -
+                    </button>
+                    <div className="relative flex-1">
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        max="4.0"
+                        disabled={!isEditingThreshold}
+                        value={tempPoints}
+                        onChange={(e) => handleGpaPointsChange(parseFloat(e.target.value) || 0)}
+                        className="w-full text-center text-lg font-black py-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!isEditingThreshold}
+                      onClick={() => handleGpaPointsChange(tempPoints + 0.1)}
+                      className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 font-bold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 transition-colors flex items-center justify-center"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-2 border-t border-zinc-200 dark:border-zinc-700/50 flex items-center justify-between text-xs text-zinc-500">
+                  <span>{isAr ? 'التقدير المقابل:' : 'Equivalent Letter:'}</span>
+                  <span className="font-bold text-amber-600 dark:text-amber-400 text-sm">
+                    {tempLetter}
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-700/50 flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-400">
-              <span>{isAr ? 'التقدير الأقرب المطابق:' : 'Closest matching grade:'}</span>
-              <span className="font-bold text-amber-600 dark:text-amber-400 text-sm">
-                {currentLetter} ({getMatchingGradeRuleByLetter(currentLetter, settings.gradingScale)?.nameAr || getMatchingGradeRuleByLetter(currentLetter, settings.gradingScale)?.nameEn || ''})
-              </span>
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setIsThresholdModalOpen(false)}
+                className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-xs rounded-xl transition-all"
+              >
+                {isAr ? 'إغلاق' : 'Close'}
+              </button>
+
+              {isEditingThreshold && (
+                <button
+                  type="button"
+                  onClick={handleSaveThreshold}
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5"
+                >
+                  <CheckCircle2 size={14} />
+                  <span>{isAr ? 'حفظ التعديلات' : 'Save Changes'}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
-
-        {/* Live Conversion Banner */}
-        <div className="mt-5 p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-500/10 border border-amber-300/60 dark:border-amber-800/40 flex items-start sm:items-center gap-3 text-amber-900 dark:text-amber-200 text-xs sm:text-sm">
-          <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-          <p className="leading-relaxed">
-            {isAr ? (
-              <>
-                سيتم تصنيف أي مادة كـ <strong>إنذار أكاديمي</strong> إذا كان معدلها المحقق <strong>{currentPoints.toFixed(2)} أو أقل</strong> (يعادل تقدير <strong>{currentLetter} أو أقل</strong>).
-              </>
-            ) : (
-              <>
-                Any subject with achieved grade points of <strong>{currentPoints.toFixed(2)} or below</strong> (equivalent to grade <strong>{currentLetter} or below</strong>) will be flagged as an academic warning.
-              </>
-            )}
-          </p>
-        </div>
-      </section>
+      )}
 
       {/* Warning Status Overview */}
       <div className={`rounded-3xl p-6 border transition-all ${
