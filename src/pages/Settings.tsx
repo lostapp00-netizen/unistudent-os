@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
 import { GradingScale } from '../components/settings/GradingScale';
 import { SemestersManager } from '../components/settings/SemestersManager';
+import { UserFeedbackSection } from '../components/settings/UserFeedbackSection';
 
 export function Settings() {
   const { t } = useTranslation();
@@ -172,6 +173,10 @@ export function Settings() {
           onChange={(newScale) => setFormData(prev => ({ ...prev, gradingScale: newScale }))}
         />
       </section>
+
+      {/* User Suggestions & Feedback Section */}
+      <UserFeedbackSection />
+
       <div className="flex justify-end">
         <button 
           onClick={handleSave}

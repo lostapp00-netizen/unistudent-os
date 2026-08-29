@@ -4,18 +4,29 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, BookOpen, Calendar, LayoutDashboard, Settings, Sun, Moon, 
   ChevronDown, ChevronRight, CheckSquare, StickyNote, HardDrive, 
-  Clock, AlertTriangle, Library, ListTodo, Menu, X, Calculator, Target } from 'lucide-react';
+  Clock, AlertTriangle, Library, ListTodo, Menu, X, Calculator, Target, ShieldCheck } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { getWarningThreshold, isSubjectAtWarningRisk } from '../lib/academic';
 import { cn } from '../lib/utils';
 
 export function Layout() {
   const { t, i18n } = useTranslation();
   const location = useLocation();
-  const { settings, updateTheme, updateLanguage } = useAppStore();
+  const { subjects, settings, updateTheme, updateLanguage } = useAppStore();
   
   const [academicExpanded, setAcademicExpanded] = useState(location.pathname.startsWith('/academic'));
   const [productivityExpanded, setProductivityExpanded] = useState(location.pathname.startsWith('/productivity'));
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Compute warning subjects count for red notification badge
+  const currentSemester = settings.semesters.find(s => s.isCurrent);
+  const currentSubjects = subjects.filter(
+    s => s.yearIndex === currentSemester?.yearIndex && s.semesterIndex === currentSemester?.semesterIndex
+  );
+  const threshold = getWarningThreshold(settings);
+  const warningCount = currentSubjects.filter(s => 
+    isSubjectAtWarningRisk(s, settings.gradingScale, threshold.points)
+  ).length;
 
   // Close sidebar on route change
   useEffect(() => {
@@ -107,15 +118,32 @@ export function Layout() {
             <button 
               onClick={() => setAcademicExpanded(!academicExpanded)}
               className={cn(
-                "w-full flex items-center justify-between p-3 rounded-xl text-sm font-medium transition-colors",
+                "w-full flex items-center justify-between p-3 rounded-xl text-sm font-medium transition-colors relative",
                 location.pathname.startsWith('/academic') && !academicExpanded
                   ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-600 dark:text-white"
                   : "text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
               )}
             >
-              <div className="flex items-center gap-3">
-                <BookOpen className="w-5 h-5" />
-                {isSidebarOpen && t('academic')}
+              <div className="flex items-center gap-3 relative">
+                <div className="relative">
+                  <BookOpen className="w-5 h-5" />
+                  {!isSidebarOpen && warningCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-rose-500 rounded-full ring-2 ring-white dark:ring-zinc-900 animate-ping" />
+                  )}
+                  {!isSidebarOpen && warningCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-rose-500 rounded-full ring-2 ring-white dark:ring-zinc-900" />
+                  )}
+                </div>
+                {isSidebarOpen && (
+                  <span className="flex items-center gap-2">
+                    <span>{t('academic')}</span>
+                    {warningCount > 0 && (
+                      <span className="px-1.5 py-0.2 text-[11px] font-black bg-rose-500 text-white rounded-full animate-pulse shadow-xs">
+                        {warningCount}
+                      </span>
+                    )}
+                  </span>
+                )}
               </div>
               {isSidebarOpen && (academicExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className={cn("w-4 h-4", settings.language === 'ar' && "rotate-180 transform")} />)}
             </button>
@@ -134,8 +162,16 @@ export function Layout() {
                 <NavLink to="/academic/recovery" className={({ isActive }) => cn("flex items-center gap-2 p-2 rounded-lg text-sm transition-colors", isActive ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/20 font-bold" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200")}>
                   <Target className="w-4 h-4" /> {settings.language === 'ar' ? 'خطة التحسين' : 'Recovery Plan'}
                 </NavLink>
-                <NavLink to="/academic/warnings" className={({ isActive }) => cn("flex items-center gap-2 p-2 rounded-lg text-sm transition-colors", isActive ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/20 font-bold" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200")}>
-                  <AlertTriangle className="w-4 h-4" /> {t('warnings_improvements')}
+                <NavLink to="/academic/warnings" className={({ isActive }) => cn("flex items-center justify-between gap-2 p-2 rounded-lg text-sm transition-colors", isActive ? "text-rose-600 dark:text-rose-400 bg-rose-50/50 dark:bg-rose-950/20 font-bold" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200")}>
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className={`w-4 h-4 ${warningCount > 0 ? 'text-rose-500' : ''}`} /> 
+                    <span>{t('warnings_improvements')}</span>
+                  </div>
+                  {warningCount > 0 && (
+                    <span className="px-2 py-0.5 text-xs font-black bg-rose-500 text-white rounded-full animate-pulse shadow-sm">
+                      {warningCount}
+                    </span>
+                  )}
                 </NavLink>
               </div>
             )}
@@ -196,6 +232,19 @@ export function Layout() {
           >
             <Settings className="w-5 h-5" />
             {isSidebarOpen && t('settings')}
+          </NavLink>
+
+          <NavLink
+            to="/admin"
+            className={({ isActive }) => cn(
+              "flex items-center gap-3 p-3 rounded-xl text-sm font-medium transition-colors mt-2",
+              isActive 
+                ? "bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40 font-bold" 
+                : "text-purple-600 dark:text-purple-400 hover:bg-purple-50/50 dark:hover:bg-purple-950/20"
+            )}
+          >
+            <ShieldCheck className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+            {isSidebarOpen && (settings.language === 'ar' ? 'لوحة الأدمن' : 'Admin Portal')}
           </NavLink>
         </nav>
 

@@ -54,24 +54,35 @@ export function GradingScaleRow({ grade, onUpdate, onDelete }: Props) {
             type="number" 
             value={tempData.minPercentage}
             onChange={(e) => setTempData({...tempData, minPercentage: Number(e.target.value)})}
-            className="w-20 px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-zinc-800 outline-none"
+            className="w-16 px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-zinc-800 outline-none"
           />
+        </td>
+        <td className="py-2 px-1">
+          <div className="flex items-center gap-1.5">
+            <select
+              value={tempData.maxOperator || (tempData.maxPercentage >= 100 ? '<=' : '<')}
+              onChange={(e) => setTempData({...tempData, maxOperator: e.target.value as '<' | '<='})}
+              className="text-xs px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 font-bold text-indigo-600 dark:text-indigo-400 focus:ring-1 focus:ring-indigo-500 outline-none"
+              title="نوع الحد الأقصى"
+            >
+              <option value="<=">إلى (≤)</option>
+              <option value="<">إلى أقل من (&lt;)</option>
+            </select>
+            <input 
+              type="number" 
+              value={tempData.maxPercentage}
+              onChange={(e) => setTempData({...tempData, maxPercentage: Number(e.target.value)})}
+              className="w-16 px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-zinc-800 outline-none"
+            />
+          </div>
         </td>
         <td className="py-2 px-1">
           <input 
             type="number" 
-            value={tempData.maxPercentage}
-            onChange={(e) => setTempData({...tempData, maxPercentage: Number(e.target.value)})}
-            className="w-20 px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-zinc-800 outline-none"
-          />
-        </td>
-        <td className="py-2 px-1">
-          <input 
-            type="number" 
-            step="0.1"
+            step="0.05"
             value={tempData.points}
             onChange={(e) => setTempData({...tempData, points: Number(e.target.value)})}
-            className="w-20 px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-zinc-800 outline-none"
+            className="w-16 px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-zinc-800 outline-none"
           />
         </td>
         <td className="py-2 px-2">
@@ -94,27 +105,38 @@ export function GradingScaleRow({ grade, onUpdate, onDelete }: Props) {
     );
   }
 
+  const isInclusive = grade.maxOperator ? grade.maxOperator === '<=' : grade.maxPercentage >= 100;
+
   return (
     <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
       <td className="py-2 px-3 font-bold">{grade.letter}</td>
       <td className="py-2 px-3">{grade.nameAr}</td>
       <td className="py-2 px-3">{grade.nameEn}</td>
-      <td className="py-2 px-3">{grade.minPercentage}</td>
-      <td className="py-2 px-3">{grade.maxPercentage}</td>
-      <td className="py-2 px-3">{grade.points.toFixed(2)}</td>
+      <td className="py-2 px-3">{grade.minPercentage}%</td>
+      <td className="py-2 px-3">
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold ${
+          isInclusive 
+            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/40' 
+            : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40'
+        }`}>
+          <span>{isInclusive ? 'إلى (≤)' : 'إلى أقل من (<)'}</span>
+          <span className="font-black">{grade.maxPercentage}%</span>
+        </span>
+      </td>
+      <td className="py-2 px-3 font-bold">{grade.points.toFixed(2)}</td>
       <td className="py-2 px-2">
         <div className="flex items-center justify-center gap-1.5">
           <button 
             onClick={() => setIsEditing(true)}
             className="p-1.5 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-xl transition-all shadow-xs"
-            title="Edit"
+            title="تعديل"
           >
             <Edit2 size={14} />
           </button>
           <button 
             onClick={() => onDelete(grade.id)}
             className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs"
-            title="Delete"
+            title="حذف"
           >
             <Trash2 size={14} />
           </button>

@@ -17,12 +17,26 @@ export function calculateSubjectGrade(subject: Subject, gradingScale: GradeRule[
 
   const percentage = (totalAchieved / subject.totalMarks) * 100;
   
-  // Find grade by percentage (descending order sort to match highest first just in case)
+  // Find grade by percentage (descending order sort to match highest first)
   const sortedScale = [...gradingScale].sort((a, b) => b.minPercentage - a.minPercentage);
-  const grade = sortedScale.find(g => percentage >= g.minPercentage);
   
-  // If not found in scale, default to the lowest grade or F
-  const matchedGrade = grade || sortedScale[sortedScale.length - 1];
+  const grade = sortedScale.find((g, idx) => {
+    if (percentage < g.minPercentage) return false;
+    
+    // Determine operator for upper bound
+    const isMaxInclusive = g.maxOperator 
+      ? g.maxOperator === '<=' 
+      : (g.maxPercentage >= 100 || idx === 0);
+      
+    if (isMaxInclusive) {
+      return percentage <= g.maxPercentage;
+    } else {
+      return percentage < g.maxPercentage;
+    }
+  });
+  
+  // If not found in scale with strict upper bounds, fallback to finding by minPercentage or lowest grade
+  const matchedGrade = grade || sortedScale.find(g => percentage >= g.minPercentage) || sortedScale[sortedScale.length - 1];
 
   return {
     totalAchieved,

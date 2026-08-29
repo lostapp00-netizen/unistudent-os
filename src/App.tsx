@@ -5,6 +5,7 @@ import { Auth } from './pages/Auth';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Settings } from './pages/Settings';
+import { Admin } from './pages/Admin';
 
 // Academic
 import { AcademicDashboard } from './pages/academic/AcademicDashboard';
@@ -37,7 +38,7 @@ export function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session?.user?.id) {
-        initialize(session.user.id).catch(console.error).finally(() => setLoading(false));
+        initialize(session.user.id, session.user.email).catch(console.error).finally(() => setLoading(false));
       } else {
         setLoading(false);
       }
@@ -51,7 +52,7 @@ export function App() {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session?.user?.id) {
-        initialize(session.user.id).catch(console.error);
+        initialize(session.user.id, session.user.email).catch(console.error);
       } else {
         clearData();
       }
@@ -94,6 +95,7 @@ export function App() {
           </Route>
           
           <Route path="settings" element={<Settings />} />
+          <Route path="admin" element={<Admin />} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -5,6 +5,7 @@ export type GradeRule = {
   nameEn: string; // e.g., High Distinction
   minPercentage: number;
   maxPercentage: number;
+  maxOperator?: '<' | '<='; // '<' means 'up to less than', '<=' means 'up to and including'
   points: number;
 };
 
@@ -90,6 +91,7 @@ export type Task = {
 
 export type UserSettings = {
   name: string;
+  email?: string;
   university: string;
   college: string;
   enrollmentDate: string;
@@ -105,7 +107,6 @@ export type UserSettings = {
   warningGradeLetter?: string;
   warningGpaPoints?: number;
 };
-
 
 export type Appointment = {
   id: string;
@@ -150,3 +151,53 @@ export type Group = {
   name: string;
   color?: string;
 };
+
+export type FeedbackSuggestion = {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userName?: string;
+  type: 'suggestion' | 'complaint' | 'bug' | 'other';
+  title: string;
+  content: string;
+  createdAt: string;
+  status: 'new' | 'reviewed' | 'resolved';
+  adminNotes?: string;
+};
+
+export type EmailBackupConfig = {
+  enabled: boolean;
+  targetEmail: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'custom_hours';
+  customHours?: number;
+  startDate: string; // YYYY-MM-DD
+  startTime: string; // HH:mm
+  lastSentAt?: string;
+  status?: 'active' | 'paused' | 'error';
+};
+
+export type DatabaseBackup = {
+  version: string;
+  timestamp: string;
+  environment: string;
+  data: {
+    settings: any[];
+    subjects: any[];
+    tasks: any[];
+    notes: any[];
+    appointments: any[];
+    schedule_items: any[];
+    groups: any[];
+    drive_files: any[];
+    suggestions: any[];
+  };
+  summary: {
+    totalStudents: number;
+    totalSubjects: number;
+    totalTasks: number;
+    totalNotes: number;
+    totalFiles: number;
+    totalSuggestions: number;
+  };
+};
+

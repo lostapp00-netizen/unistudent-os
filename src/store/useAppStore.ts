@@ -36,7 +36,8 @@ export interface AppState {
   scheduleItems: ScheduleItem[];
   groups: Group[];
   
-  initialize: (userId: string) => Promise<void>;
+  userEmail: string | null;
+  initialize: (userId: string, email?: string) => Promise<void>;
   clearData: () => void;
   
   updateSettings: (settings: Partial<UserSettings>) => void;
@@ -66,6 +67,7 @@ export interface AppState {
 
 export const useAppStore = create<AppState>((set, get) => ({
   userId: null,
+  userEmail: null,
   isInitialized: false,
   settings: defaultSettings,
   subjects: [],
@@ -76,7 +78,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   scheduleItems: [],
   groups: [],
 
-  initialize: async (userId: string) => {
+  initialize: async (userId: string, email?: string) => {
     // Fetch all data for the user
     const [
       settingsData,
@@ -114,10 +116,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       localStorage.setItem(`unistudent_groups_initialized_${userId}`, 'true');
     }
 
+    const mergedSettings: UserSettings = settingsData 
+      ? { ...defaultSettings, ...settingsData, email: email || settingsData.email }
+      : { ...defaultSettings, email: email || '' };
+
+    if (email && (!settingsData?.email || settingsData.email !== email)) {
+      db.upsertSettings(userId, { email });
+    }
+
     set({
       userId,
+      userEmail: email || null,
       isInitialized: true,
-      settings: settingsData ? { ...defaultSettings, ...settingsData } : defaultSettings,
+      settings: mergedSettings,
       subjects,
       tasks,
       notes,
@@ -131,6 +142,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearData: () => {
     set({
       userId: null,
+      userEmail: null,
       isInitialized: false,
       settings: defaultSettings,
       subjects: [],

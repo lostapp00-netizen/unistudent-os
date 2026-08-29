@@ -314,6 +314,352 @@ export const db = {
   async deleteDriveFile(userId: string, id: string) {
     const { error } = await supabase.from('drive_files').delete().eq('id', id).eq('user_id', userId);
     if (error) console.error('Error deleting drive_file:', error);
+  },
+
+  // --- Feedback & Suggestions ---
+  async addFeedback(feedback: FeedbackSuggestion) {
+    try {
+      // 1. Local Cache
+      const allKey = 'unistudent_all_suggestions';
+      const existingAll: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(allKey) || '[]');
+      const updatedAll = [feedback, ...existingAll.filter(f => f.id !== feedback.id)];
+      localStorage.setItem(allKey, JSON.stringify(updatedAll));
+
+      const userKey = `unistudent_user_suggestions_${feedback.userId}`;
+      const existingUser: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(userKey) || '[]');
+      localStorage.setItem(userKey, JSON.stringify([feedback, ...existingUser.filter(f => f.id !== feedback.id)]));
+    } catch (e) {
+      console.warn('LocalStorage error in addFeedback:', e);
+    }
+
+    try {
+      const payload = {
+        id: feedback.id,
+        user_id: feedback.userId,
+        user_email: feedback.userEmail,
+        user_name: feedback.userName || '',
+        type: feedback.type,
+        title: feedback.title,
+        content: feedback.content,
+        created_at: feedback.createdAt,
+        status: feedback.status,
+        admin_notes: feedback.adminNotes || ''
+      };
+      await supabase.from('suggestions').insert([payload]);
+    } catch (err) {
+      console.warn('Supabase suggestions insert note:', err);
+    }
+  },
+
+  async getUserFeedbacks(userId: string): Promise<FeedbackSuggestion[]> {
+    try {
+      const { data, error } = await supabase.from('suggestions').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+      if (!error && data && data.length > 0) {
+        return data.map(row => ({
+          id: row.id,
+          userId: row.user_id,
+          userEmail: row.user_email || '',
+          userName: row.user_name || '',
+          type: row.type || 'suggestion',
+          title: row.title || '',
+          content: row.content || '',
+          createdAt: row.created_at || new Date().toISOString(),
+          status: row.status || 'new',
+          adminNotes: row.admin_notes || ''
+        }));
+      }
+    } catch (e) {}
+
+    try {
+      const cached = localStorage.getItem(`unistudent_user_suggestions_${userId}`);
+      if (cached) return JSON.parse(cached);
+    } catch {}
+
+    return [];
+  },
+
+  async getAllFeedbacks(): Promise<FeedbackSuggestion[]> {
+    try {
+      const { data, error } = await supabase.from('suggestions').select('*').order('created_at', { ascending: false });
+      if (!error && data && data.length > 0) {
+        return data.map(row => ({
+          id: row.id,
+          userId: row.user_id,
+          userEmail: row.user_email || '',
+          userName: row.user_name || '',
+          type: row.type || 'suggestion',
+          title: row.title || '',
+          content: row.content || '',
+          createdAt: row.created_at || new Date().toISOString(),
+          status: row.status || 'new',
+          adminNotes: row.admin_notes || ''
+        }));
+      }
+    } catch (e) {}
+
+    try {
+      const cached = localStorage.getItem('unistudent_all_suggestions');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+
+    return [];
+  },
+
+  async updateFeedback(id: string, updates: Partial<FeedbackSuggestion>) {
+    try {
+      const allKey = 'unistudent_all_suggestions';
+      const list: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(allKey) || '[]');
+      const updated = list.map(item => item.id === id ? { ...item, ...updates } : item);
+      localStorage.setItem(allKey, JSON.stringify(updated));
+    } catch {}
+
+    try {
+      const payload: any = {};
+      if (updates.status) payload.status = updates.status;
+      if (updates.adminNotes !== undefined) payload.admin_notes = updates.adminNotes;
+      await supabase.from('suggestions').update(payload).eq('id', id);
+    } catch (e) {
+      console.warn('Supabase update feedback note:', e);
+    }
+  },
+
+  async deleteFeedback(id: string) {
+    try {
+      const allKey = 'unistudent_all_suggestions';
+      const list: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(allKey) || '[]');
+      localStorage.setItem(allKey, JSON.stringify(list.filter(f => f.id !== id)));
+    } catch {}
+
+    try {
+      await supabase.from('suggestions').delete().eq('id', id);
+    } catch (e) {}
+  },
+
+  // --- Admin All Platform Data ---
+  async getAdminAllData() {
+    const [
+      settingsRes,
+      subjectsRes,
+      tasksRes,
+      notesRes,
+      appointmentsRes,
+      scheduleRes,
+      groupsRes,
+      filesRes,
+      feedbacks
+    ] = await Promise.all([
+      supabase.from('settings').select('*'),
+      supabase.from('subjects').select('*'),
+      supabase.from('tasks').select('*'),
+      supabase.from('notes').select('*'),
+      supabase.from('appointments').select('*'),
+      supabase.from('schedule_items').select('*'),
+      supabase.from('groups').select('*'),
+      supabase.from('drive_files').select('*'),
+      this.getAllFeedbacks()
+    ]);
+
+    const rawSettings = settingsRes.data || [];
+    const rawSubjects = subjectsRes.data || [];
+    const rawTasks = tasksRes.data || [];
+    const rawNotes = notesRes.data || [];
+    const rawAppointments = appointmentsRes.data || [];
+    const rawSchedule = scheduleRes.data || [];
+    const rawGroups = groupsRes.data || [];
+    const rawFiles = filesRes.data || [];
+
+    // Collect all distinct user IDs
+    const userIds = new Set<string>();
+    rawSettings.forEach(s => s.user_id && userIds.add(s.user_id));
+    rawSubjects.forEach(s => s.user_id && userIds.add(s.user_id));
+    rawTasks.forEach(t => t.user_id && userIds.add(t.user_id));
+    rawNotes.forEach(n => n.user_id && userIds.add(n.user_id));
+    rawAppointments.forEach(a => a.user_id && userIds.add(a.user_id));
+    rawSchedule.forEach(sc => sc.user_id && userIds.add(sc.user_id));
+    rawFiles.forEach(f => f.user_id && userIds.add(f.user_id));
+    feedbacks.forEach(fb => fb.userId && userIds.add(fb.userId));
+
+    // Also check current active user
+    const currentSession = await supabase.auth.getSession().catch(() => null);
+    if (currentSession?.data?.session?.user?.id) {
+      userIds.add(currentSession.data.session.user.id);
+    }
+
+    return {
+      userIds: Array.from(userIds),
+      rawSettings,
+      rawSubjects,
+      rawTasks,
+      rawNotes,
+      rawAppointments,
+      rawSchedule,
+      rawGroups,
+      rawFiles,
+      feedbacks
+    };
+  },
+
+  // --- Full Database Backup & Restore ---
+  async exportFullDatabaseBackup(): Promise<DatabaseBackup> {
+    const data = await this.getAdminAllData();
+    return {
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+      environment: 'production',
+      data: {
+        settings: data.rawSettings,
+        subjects: data.rawSubjects,
+        tasks: data.rawTasks,
+        notes: data.rawNotes,
+        appointments: data.rawAppointments,
+        schedule_items: data.rawSchedule,
+        groups: data.rawGroups,
+        drive_files: data.rawFiles,
+        suggestions: data.feedbacks
+      },
+      summary: {
+        totalStudents: data.userIds.length,
+        totalSubjects: data.rawSubjects.length,
+        totalTasks: data.rawTasks.length,
+        totalNotes: data.rawNotes.length,
+        totalFiles: data.rawFiles.length,
+        totalSuggestions: data.feedbacks.length
+      }
+    };
+  },
+
+  async restoreDatabaseFromBackup(backup: DatabaseBackup, mode: 'overwrite' | 'merge' = 'merge'): Promise<{ success: boolean; message: string; details: any }> {
+    if (!backup?.data) {
+      throw new Error('Invalid backup file format.');
+    }
+
+    const { settings = [], subjects = [], tasks = [], notes = [], appointments = [], schedule_items = [], groups = [], drive_files = [], suggestions = [] } = backup.data;
+    const errors: string[] = [];
+
+    // 1. Settings
+    if (settings.length > 0) {
+      try {
+        await supabase.from('settings').upsert(settings, { onConflict: 'user_id' });
+      } catch (err: any) {
+        errors.push(`Settings: ${err.message}`);
+      }
+    }
+
+    // 2. Subjects
+    if (subjects.length > 0) {
+      try {
+        await supabase.from('subjects').upsert(subjects, { onConflict: 'id' });
+      } catch (err: any) {
+        errors.push(`Subjects: ${err.message}`);
+      }
+    }
+
+    // 3. Tasks
+    if (tasks.length > 0) {
+      try {
+        await supabase.from('tasks').upsert(tasks, { onConflict: 'id' });
+      } catch (err: any) {
+        errors.push(`Tasks: ${err.message}`);
+      }
+    }
+
+    // 4. Notes
+    if (notes.length > 0) {
+      try {
+        await supabase.from('notes').upsert(notes, { onConflict: 'id' });
+      } catch (err: any) {
+        errors.push(`Notes: ${err.message}`);
+      }
+    }
+
+    // 5. Appointments
+    if (appointments.length > 0) {
+      try {
+        await supabase.from('appointments').upsert(appointments, { onConflict: 'id' });
+      } catch (err: any) {
+        errors.push(`Appointments: ${err.message}`);
+      }
+    }
+
+    // 6. Schedule Items
+    if (schedule_items.length > 0) {
+      try {
+        await supabase.from('schedule_items').upsert(schedule_items, { onConflict: 'id' });
+      } catch (err: any) {
+        errors.push(`Schedule: ${err.message}`);
+      }
+    }
+
+    // 7. Groups
+    if (groups.length > 0) {
+      try {
+        await supabase.from('groups').upsert(groups, { onConflict: 'id' });
+      } catch (err: any) {
+        errors.push(`Groups: ${err.message}`);
+      }
+    }
+
+    // 8. Drive Files
+    if (drive_files.length > 0) {
+      try {
+        await supabase.from('drive_files').upsert(drive_files, { onConflict: 'id' });
+      } catch (err: any) {
+        errors.push(`Drive files: ${err.message}`);
+      }
+    }
+
+    // 9. Suggestions
+    if (suggestions.length > 0) {
+      try {
+        await supabase.from('suggestions').upsert(suggestions, { onConflict: 'id' });
+        localStorage.setItem('unistudent_all_suggestions', JSON.stringify(suggestions));
+      } catch (err: any) {
+        errors.push(`Suggestions: ${err.message}`);
+      }
+    }
+
+    return {
+      success: errors.length === 0,
+      message: errors.length === 0 ? 'تمت استعادة كافة بيانات قاعدة البيانات بنجاح!' : `تمت الاستعادة مع بعض التنبيهات: ${errors.join(', ')}`,
+      details: {
+        restoredCount: {
+          settings: settings.length,
+          subjects: subjects.length,
+          tasks: tasks.length,
+          notes: notes.length,
+          appointments: appointments.length,
+          schedule: schedule_items.length,
+          files: drive_files.length,
+          suggestions: suggestions.length
+        },
+        errors
+      }
+    };
+  },
+
+  // --- Email Backup Configuration ---
+  getEmailBackupConfig(): EmailBackupConfig {
+    try {
+      const saved = localStorage.getItem('unistudent_email_backup_config');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+
+    return {
+      enabled: false,
+      targetEmail: '',
+      frequency: 'weekly',
+      startDate: new Date().toISOString().split('T')[0],
+      startTime: '09:00',
+      status: 'paused'
+    };
+  },
+
+  saveEmailBackupConfig(config: EmailBackupConfig) {
+    try {
+      localStorage.setItem('unistudent_email_backup_config', JSON.stringify(config));
+    } catch (e) {
+      console.error('Error saving email backup config:', e);
+    }
   }
 };
 

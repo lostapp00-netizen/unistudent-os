@@ -23,7 +23,8 @@ export function GradingScale({ scale, onChange }: Props) {
       nameAr: 'ممتاز', 
       nameEn: 'Excellent', 
       minPercentage: 90, 
-      maxPercentage: 100, 
+      maxPercentage: 97,
+      maxOperator: '<',
       points: 4.0 
     }]);
   };
@@ -39,7 +40,14 @@ export function GradingScale({ scale, onChange }: Props) {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center border-b border-zinc-100 dark:border-zinc-800 pb-4">
-        <h2 className="text-xl font-semibold">{t('grading_scale')}</h2>
+        <div>
+          <h2 className="text-xl font-semibold">{t('grading_scale')}</h2>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            {isAr 
+              ? 'يمكنك تحديد ما إذا كان الحد الأقصى شاملاً (إلى <=) أو غير شامل (إلى أقل من <) لكل تقدير' 
+              : 'Specify whether the upper bound is inclusive (<=) or exclusive (<) for each grade'}
+          </p>
+        </div>
         <button 
           onClick={addGrade}
           className="flex items-center gap-2 text-sm bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 dark:text-indigo-300 px-3 py-1.5 rounded-xl transition-colors font-medium"
@@ -56,8 +64,8 @@ export function GradingScale({ scale, onChange }: Props) {
               <th className="pb-3 px-2 font-medium">{t('grade_letter')}</th>
               <th className="pb-3 px-2 font-medium">{t('grade_name_ar')}</th>
               <th className="pb-3 px-2 font-medium">{t('grade_name_en')}</th>
-              <th className="pb-3 px-2 font-medium">{t('min')}</th>
-              <th className="pb-3 px-2 font-medium">{t('max')}</th>
+              <th className="pb-3 px-2 font-medium">{t('min')} (%)</th>
+              <th className="pb-3 px-2 font-medium">{isAr ? 'الحد الأقصى (النوع والقيمة)' : 'Upper Bound (Type & %)'}</th>
               <th className="pb-3 px-2 font-medium">{t('points')}</th>
               <th className="pb-3 px-2 font-medium text-center">{t('actions')}</th>
             </tr>
