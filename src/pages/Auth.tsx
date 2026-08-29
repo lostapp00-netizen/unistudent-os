@@ -26,7 +26,7 @@ export function Auth() {
 
     if (isAdmin) {
       sessionStorage.setItem('unistudent_admin_auth', 'true');
-      window.location.href = '/admin';
+      window.location.replace('/admin');
       return;
     }
 
@@ -35,11 +35,11 @@ export function Auth() {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({ email: emailTrimmed, password: passwordTrimmed });
         if (error) throw error;
-        window.location.href = '/';
+        window.location.replace('/');
       } else {
         const { error } = await supabase.auth.signUp({ email: emailTrimmed, password: passwordTrimmed });
         if (error) throw error;
-        window.location.href = '/';
+        window.location.replace('/');
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred during authentication');

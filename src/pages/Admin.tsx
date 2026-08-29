@@ -116,7 +116,7 @@ export function Admin() {
       const { supabase } = await import('../lib/supabase');
       await supabase.auth.signOut();
     } catch {}
-    window.location.href = '/auth';
+    window.location.replace('/auth');
   };
 
   // --- Redirect to unified /auth if not logged in ---
@@ -698,23 +698,23 @@ export function Admin() {
 
               <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs overflow-hidden" dir={isAr ? 'rtl' : 'ltr'}>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left rtl:text-right whitespace-nowrap" dir={isAr ? 'rtl' : 'ltr'}>
+                  <table className={`w-full text-sm ${isAr ? 'text-right' : 'text-left'} whitespace-nowrap`} dir={isAr ? 'rtl' : 'ltr'}>
                     <thead className="bg-zinc-50 dark:bg-zinc-800/60 text-zinc-500 border-b border-zinc-200 dark:border-zinc-800 text-xs uppercase tracking-wider">
                       <tr>
-                        <th className="py-3.5 px-4 font-bold">{isAr ? 'الطالب' : 'Student'}</th>
-                        <th className="py-3.5 px-4 font-bold">{isAr ? 'الجامعة والكلية' : 'University & College'}</th>
-                        <th className="py-3.5 px-4 font-bold">{isAr ? 'المستوى' : 'Level'}</th>
-                        <th className="py-3.5 px-4 font-bold">{isAr ? 'المواد والساعات' : 'Subjects & Credits'}</th>
-                        <th className="py-3.5 px-4 font-bold">{isAr ? 'المعدل التراكمي CGPA' : 'CGPA'}</th>
-                        <th className="py-3.5 px-4 font-bold">{isAr ? 'الإنذارات' : 'Warnings'}</th>
-                        <th className="py-3.5 px-4 font-bold">{isAr ? 'التخزين' : 'Storage'}</th>
-                        <th className="py-3.5 px-4 font-bold text-center">{isAr ? 'الإجراءات' : 'Actions'}</th>
+                        <th className="py-4 px-6 font-bold">{isAr ? 'اسم الطالب' : 'Student Name'}</th>
+                        <th className="py-4 px-6 font-bold">{isAr ? 'الجامعة والكلية' : 'University & College'}</th>
+                        <th className="py-4 px-6 font-bold text-center">{isAr ? 'المستوى' : 'Level'}</th>
+                        <th className="py-4 px-6 font-bold text-center">{isAr ? 'المواد والساعات' : 'Subjects & Credits'}</th>
+                        <th className="py-4 px-6 font-bold text-center">{isAr ? 'المعدل التراكمي CGPA' : 'CGPA'}</th>
+                        <th className="py-4 px-6 font-bold text-center">{isAr ? 'الإنذارات' : 'Warnings'}</th>
+                        <th className="py-4 px-6 font-bold text-center">{isAr ? 'التخزين' : 'Storage'}</th>
+                        <th className="py-4 px-6 font-bold text-center">{isAr ? 'الإجراءات' : 'Actions'}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 text-xs">
                       {filteredStudents.map((st) => (
                         <tr key={st.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors">
-                          <td className="py-3.5 px-4">
+                          <td className="py-4 px-6">
                             <div>
                               <p className="font-bold text-zinc-900 dark:text-white text-sm">{st.name}</p>
                               <div className="flex items-center gap-1.5 mt-0.5 text-zinc-400">
@@ -730,23 +730,23 @@ export function Admin() {
                             </div>
                           </td>
 
-                          <td className="py-3.5 px-4">
+                          <td className="py-4 px-6">
                             <p className="font-semibold text-zinc-800 dark:text-zinc-200">{st.university}</p>
                             <p className="text-[11px] text-zinc-400">{st.college}</p>
                           </td>
 
-                          <td className="py-3.5 px-4">
+                          <td className="py-4 px-6 text-center">
                             <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 font-bold text-zinc-700 dark:text-zinc-300">
                               {isAr ? `سنة ${st.currentYear} ف${st.currentSemester}` : `Y${st.currentYear} S${st.currentSemester}`}
                             </span>
                           </td>
 
-                          <td className="py-3.5 px-4">
+                          <td className="py-4 px-6 text-center">
                             <p className="font-bold text-zinc-800 dark:text-zinc-200">{st.subjectsCount} {isAr ? 'مواد' : 'subjects'}</p>
                             <p className="text-[11px] text-zinc-400">{st.registeredCreditHours} {isAr ? 'ساعات معتمدة' : 'credits'}</p>
                           </td>
 
-                          <td className="py-3.5 px-4">
+                          <td className="py-4 px-6 text-center">
                             <span className={`px-2.5 py-1 rounded-xl font-black text-xs ${
                               st.cgpa >= 3.5 
                                 ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60' 
@@ -758,7 +758,7 @@ export function Admin() {
                             </span>
                           </td>
 
-                          <td className="py-3.5 px-4">
+                          <td className="py-4 px-6 text-center">
                             {st.warningCount > 0 ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold border border-rose-200 dark:border-rose-800">
                                 <AlertTriangle size={12} />
@@ -769,11 +769,11 @@ export function Admin() {
                             )}
                           </td>
 
-                          <td className="py-3.5 px-4 text-zinc-500 font-medium">
+                          <td className="py-4 px-6 text-center text-zinc-500 font-medium">
                             {(st.totalStorageBytes / (1024 * 1024)).toFixed(1)} MB
                           </td>
 
-                          <td className="py-3.5 px-4 text-center">
+                          <td className="py-4 px-6 text-center">
                             <button
                               onClick={() => setSelectedStudent(st)}
                               className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold rounded-xl border border-purple-200 dark:border-purple-800/60 transition-all flex items-center gap-1.5 mx-auto shadow-2xs"
@@ -788,7 +788,7 @@ export function Admin() {
                       {filteredStudents.length === 0 && (
                         <tr>
                           <td colSpan={8} className="py-12 text-center text-zinc-400">
-                            {isAr ? 'لا توجد بيانات مطابقة لخيارات البحث.' : 'No students found.'}
+                            {isAr ? 'لا توجد بيانات طلاب مطابقة.' : 'No students found.'}
                           </td>
                         </tr>
                       )}
