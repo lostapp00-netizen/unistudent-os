@@ -53,8 +53,10 @@ export function Admin() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return sessionStorage.getItem('unistudent_admin_auth') === 'true';
   });
-  const [passcode, setPasscode] = useState('');
+  const [adminEmail, setAdminEmail] = useState('admin@gmail.com');
+  const [adminPassword, setAdminPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
 
   // --- Tabs ---
   type TabType = 'overview' | 'students' | 'suggestions' | 'backup';
@@ -110,17 +112,45 @@ export function Admin() {
     }
   }, [isAuthenticated]);
 
-  // Handle Passcode Login
-  const handleLogin = (e: React.FormEvent) => {
+  // Handle Admin Login (admin@gmail.com / admin@gmail.ocm with Body22@33 or master credentials)
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Default passkeys: admin2026 or unistudent or admin
-    if (passcode.trim() === 'admin2026' || passcode.trim() === 'unistudent' || passcode.trim() === 'admin' || passcode.trim().length >= 4) {
+    setAuthError(null);
+    setAuthLoading(true);
+
+    const emailTrimmed = adminEmail.trim().toLowerCase();
+    const passTrimmed = adminPassword.trim();
+
+    // Check direct designated credentials
+    const isDirectMatch = 
+      (emailTrimmed === 'admin@gmail.com' || emailTrimmed === 'admin@gmail.ocm' || emailTrimmed === 'admin@unistudent.com') && 
+      (passTrimmed === 'Body22@33' || passTrimmed === 'admin2026' || passTrimmed === 'unistudent');
+
+    if (isDirectMatch) {
       setIsAuthenticated(true);
       sessionStorage.setItem('unistudent_admin_auth', 'true');
-      setAuthError(null);
-    } else {
-      setAuthError(isAr ? 'رمز الدخول غير صحيح' : 'Invalid admin passcode');
+      setAuthLoading(false);
+      return;
     }
+
+    // Try Supabase auth fallback if account exists in Supabase
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: emailTrimmed,
+        password: passTrimmed
+      });
+
+      if (!error && data.session) {
+        setIsAuthenticated(true);
+        sessionStorage.setItem('unistudent_admin_auth', 'true');
+        setAuthLoading(false);
+        return;
+      }
+    } catch (err) {}
+
+    setAuthError(isAr ? 'بيانات الدخول غير صحيحة. يرجى التأكد من البريد الإلكتروني وكلمة المرور.' : 'Invalid credentials. Please verify your email and password.');
+    setAuthLoading(false);
   };
 
   const handleLogout = () => {
@@ -401,8 +431,8 @@ export function Admin() {
             </h1>
             <p className="text-xs text-zinc-500 mt-1">
               {isAr 
-                ? 'يرجى إدخال رمز المرور للوصول إلى بيانات الطلاب والنسخ الاحتياطي' 
-                : 'Enter your administrator passcode to access platform data'}
+                ? 'يرجى تسجيل الدخول ببيانات حساب الأدمن للوصول إلى لوحة التحكم' 
+                : 'Enter your administrator credentials to access platform data'}
             </p>
           </div>
 
@@ -412,24 +442,42 @@ export function Admin() {
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="relative">
+          <form onSubmit={handleLogin} className="space-y-4 text-left rtl:text-right">
+            <div>
+              <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                {isAr ? 'البريد الإلكتروني للأدمن' : 'Admin Email'}
+              </label>
+              <input
+                type="email"
+                required
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                placeholder="admin@gmail.com"
+                className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-2xl outline-none focus:ring-2 focus:ring-purple-500 transition-all text-zinc-900 dark:text-white text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                {isAr ? 'كلمة المرور' : 'Password'}
+              </label>
               <input
                 type="password"
                 required
                 autoFocus
-                value={passcode}
-                onChange={(e) => setPasscode(e.target.value)}
-                placeholder={isAr ? 'أدخل رمز المرور...' : 'Enter passcode...'}
-                className="w-full text-center text-lg font-bold tracking-widest px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-2xl outline-none focus:ring-2 focus:ring-purple-500 transition-all text-zinc-900 dark:text-white"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-2xl outline-none focus:ring-2 focus:ring-purple-500 transition-all text-zinc-900 dark:text-white text-sm"
               />
             </div>
 
             <button
               type="submit"
-              className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-2xl shadow-md transition-all flex items-center justify-center gap-2"
+              disabled={authLoading}
+              className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 mt-2"
             >
-              <LogIn size={18} />
+              {authLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <LogIn size={18} />}
               <span>{isAr ? 'تسجيل الدخول للأدمن' : 'Authenticate'}</span>
             </button>
           </form>
