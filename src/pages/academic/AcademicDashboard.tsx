@@ -80,7 +80,7 @@ export function AcademicDashboard() {
             </button>
             
             {showFilterPopover && (
-              <div className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl z-50 p-4">
+              <div className={`absolute top-full mt-2 w-64 max-w-[calc(100vw-2rem)] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl z-50 p-4 left-1/2 -translate-x-1/2 sm:translate-x-0 ${isAr ? 'sm:left-auto sm:right-0' : 'sm:right-auto sm:left-0'}`}>
                 <div className="mb-4">
                   <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">{t('year')}</h4>
                   <div className="space-y-1">

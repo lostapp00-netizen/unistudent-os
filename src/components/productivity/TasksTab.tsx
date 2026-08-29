@@ -7,6 +7,7 @@ import { Priority, EntityAttachment } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
 import { EntityLinker } from '../ui/EntityLinker';
 import { LocalAttachmentUploader } from '../ui/LocalAttachmentUploader';
+import { AttachmentBadge } from '../ui/AttachmentBadge';
 import { ProductivityGroupTabs } from './ProductivityGroupTabs';
 import { ProductivityFilter, ProductivityFilterState } from './ProductivityFilter';
 import { isDateMatchingFilter } from '../../lib/dateFilters';
@@ -246,28 +247,7 @@ export function TasksTab() {
                 {task.attachments && task.attachments.length > 0 && (
                   <div className="mt-4 flex flex-wrap gap-2">
                     {task.attachments.map(att => (
-                      <button 
-                        key={att.id} 
-                        type="button"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (att.b2FileId) {
-                            try {
-                              const { getPresignedDownloadUrl } = await import('../../lib/backblaze');
-                              const url = await getPresignedDownloadUrl(att.b2FileId);
-                              window.open(url, '_blank');
-                            } catch {
-                              if (att.url) window.open(att.url, '_blank');
-                            }
-                          } else if (att.url) {
-                            window.open(att.url, '_blank');
-                          }
-                        }}
-                        className="inline-flex items-center gap-1.5 text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-2.5 py-1.5 rounded-xl transition-colors border border-zinc-200 dark:border-zinc-700 font-medium cursor-pointer"
-                      >
-                        <FileText size={12} className="text-indigo-500" />
-                        <span className="truncate max-w-[150px]">{att.name}</span>
-                      </button>
+                      <AttachmentBadge key={att.id} attachment={att} />
                     ))}
                   </div>
                 )}

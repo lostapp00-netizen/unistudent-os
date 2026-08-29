@@ -220,9 +220,9 @@ export function Layout() {
 
       <main className="flex-1 overflow-y-auto bg-zinc-50 dark:bg-zinc-950 flex flex-col">
         {/* Mobile Header */}
-        <div className="md:hidden p-4 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 z-10 sticky top-0">
-          <div className="font-bold text-indigo-600 dark:text-indigo-400">{t('app_name')}</div>
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 -mr-2 text-zinc-600 dark:text-zinc-300">
+        <div className="md:hidden p-4 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md z-40 sticky top-0 shadow-xs">
+          <div className="font-bold text-indigo-600 dark:text-indigo-400 text-lg">{t('app_name')}</div>
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 -mr-2 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white rounded-lg transition-colors">
             <Menu className="w-6 h-6" />
           </button>
         </div>

@@ -86,7 +86,7 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
       {groups.map(group => (
         <div key={group.id} className={`relative flex-shrink-0 group/item flex items-center ${showOptionsId === group.id ? 'z-40' : 'z-10'}`}>
           {editingId === group.id ? (
-            <div className="flex items-center gap-1 bg-white dark:bg-zinc-900 border border-indigo-500 rounded-xl px-2 py-1 shadow-sm">
+            <div className="flex items-center gap-1 bg-white dark:bg-zinc-900 border border-indigo-500 rounded-xl px-2 py-1 shadow-sm h-[38px]">
               <input
                 type="text"
                 value={editName}
@@ -94,8 +94,25 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
                 onKeyDown={(e) => handleKeyDown(e, handleSaveEdit)}
                 className="w-24 bg-transparent outline-none text-sm font-medium px-1"
                 autoFocus
-                onBlur={handleSaveEdit}
               />
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleSaveEdit}
+                className="p-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+                title={isAr ? 'حفظ' : 'Save'}
+              >
+                <Check size={14} />
+              </button>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setEditingId(null)}
+                className="p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-600 transition-colors"
+                title={isAr ? 'إلغاء' : 'Cancel'}
+              >
+                <X size={14} />
+              </button>
             </div>
           ) : (
             <div 
@@ -158,7 +175,7 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
       ))}
 
       {isAdding ? (
-        <div className="flex-shrink-0 flex items-center gap-1 bg-white dark:bg-zinc-900 border border-indigo-500 rounded-xl px-2 py-1 shadow-sm h-[38px]">
+        <div className="flex-shrink-0 flex items-center gap-1.5 bg-white dark:bg-zinc-900 border border-indigo-500 rounded-xl px-2 py-1 shadow-sm h-[38px]">
           <input
             type="text"
             value={newGroupName}
@@ -167,8 +184,25 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
             placeholder={isAr ? 'اسم المجموعة...' : 'Group name...'}
             className="w-28 bg-transparent outline-none text-sm font-medium px-1"
             autoFocus
-            onBlur={handleAddGroup}
           />
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleAddGroup}
+            className="p-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors flex items-center justify-center"
+            title={isAr ? 'إضافة المجموعة' : 'Add Group'}
+          >
+            <Plus size={15} />
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { setIsAdding(false); setNewGroupName(''); }}
+            className="p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-600 transition-colors flex items-center justify-center"
+            title={isAr ? 'إلغاء' : 'Cancel'}
+          >
+            <X size={15} />
+          </button>
         </div>
       ) : (
         <button

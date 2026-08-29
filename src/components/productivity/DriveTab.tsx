@@ -92,19 +92,16 @@ export function DriveTab() {
     if (file.type === 'folder') {
       setCurrentFolderId(file.id);
     } else {
-      if (file.b2FileId) {
-        try {
-          const { getPresignedDownloadUrl } = await import('../../lib/backblaze');
-          const url = await getPresignedDownloadUrl(file.b2FileId);
-          window.open(url, '_blank');
-        } catch (err) {
-          console.error(err);
-          alert('فشل الحصول على رابط التحميل.');
+      try {
+        const { openOrDownloadFile } = await import('../../lib/backblaze');
+        await openOrDownloadFile(file, 'view');
+      } catch (err: any) {
+        console.error('Error opening file:', err);
+        if (file.url) {
+          window.open(file.url, '_blank');
+        } else {
+          alert('فشل فتح الملف للمعاينة.');
         }
-      } else if (file.url) {
-        window.open(file.url, '_blank');
-      } else {
-        alert(`Opening file: ${file.name}`);
       }
     }
   };
@@ -167,17 +164,15 @@ export function DriveTab() {
                       onClick={async (e) => {
                         e.stopPropagation();
                         try {
-                          if (file.b2FileId) {
-                            const { getPresignedDownloadUrl, triggerBrowserDownload } = await import('../../lib/backblaze');
-                            const url = await getPresignedDownloadUrl(file.b2FileId, file.name);
-                            await triggerBrowserDownload(url, file.name);
-                          } else if (file.url) {
-                            const { triggerBrowserDownload } = await import('../../lib/backblaze');
-                            await triggerBrowserDownload(file.url, file.name);
-                          }
+                          const { openOrDownloadFile } = await import('../../lib/backblaze');
+                          await openOrDownloadFile(file, 'download');
                         } catch (err) {
                           console.error('Download error:', err);
-                          alert('فشل تنزيل الملف.');
+                          if (file.url) {
+                            window.open(file.url, '_blank');
+                          } else {
+                            alert('فشل تنزيل الملف.');
+                          }
                         }
                       }}
                       className="p-2 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all rounded-xl shadow-xs"

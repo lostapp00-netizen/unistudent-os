@@ -139,7 +139,7 @@ export function AcademicSubjects() {
             </button>
 
             {showFilterPopover && (
-              <div className="absolute right-0 rtl:right-auto rtl:left-0 top-full mt-2 w-72 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-4 z-40">
+              <div className="absolute top-full mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-4 z-40 left-1/2 -translate-x-1/2 sm:translate-x-0 rtl:sm:right-0 rtl:sm:left-auto ltr:sm:left-0 ltr:sm:right-auto">
                 <div className="flex justify-between items-center mb-3">
                   <span className="font-bold text-sm">{t('filter')}</span>
                   {(filterYears.length > 0 || filterSemesters.length > 0) && (

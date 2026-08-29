@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Paperclip, X, Loader2, File } from 'lucide-react';
+import { Paperclip, X, Loader2, File, Eye, Download } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuidv4 } from 'uuid';
 import { EntityAttachment } from '../../types';
@@ -55,6 +55,26 @@ export function LocalAttachmentUploader({ attachments, onChange }: LocalAttachme
     onChange(attachments.filter(a => a.id !== attachmentId));
   };
 
+  const handleView = async (att: EntityAttachment) => {
+    try {
+      const { openOrDownloadFile } = await import('../../lib/backblaze');
+      await openOrDownloadFile(att, 'view');
+    } catch (err) {
+      if (att.url) window.open(att.url, '_blank');
+      else alert('تعذر فتح الملف للمعاينة.');
+    }
+  };
+
+  const handleDownload = async (att: EntityAttachment) => {
+    try {
+      const { openOrDownloadFile } = await import('../../lib/backblaze');
+      await openOrDownloadFile(att, 'download');
+    } catch (err) {
+      if (att.url) window.open(att.url, '_blank');
+      else alert('تعذر تنزيل الملف.');
+    }
+  };
+
   const formatSize = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -70,19 +90,37 @@ export function LocalAttachmentUploader({ attachments, onChange }: LocalAttachme
         <div className="flex flex-col gap-2">
           {attachments.map(att => (
             <div key={att.id} className="flex items-center justify-between bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2">
-              <div className="flex items-center gap-2 overflow-hidden">
+              <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
                 <File size={16} className="text-zinc-400 flex-shrink-0" />
                 <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">{att.name}</span>
                 <span className="text-xs text-zinc-500 whitespace-nowrap">({formatSize(att.size)})</span>
               </div>
-              <button
-                type="button"
-                onClick={() => handleRemove(att.id, att.b2FileId)}
-                className="p-1 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-lg transition-colors"
-                title="حذف"
-              >
-                <X size={15} />
-              </button>
+              <div className="flex items-center gap-1.5 flex-shrink-0 mr-2 rtl:mr-0 rtl:ml-2">
+                <button
+                  type="button"
+                  onClick={() => handleView(att)}
+                  className="p-1.5 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-lg transition-colors cursor-pointer"
+                  title="معاينة"
+                >
+                  <Eye size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownload(att)}
+                  className="p-1.5 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-lg transition-colors cursor-pointer"
+                  title="تنزيل"
+                >
+                  <Download size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRemove(att.id, att.b2FileId)}
+                  className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-lg transition-colors cursor-pointer"
+                  title="حذف"
+                >
+                  <X size={14} />
+                </button>
+              </div>
             </div>
           ))}
         </div>

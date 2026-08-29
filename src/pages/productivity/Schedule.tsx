@@ -8,6 +8,7 @@ import { Clock, Plus, Trash2, Edit2, LayoutGrid, Calendar as CalendarIcon, User,
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
 import { EntityLinker } from '../../components/ui/EntityLinker';
 import { LocalAttachmentUploader } from '../../components/ui/LocalAttachmentUploader';
+import { AttachmentBadge } from '../../components/ui/AttachmentBadge';
 
 export function Schedule() {
   const { t, i18n } = useTranslation();
@@ -226,9 +227,11 @@ export function Schedule() {
                                   ) : null;
                                 })}
                                 {item.attachments && item.attachments.length > 0 && (
-                                  <span className="flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-1 rounded-md">
-                                    <Paperclip size={10} /> {item.attachments.length} {settings.language === 'ar' ? 'مرفقات' : 'attachments'}
-                                  </span>
+                                  <div className="w-full flex flex-wrap gap-1.5 mt-2">
+                                    {item.attachments.map(att => (
+                                      <AttachmentBadge key={att.id} attachment={att} />
+                                    ))}
+                                  </div>
                                 )}
                               </div>
                             ) : null}

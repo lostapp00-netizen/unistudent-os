@@ -53,7 +53,7 @@ export function ProductivityFilter({ filter, setFilter }: ProductivityFilterProp
       </button>
       
       {isOpen && (
-        <div className={`absolute top-full mt-2 w-72 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl p-4 z-50 ${isAr ? 'left-0' : 'right-0'}`}>
+        <div className={`absolute top-full mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl p-4 z-50 left-1/2 -translate-x-1/2 sm:translate-x-0 ${isAr ? 'sm:left-auto sm:right-0' : 'sm:right-auto sm:left-0'}`}>
           <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">
             {isAr ? 'الفترة الزمنية' : 'Time Period'}
           </h4>

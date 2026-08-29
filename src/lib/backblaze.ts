@@ -57,15 +57,26 @@ export async function deleteFromB2(path: string): Promise<void> {
 }
 
 /**
- * Generates a presigned download URL for private buckets
+ * Generates a presigned download/view URL for private buckets
  */
-export async function getPresignedDownloadUrl(path: string, downloadFilename?: string): Promise<string> {
+export async function getPresignedDownloadUrl(
+  path: string, 
+  downloadFilename?: string, 
+  inline: boolean = false
+): Promise<string> {
+  let contentDisposition: string | undefined = undefined;
+
+  if (downloadFilename) {
+    const encodedName = encodeURIComponent(downloadFilename);
+    contentDisposition = `attachment; filename="${encodedName}"; filename*=UTF-8''${encodedName}`;
+  } else if (inline) {
+    contentDisposition = 'inline';
+  }
+
   const command = new GetObjectCommand({
     Bucket: BUCKET_NAME,
     Key: path,
-    ResponseContentDisposition: downloadFilename 
-      ? `attachment; filename="${encodeURIComponent(downloadFilename)}"`
-      : undefined
+    ResponseContentDisposition: contentDisposition,
   });
 
   return await getSignedUrl(b2Client, command, { expiresIn: 3600 });
@@ -76,8 +87,8 @@ export async function getPresignedDownloadUrl(path: string, downloadFilename?: s
  */
 export async function triggerBrowserDownload(url: string, filename: string): Promise<void> {
   try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Fetch failed');
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) throw new Error('Fetch failed with status ' + res.status);
     const blob = await res.blob();
     const blobUrl = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -85,15 +96,59 @@ export async function triggerBrowserDownload(url: string, filename: string): Pro
     link.download = filename;
     document.body.appendChild(link);
     link.click();
-    window.URL.revokeObjectURL(blobUrl);
-    document.body.removeChild(link);
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl);
+      if (document.body.contains(link)) document.body.removeChild(link);
+    }, 1000);
   } catch (e) {
+    // Fallback if fetch fails (e.g. CORS limitation)
     const link = document.createElement('a');
     link.href = url;
-    link.download = filename;
+    link.setAttribute('download', filename);
     link.target = '_blank';
+    link.rel = 'noopener noreferrer';
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    setTimeout(() => {
+      if (document.body.contains(link)) document.body.removeChild(link);
+    }, 1000);
   }
+}
+
+/**
+ * Unified file handler for opening or downloading files from Backblaze / URL
+ */
+export async function openOrDownloadFile(
+  file: { name: string; url?: string; b2FileId?: string },
+  action: 'view' | 'download'
+): Promise<void> {
+  if (action === 'view') {
+    if (file.b2FileId) {
+      try {
+        const url = await getPresignedDownloadUrl(file.b2FileId, undefined, true);
+        window.open(url, '_blank');
+        return;
+      } catch (err) {
+        console.error('Error getting preview URL:', err);
+        if (file.url) {
+          window.open(file.url, '_blank');
+          return;
+        }
+        throw err;
+      }
+    } else if (file.url) {
+      window.open(file.url, '_blank');
+      return;
+    }
+  } else if (action === 'download') {
+    if (file.b2FileId) {
+      const url = await getPresignedDownloadUrl(file.b2FileId, file.name);
+      await triggerBrowserDownload(url, file.name);
+      return;
+    } else if (file.url) {
+      await triggerBrowserDownload(file.url, file.name);
+      return;
+    }
+  }
+  throw new Error('No valid URL or file ID available.');
 }
