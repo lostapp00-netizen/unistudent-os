@@ -696,9 +696,9 @@ export function Admin() {
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs overflow-hidden">
+              <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs overflow-hidden" dir={isAr ? 'rtl' : 'ltr'}>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left rtl:text-right whitespace-nowrap">
+                  <table className="w-full text-sm text-left rtl:text-right whitespace-nowrap" dir={isAr ? 'rtl' : 'ltr'}>
                     <thead className="bg-zinc-50 dark:bg-zinc-800/60 text-zinc-500 border-b border-zinc-200 dark:border-zinc-800 text-xs uppercase tracking-wider">
                       <tr>
                         <th className="py-3.5 px-4 font-bold">{isAr ? 'الطالب' : 'Student'}</th>
