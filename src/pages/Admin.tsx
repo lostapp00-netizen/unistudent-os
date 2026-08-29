@@ -363,7 +363,7 @@ export function Admin() {
     setTimeout(() => setEmailSaveSuccess(false), 3000);
   };
 
-  // Send Backup Email Immediately
+  // Send Backup Email Immediately (Invokes Supabase Edge Function + Local fallback)
   const handleSendBackupEmailNow = async () => {
     try {
       if (!emailConfig.targetEmail) {
@@ -371,8 +371,34 @@ export function Admin() {
         return;
       }
       setBackupLoading(true);
-      const backup = await db.exportFullDatabaseBackup();
-      const summaryText = `UniStudent OS Backup Data Summary:
+      setBackupMessage(null);
+
+      let edgeFunctionSucceeded = false;
+      try {
+        const { supabase } = await import('../lib/supabase');
+        const { data, error } = await supabase.functions.invoke('send-database-backup', {
+          body: {
+            targetEmail: emailConfig.targetEmail,
+            frequency: emailConfig.frequency
+          }
+        });
+
+        if (!error && data) {
+          edgeFunctionSucceeded = true;
+          setBackupMessage({
+            type: 'success',
+            text: isAr 
+              ? `تم تشغيل الـ Edge Function وإرسال النسخة الاحتياطية إلى ${emailConfig.targetEmail} بنجاح!` 
+              : `Edge Function executed and backup sent to ${emailConfig.targetEmail}!`
+          });
+        }
+      } catch (edgeErr) {
+        console.warn('Edge function invoke error, falling back:', edgeErr);
+      }
+
+      if (!edgeFunctionSucceeded) {
+        const backup = await db.exportFullDatabaseBackup();
+        const summaryText = `UniStudent OS Backup Data Summary:
 - Total Students: ${backup.summary.totalStudents}
 - Total Subjects: ${backup.summary.totalSubjects}
 - Total Files: ${backup.summary.totalFiles}
@@ -380,8 +406,14 @@ export function Admin() {
 
 (Full JSON database backup snapshot generated).`;
 
-      const mailtoLink = `mailto:${encodeURIComponent(emailConfig.targetEmail)}?subject=${encodeURIComponent(`UniStudent OS Full Database Backup - ${new Date().toISOString().split('T')[0]}`)}&body=${encodeURIComponent(summaryText)}`;
-      window.open(mailtoLink, '_blank');
+        const mailtoLink = `mailto:${encodeURIComponent(emailConfig.targetEmail)}?subject=${encodeURIComponent(`UniStudent OS Full Database Backup - ${new Date().toISOString().split('T')[0]}`)}&body=${encodeURIComponent(summaryText)}`;
+        window.open(mailtoLink, '_blank');
+
+        setBackupMessage({
+          type: 'success',
+          text: isAr ? `تم تجهيز النسخة الاحتياطية وإرسالها إلى ${emailConfig.targetEmail} بنجاح!` : `Backup email dispatched to ${emailConfig.targetEmail}!`
+        });
+      }
 
       const updatedConfig: EmailBackupConfig = {
         ...emailConfig,
@@ -389,11 +421,6 @@ export function Admin() {
       };
       setEmailConfig(updatedConfig);
       db.saveEmailBackupConfig(updatedConfig);
-
-      setBackupMessage({
-        type: 'success',
-        text: isAr ? `تم تجهيز وإرسال النسخة الاحتياطية إلى ${emailConfig.targetEmail} بنجاح!` : `Backup email dispatched to ${emailConfig.targetEmail}!`
-      });
     } catch (e: any) {
       setBackupMessage({
         type: 'error',
@@ -508,8 +535,14 @@ export function Admin() {
       )}
 
       {/* --- ADMIN SIDEBAR --- */}
-      <aside className={`fixed inset-y-0 z-50 flex-shrink-0 w-64 bg-white dark:bg-zinc-900 border-r rtl:border-r-0 rtl:border-l border-zinc-200 dark:border-zinc-800 flex flex-col transition-transform duration-300 md:static md:translate-x-0 ${
-        isMobileSidebarOpen ? 'translate-x-0' : (isAr ? 'translate-x-full md:translate-x-0' : '-translate-x-full md:translate-x-0')
+      <aside className={`fixed inset-y-0 z-50 flex-shrink-0 w-64 bg-white dark:bg-zinc-900 flex flex-col transition-all duration-300 ease-in-out md:relative shadow-xl md:shadow-none ${
+        isAr 
+          ? 'right-0 border-l border-zinc-200 dark:border-zinc-800' 
+          : 'left-0 border-r border-zinc-200 dark:border-zinc-800'
+      } ${
+        isMobileSidebarOpen 
+          ? 'translate-x-0' 
+          : (isAr ? 'translate-x-full md:translate-x-0' : '-translate-x-full md:translate-x-0')
       }`}>
         {/* Sidebar Header */}
         <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
