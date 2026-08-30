@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group } from '../types';
+import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, DatabaseBackup, EmailBackupConfig } from '../types';
 
 export const db = {
   // --- Settings ---
