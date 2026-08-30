@@ -110,19 +110,13 @@ export function Admin() {
   }, [isAuthenticated]);
 
   const handleLogout = async () => {
-    setIsAuthenticated(false);
     sessionStorage.removeItem('unistudent_admin_auth');
     try {
       const { supabase } = await import('../lib/supabase');
       await supabase.auth.signOut();
     } catch {}
-    window.location.replace('/auth');
+    navigate('/auth', { replace: true });
   };
-
-  // --- Redirect to unified /auth if not logged in ---
-  if (!isAuthenticated) {
-    return <Navigate to="/auth" replace />;
-  }
 
   // Copy helper
   const handleCopy = (text: string, id: string) => {
@@ -144,6 +138,20 @@ export function Admin() {
       const userSchedule = adminData.rawSchedule.filter(sc => sc.user_id === uid);
       const userFiles = adminData.rawFiles.filter(f => f.user_id === uid);
       const userFeedbacks = adminData.feedbacks.filter(fb => fb.userId === uid);
+
+      const savedEmail = localStorage.getItem(`unistudent_user_email_${uid}`) || '';
+      let knownEmail = '';
+      try {
+        const knownRaw = localStorage.getItem('unistudent_known_users');
+        if (knownRaw) {
+          const list = JSON.parse(knownRaw);
+          const found = list.find((u: any) => u.id === uid);
+          if (found?.email) knownEmail = found.email;
+        }
+      } catch {}
+
+      const feedbackEmail = userFeedbacks.find(fb => fb.userEmail)?.userEmail || '';
+      const finalEmail = userSettingsRow.email || savedEmail || knownEmail || feedbackEmail || (isAr ? 'لم يحدد بريد' : 'No email');
 
       const gradingScale = userSettingsRow.grading_scale || settings.gradingScale || [];
       const semesters = userSettingsRow.semesters || [];
@@ -182,8 +190,8 @@ export function Admin() {
 
       return {
         id: uid,
-        name: userSettingsRow.name || userSettingsRow.user_name || (isAr ? 'طالب غير محدد الاسم' : 'Unnamed Student'),
-        email: userSettingsRow.email || userFeedbacks[0]?.userEmail || `${uid.slice(0, 8)}@student.uni`,
+        name: userSettingsRow.name || userSettingsRow.user_name || (isAr ? 'طالب مسجل' : 'Registered Student'),
+        email: finalEmail,
         university: userSettingsRow.university || (isAr ? 'غير محدد' : 'Not specified'),
         college: userSettingsRow.college || (isAr ? 'غير محدد' : 'Not specified'),
         enrollmentDate: userSettingsRow.enrollment_date || '',
@@ -413,6 +421,11 @@ export function Admin() {
     { id: 'backup' as TabType, label: isAr ? 'النسخ الاحتياطي والأتمتة' : 'Backup & Email', icon: Database },
   ];
 
+  // --- Redirect to unified /auth if not logged in ---
+  if (!isAuthenticated) {
+    return <Navigate to="/auth" replace />;
+  }
+
   return (
     <div className="flex h-screen w-full bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 overflow-hidden font-sans">
       
@@ -599,35 +612,58 @@ export function Admin() {
                   </h3>
 
                   <div className="space-y-4">
-                    <div>
-                      <div className="flex justify-between text-xs font-bold mb-1">
-                        <span className="text-emerald-600 dark:text-emerald-400">{isAr ? 'متفوقين (CGPA ≥ 3.50)' : 'Honor Tier (CGPA ≥ 3.50)'}</span>
-                        <span>{honorStudents} ({totalStudents > 0 ? Math.round((honorStudents / totalStudents) * 100) : 0}%)</span>
-                      </div>
-                      <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
-                        <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${totalStudents > 0 ? (honorStudents / totalStudents) * 100 : 0}%` }}></div>
-                      </div>
-                    </div>
+                    {(() => {
+                      const goodStudents = studentsList.filter(s => s.cgpa >= 2.5 && s.cgpa < 3.5).length;
+                      const honorPct = totalStudents > 0 ? Math.round((honorStudents / totalStudents) * 100) : 0;
+                      const goodPct = totalStudents > 0 ? Math.round((goodStudents / totalStudents) * 100) : 0;
+                      const warningPct = totalStudents > 0 ? Math.round((warningStudents / totalStudents) * 100) : 0;
 
-                    <div>
-                      <div className="flex justify-between text-xs font-bold mb-1">
-                        <span className="text-indigo-600 dark:text-indigo-400">{isAr ? 'أداء مستقر وجيد (2.50 - 3.49)' : 'Good Standing (2.50 - 3.49)'}</span>
-                        <span>{studentsList.filter(s => s.cgpa >= 2.5 && s.cgpa < 3.5).length}</span>
-                      </div>
-                      <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
-                        <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${totalStudents > 0 ? (studentsList.filter(s => s.cgpa >= 2.5 && s.cgpa < 3.5).length / totalStudents) * 100 : 0}%` }}></div>
-                      </div>
-                    </div>
+                      return (
+                        <>
+                          <div>
+                            <div className="flex justify-between text-xs font-bold mb-1.5">
+                              <span className="text-emerald-600 dark:text-emerald-400">
+                                {isAr ? 'متفوقين (CGPA ≥ 3.50)' : 'Honor Tier (CGPA ≥ 3.50)'}
+                              </span>
+                              <span className="font-black text-zinc-900 dark:text-white">
+                                {honorStudents} {isAr ? (honorStudents === 1 ? 'طالب' : 'طلاب') : (honorStudents === 1 ? 'student' : 'students')} <span className="text-emerald-600 dark:text-emerald-400 font-extrabold">({honorPct}%)</span>
+                              </span>
+                            </div>
+                            <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
+                              <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${honorPct}%` }}></div>
+                            </div>
+                          </div>
 
-                    <div>
-                      <div className="flex justify-between text-xs font-bold mb-1">
-                        <span className="text-rose-600 dark:text-rose-400">{isAr ? 'تحت خطر الإنذار (CGPA < 2.00 أو مواد متعثرة)' : 'Under Warning Risk'}</span>
-                        <span>{warningStudents}</span>
-                      </div>
-                      <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
-                        <div className="bg-rose-500 h-full rounded-full" style={{ width: `${totalStudents > 0 ? (warningStudents / totalStudents) * 100 : 0}%` }}></div>
-                      </div>
-                    </div>
+                          <div>
+                            <div className="flex justify-between text-xs font-bold mb-1.5">
+                              <span className="text-indigo-600 dark:text-indigo-400">
+                                {isAr ? 'أداء مستقر وجيد (2.50 - 3.49)' : 'Good Standing (2.50 - 3.49)'}
+                              </span>
+                              <span className="font-black text-zinc-900 dark:text-white">
+                                {goodStudents} {isAr ? (goodStudents === 1 ? 'طالب' : 'طلاب') : (goodStudents === 1 ? 'student' : 'students')} <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">({goodPct}%)</span>
+                              </span>
+                            </div>
+                            <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
+                              <div className="bg-indigo-500 h-full rounded-full transition-all duration-500" style={{ width: `${goodPct}%` }}></div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-xs font-bold mb-1.5">
+                              <span className="text-rose-600 dark:text-rose-400">
+                                {isAr ? 'تحت خطر الإنذار (CGPA < 2.00 أو مواد متعثرة)' : 'Under Warning Risk'}
+                              </span>
+                              <span className="font-black text-zinc-900 dark:text-white">
+                                {warningStudents} {isAr ? (warningStudents === 1 ? 'طالب' : 'طلاب') : (warningStudents === 1 ? 'student' : 'students')} <span className="text-rose-600 dark:text-rose-400 font-extrabold">({warningPct}%)</span>
+                              </span>
+                            </div>
+                            <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
+                              <div className="bg-rose-500 h-full rounded-full transition-all duration-500" style={{ width: `${warningPct}%` }}></div>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 

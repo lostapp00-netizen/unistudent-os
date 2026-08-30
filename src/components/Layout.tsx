@@ -236,11 +236,16 @@ export function Layout() {
           </NavLink>
         </nav>
 
-        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1">
+        <div className={cn(
+          "border-t border-zinc-200 dark:border-zinc-800 transition-all",
+          isSidebarOpen 
+            ? "p-4 flex items-center justify-between gap-2" 
+            : "py-3 px-2 flex flex-col items-center justify-center gap-2"
+        )}>
+          <div className={cn("flex items-center", isSidebarOpen ? "gap-1" : "flex-col gap-2")}>
             <button 
               onClick={toggleTheme}
-              className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 transition-colors"
+              className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 transition-colors flex items-center justify-center"
               title={settings.theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
             >
               {settings.theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
@@ -260,15 +265,17 @@ export function Layout() {
             onClick={async () => {
               sessionStorage.removeItem('unistudent_admin_auth');
               await supabase.auth.signOut();
-              window.location.href = '/auth';
+              window.location.href = '/';
             }}
             className={cn(
-              "p-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-all flex items-center gap-2",
-              isSidebarOpen ? "px-3 py-1.5 text-xs font-bold bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40" : ""
+              "text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-all flex items-center justify-center gap-2",
+              isSidebarOpen 
+                ? "p-2 px-3 py-1.5 text-xs font-bold bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40" 
+                : "p-2 hover:bg-rose-100 dark:hover:bg-rose-900/50"
             )}
             title={settings.language === 'ar' ? 'تسجيل الخروج' : 'Logout'}
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-5 h-5 shrink-0" />
             {isSidebarOpen && (
               <span>{settings.language === 'ar' ? 'تسجيل الخروج' : 'Logout'}</span>
             )}

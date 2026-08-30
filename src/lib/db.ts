@@ -23,6 +23,13 @@ export const db = {
       grading_scale: settings.gradingScale,
       semesters: settings.semesters
     };
+
+    if (settings.email !== undefined && settings.email !== null) {
+      payload.email = settings.email;
+      try {
+        localStorage.setItem(`unistudent_user_email_${userId}`, settings.email);
+      } catch {}
+    }
     
     if (settings.initialCumulativeGpa !== undefined) payload.initial_cumulative_gpa = settings.initialCumulativeGpa;
     if (settings.initialCompletedCreditHours !== undefined) payload.initial_completed_credit_hours = settings.initialCompletedCreditHours;
@@ -36,13 +43,14 @@ export const db = {
 
     const { error } = await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
     if (error) {
-      // If error is due to missing columns, retry without new columns but keep in localStorage
+      // If error is due to missing columns in Supabase, retry without new columns but keep in localStorage
       if (error.message && (error.message.includes('column') || error.message.includes('does not exist'))) {
         delete payload.initial_cumulative_gpa;
         delete payload.initial_completed_credit_hours;
         delete payload.setup_mode;
         delete payload.warning_grade_letter;
         delete payload.warning_gpa_points;
+        delete payload.email;
         await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
       } else {
         console.error('Error upserting settings:', error);
@@ -568,26 +576,40 @@ export const db = {
         }
       }
 
-      // Check all localStorage keys for cached unistudent_settings_*
+      // Check all localStorage keys for cached unistudent_settings_* and unistudent_user_email_*
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && key.startsWith('unistudent_settings_')) {
           const uid = key.replace('unistudent_settings_', '');
           if (uid) {
             userIds.add(uid);
-            if (!rawSettings.find(s => s.user_id === uid)) {
+            const savedEmail = localStorage.getItem(`unistudent_user_email_${uid}`) || '';
+            const existing = rawSettings.find(s => s.user_id === uid);
+            if (!existing) {
               try {
                 const st = JSON.parse(localStorage.getItem(key) || '{}');
                 rawSettings.push({
                   user_id: uid,
                   name: st.name || 'طالب مسجل',
-                  email: st.email || '',
+                  email: savedEmail || st.email || '',
                   university: st.university || '',
                   college: st.college || '',
                   grading_scale: st.gradingScale || [],
                   semesters: st.semesters || []
                 });
               } catch {}
+            } else if (!existing.email && savedEmail) {
+              existing.email = savedEmail;
+            }
+          }
+        } else if (key && key.startsWith('unistudent_user_email_')) {
+          const uid = key.replace('unistudent_user_email_', '');
+          const emailVal = localStorage.getItem(key) || '';
+          if (uid && emailVal) {
+            userIds.add(uid);
+            const existing = rawSettings.find(s => s.user_id === uid);
+            if (existing && !existing.email) {
+              existing.email = emailVal;
             }
           }
         }
@@ -597,10 +619,27 @@ export const db = {
     }
 
     // Also check current active user
-    const currentSession = await supabase.auth.getSession().catch(() => null);
-    if (currentSession?.data?.session?.user?.id) {
-      userIds.add(currentSession.data.session.user.id);
-    }
+    try {
+      const currentSession = await supabase.auth.getSession().catch(() => null);
+      const curUser = currentSession?.data?.session?.user;
+      if (curUser?.id) {
+        userIds.add(curUser.id);
+        const existing = rawSettings.find(s => s.user_id === curUser.id);
+        if (existing) {
+          if (!existing.email && curUser.email) existing.email = curUser.email;
+        } else {
+          rawSettings.push({
+            user_id: curUser.id,
+            name: curUser.email ? curUser.email.split('@')[0] : 'طالب مسجل',
+            email: curUser.email || '',
+            university: '',
+            college: '',
+            grading_scale: [],
+            semesters: []
+          });
+        }
+      }
+    } catch {}
 
     return {
       userIds: Array.from(userIds),

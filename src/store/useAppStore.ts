@@ -3,6 +3,22 @@ import { v4 as uuidv4 } from 'uuid';
 import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group } from '../types';
 import { db } from '../lib/db';
 
+const getInitialTheme = (): 'light' | 'dark' => {
+  try {
+    const saved = localStorage.getItem('unistudent_theme');
+    if (saved === 'dark' || saved === 'light') return saved;
+  } catch {}
+  return 'light';
+};
+
+const getInitialLang = (): 'ar' | 'en' => {
+  try {
+    const saved = localStorage.getItem('unistudent_lang');
+    if (saved === 'ar' || saved === 'en') return saved;
+  } catch {}
+  return 'ar';
+};
+
 const defaultSettings: UserSettings = {
   name: '',
   university: '',
@@ -15,8 +31,8 @@ const defaultSettings: UserSettings = {
     { id: '2', letter: 'A', nameAr: 'امتياز', nameEn: 'Distinction', minPercentage: 93, maxPercentage: 96, points: 3.7 },
   ],
   semesters: [],
-  theme: 'light',
-  language: 'ar',
+  theme: getInitialTheme(),
+  language: getInitialLang(),
   initialCumulativeGpa: null,
   initialCompletedCreditHours: null,
   setupMode: 'initial_gpa',
@@ -79,86 +95,101 @@ export const useAppStore = create<AppState>((set, get) => ({
   groups: [],
 
   initialize: async (userId: string, email?: string) => {
-    // Fetch all data for the user
-    const [
-      settingsData,
-      subjects,
-      tasks,
-      notes,
-      appointments,
-      scheduleItems,
-      groups,
-      files
-    ] = await Promise.all([
-      db.getSettings(userId),
-      db.getSubjects(userId),
-      db.getTasks(userId),
-      db.getNotes(userId),
-      db.getAppointments(userId),
-      db.getScheduleItems(userId),
-      db.getGroups(userId),
-      db.getDriveFiles(userId)
-    ]);
-
-    // Groups Initialization
-    let finalGroups = groups;
-    const isGroupsInitialized = localStorage.getItem(`unistudent_groups_initialized_${userId}`);
-    if (!isGroupsInitialized && groups.length === 0) {
-      const defaultGroups: Group[] = [
-        { id: uuidv4(), name: 'Study', color: 'indigo' },
-        { id: uuidv4(), name: 'Work', color: 'emerald' },
-        { id: uuidv4(), name: 'Personal', color: 'amber' }
-      ];
-      finalGroups = defaultGroups;
-      for (const g of defaultGroups) {
-        db.addGroup(userId, g).catch(console.error);
-      }
-      localStorage.setItem(`unistudent_groups_initialized_${userId}`, 'true');
-    }
-
-    const mergedSettings: UserSettings = settingsData 
-      ? { ...defaultSettings, ...settingsData, email: email || settingsData.email }
-      : { ...defaultSettings, email: email || '' };
-
-    if (email && (!settingsData?.email || settingsData.email !== email)) {
-      db.upsertSettings(userId, { email });
-    }
-
     try {
-      const knownRaw = localStorage.getItem('unistudent_known_users');
-      const knownList: any[] = knownRaw ? JSON.parse(knownRaw) : [];
-      const userProfile = {
-        id: userId,
-        email: email || mergedSettings.email,
-        name: mergedSettings.name,
-        university: mergedSettings.university,
-        college: mergedSettings.college,
-        gradingScale: mergedSettings.gradingScale,
-        semesters: mergedSettings.semesters,
-        lastSeen: new Date().toISOString()
-      };
-      const existingIdx = knownList.findIndex((u: any) => u.id === userId);
-      if (existingIdx >= 0) {
-        knownList[existingIdx] = userProfile;
-      } else {
-        knownList.push(userProfile);
+      if (email) {
+        try {
+          localStorage.setItem(`unistudent_user_email_${userId}`, email);
+        } catch {}
       }
-      localStorage.setItem('unistudent_known_users', JSON.stringify(knownList));
-    } catch {}
 
-    set({
-      userId,
-      userEmail: email || null,
-      isInitialized: true,
-      settings: mergedSettings,
-      subjects,
-      tasks,
-      notes,
-      appointments,
-      scheduleItems,
-      groups: finalGroups,
-      files
-    });
+      // Fetch all data for the user
+      const [
+        settingsData,
+        subjects,
+        tasks,
+        notes,
+        appointments,
+        scheduleItems,
+        groups,
+        files
+      ] = await Promise.all([
+        db.getSettings(userId).catch(() => null),
+        db.getSubjects(userId).catch(() => []),
+        db.getTasks(userId).catch(() => []),
+        db.getNotes(userId).catch(() => []),
+        db.getAppointments(userId).catch(() => []),
+        db.getScheduleItems(userId).catch(() => []),
+        db.getGroups(userId).catch(() => []),
+        db.getDriveFiles(userId).catch(() => [])
+      ]);
+
+      // Groups Initialization
+      let finalGroups = groups || [];
+      const isGroupsInitialized = localStorage.getItem(`unistudent_groups_initialized_${userId}`);
+      if (!isGroupsInitialized && finalGroups.length === 0) {
+        const defaultGroups: Group[] = [
+          { id: uuidv4(), name: 'Study', color: 'indigo' },
+          { id: uuidv4(), name: 'Work', color: 'emerald' },
+          { id: uuidv4(), name: 'Personal', color: 'amber' }
+        ];
+        finalGroups = defaultGroups;
+        for (const g of defaultGroups) {
+          db.addGroup(userId, g).catch(console.error);
+        }
+        localStorage.setItem(`unistudent_groups_initialized_${userId}`, 'true');
+      }
+
+      const mergedSettings: UserSettings = settingsData 
+        ? { ...defaultSettings, ...settingsData, email: email || settingsData.email }
+        : { ...defaultSettings, email: email || '' };
+
+      if (email && (!settingsData?.email || settingsData.email !== email)) {
+        db.upsertSettings(userId, { email }).catch(() => {});
+      }
+
+      try {
+        const knownRaw = localStorage.getItem('unistudent_known_users');
+        const knownList: any[] = knownRaw ? JSON.parse(knownRaw) : [];
+        const userProfile = {
+          id: userId,
+          email: email || mergedSettings.email,
+          name: mergedSettings.name,
+          university: mergedSettings.university,
+          college: mergedSettings.college,
+          gradingScale: mergedSettings.gradingScale,
+          semesters: mergedSettings.semesters,
+          lastSeen: new Date().toISOString()
+        };
+        const existingIdx = knownList.findIndex((u: any) => u.id === userId);
+        if (existingIdx >= 0) {
+          knownList[existingIdx] = userProfile;
+        } else {
+          knownList.push(userProfile);
+        }
+        localStorage.setItem('unistudent_known_users', JSON.stringify(knownList));
+      } catch {}
+
+      set({
+        userId,
+        userEmail: email || null,
+        isInitialized: true,
+        settings: mergedSettings,
+        subjects: subjects || [],
+        tasks: tasks || [],
+        notes: notes || [],
+        appointments: appointments || [],
+        scheduleItems: scheduleItems || [],
+        groups: finalGroups,
+        files: files || []
+      });
+    } catch (err) {
+      console.error('Error during initialize:', err);
+      set({
+        userId,
+        userEmail: email || null,
+        isInitialized: true
+      });
+    }
   },
 
   clearData: () => {
@@ -180,22 +211,38 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Settings
   updateSettings: (newSettings) => {
     const { userId, settings } = get();
-    if (!userId) return;
     const updated = { ...settings, ...newSettings };
     set({ settings: updated });
-    db.upsertSettings(userId, updated);
+    if (userId) {
+      db.upsertSettings(userId, updated);
+    }
   },
   updateTheme: (theme) => {
     const { userId, settings } = get();
-    if (!userId) return;
     set({ settings: { ...settings, theme } });
-    db.upsertSettings(userId, { theme });
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    try {
+      localStorage.setItem('unistudent_theme', theme);
+    } catch {}
+    if (userId) {
+      db.upsertSettings(userId, { theme });
+    }
   },
   updateLanguage: (language) => {
     const { userId, settings } = get();
-    if (!userId) return;
     set({ settings: { ...settings, language } });
-    db.upsertSettings(userId, { language });
+    document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
+    document.documentElement.lang = language;
+    try {
+      localStorage.setItem('unistudent_lang', language);
+    } catch {}
+    if (userId) {
+      db.upsertSettings(userId, { language });
+    }
   },
 
   // Subjects

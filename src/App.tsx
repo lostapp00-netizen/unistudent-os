@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './lib/supabase';
+import { Landing } from './pages/Landing';
 import { Auth } from './pages/Auth';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
@@ -33,8 +34,26 @@ export function App() {
   const initialize = useAppStore(state => state.initialize);
   const clearData = useAppStore(state => state.clearData);
 
+  const settings = useAppStore(state => state.settings);
+
   useEffect(() => {
-    document.title = "unistudent-os";
+    import('./i18n/config').then(({ default: i18n }) => {
+      i18n.changeLanguage(settings.language);
+    }).catch(console.error);
+    document.documentElement.dir = settings.language === 'ar' ? 'rtl' : 'ltr';
+    document.documentElement.lang = settings.language;
+  }, [settings.language]);
+
+  useEffect(() => {
+    if (settings.theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [settings.theme]);
+
+  useEffect(() => {
+    document.title = "UniStudent OS";
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session?.user?.id) {
@@ -64,45 +83,57 @@ export function App() {
   const isAdminPath = window.location.pathname.startsWith('/admin');
 
   if (loading || (session && !isInitialized && !isAdminPath)) {
-    return <div className="h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">جاري تحميل البيانات...</div>;
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 gap-3">
+        <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs font-bold text-zinc-500">جاري تحميل البيانات...</p>
+      </div>
+    );
   }
 
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/auth" element={!session ? <Auth /> : <Navigate to="/" replace />} />
         <Route path="/admin" element={<Admin />} />
         
         {!session ? (
-          <Route path="*" element={<Navigate to="/auth" replace />} />
-        ) : (
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            
-            <Route path="academic">
-              <Route index element={<AcademicDashboard />} />
-              <Route path="subjects" element={<AcademicSubjects />} />
-              <Route path="recovery" element={<AcademicRecovery />} />
-              <Route path="simulation" element={<AcademicSimulation />} />
-              <Route path="warnings" element={<AcademicWarnings />} />
-              <Route path=":id" element={<SubjectDetails />} />
-            </Route>
-            
-            <Route path="productivity">
-              <Route index element={<ProductivityDashboard />} />
-              <Route path="tasks" element={<TasksTab />} />
-              <Route path="notes" element={<NotesTab />} />
-              <Route path="drive" element={<DriveTab />} />
-              <Route path="calendar" element={<CalendarTab />} />
-              <Route path="schedule" element={<Schedule />} />
-              <Route path="appointments" element={<Appointments />} />
-            </Route>
-            
-            <Route path="settings" element={<Settings />} />
+          <>
+            <Route path="/" element={<Landing />} />
+            <Route path="/auth" element={<Auth />} />
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
+          </>
+        ) : (
+          <>
+            <Route path="/auth" element={<Navigate to="/" replace />} />
+            <Route path="/" element={<Layout />}>
+              <Route index element={<Dashboard />} />
+              
+              <Route path="academic">
+                <Route index element={<AcademicDashboard />} />
+                <Route path="subjects" element={<AcademicSubjects />} />
+                <Route path="recovery" element={<AcademicRecovery />} />
+                <Route path="simulation" element={<AcademicSimulation />} />
+                <Route path="warnings" element={<AcademicWarnings />} />
+                <Route path=":id" element={<SubjectDetails />} />
+              </Route>
+              
+              <Route path="productivity">
+                <Route index element={<ProductivityDashboard />} />
+                <Route path="tasks" element={<TasksTab />} />
+                <Route path="notes" element={<NotesTab />} />
+                <Route path="drive" element={<DriveTab />} />
+                <Route path="calendar" element={<CalendarTab />} />
+                <Route path="schedule" element={<Schedule />} />
+                <Route path="appointments" element={<Appointments />} />
+              </Route>
+              
+              <Route path="settings" element={<Settings />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+          </>
         )}
       </Routes>
     </BrowserRouter>
   );
 }
+
