@@ -267,10 +267,10 @@ export function Landing() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6 sm:space-y-8">
           
           {/* Pill Badge */}
-          <div className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 text-[11px] sm:text-xs md:text-sm font-black shadow-xs max-w-full text-center leading-snug">
+          <div className="inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 text-[11px] sm:text-xs md:text-sm font-black shadow-xs max-w-full text-center">
             <Sparkles size={14} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
-            <span className="truncate sm:whitespace-normal">
-              {isAr ? 'المنصة الأكاديمية والإنتاجية الأولى للجامعيين • مجانية 100%' : 'The #1 University OS • 100% Free Forever'}
+            <span className="text-center leading-tight sm:leading-normal">
+              {isAr ? 'المنصة الأكاديمية والإنتاجية الأولى لطلاب الجامعات • 100% مجاناً' : 'The #1 University OS • 100% Free Forever'}
             </span>
           </div>
 
@@ -562,46 +562,55 @@ export function Landing() {
             </p>
           </div>
 
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xl overflow-hidden p-4 sm:p-8">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xl overflow-hidden p-3.5 sm:p-6 lg:p-8">
             
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 items-stretch lg:items-center">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 lg:gap-8 items-stretch lg:items-center">
               
               {/* Left/Right Table */}
               <div className="lg:col-span-2 space-y-2.5 sm:space-y-3">
-                <div className="space-y-2">
+                <div className="space-y-2 sm:space-y-2.5">
                   {demoSubjects.map((sub) => (
                     <div 
                       key={sub.id}
                       className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/80 dark:border-zinc-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3"
                     >
-                      <div className="flex items-center justify-between sm:block">
-                        <p className="font-bold text-xs sm:text-sm text-zinc-900 dark:text-white">{sub.name}</p>
-                        <span className="sm:hidden px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
-                          {sub.credits} {isAr ? 'ساعات' : 'cr'} • {sub.grade}
-                        </span>
-                        <p className="text-[11px] text-zinc-400 hidden sm:block mt-0.5">{sub.credits} {isAr ? 'ساعات معتمدة' : 'Credits'}</p>
+                      {/* Course Title & info */}
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-xs sm:text-sm text-zinc-900 dark:text-white truncate">
+                          {sub.name}
+                        </p>
+                        <p className="text-[10px] sm:text-[11px] text-zinc-400 mt-0.5">
+                          {isAr ? `${sub.credits} ساعات معتمدة` : `${sub.credits} Credits`}
+                        </p>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 sm:gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-200/60 dark:border-zinc-700/40">
-                        <div className="flex items-center justify-between sm:justify-start gap-1.5 bg-white dark:bg-zinc-700/50 sm:bg-transparent px-2.5 py-1 sm:p-0 rounded-lg sm:rounded-none border sm:border-0 border-zinc-200 dark:border-zinc-700">
-                          <span className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 font-bold">{isAr ? 'الساعات:' : 'Credits:'}</span>
+                      {/* Controls: Credits & Grade */}
+                      <div className="flex items-center gap-2 sm:gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-200/60 dark:border-zinc-700/40 w-full sm:w-auto">
+                        {/* Credits select */}
+                        <div className="flex-1 sm:flex-initial flex items-center justify-between sm:justify-start gap-1.5 bg-white dark:bg-zinc-800/90 px-2.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700">
+                          <span className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 font-bold shrink-0">
+                            {isAr ? 'الساعات:' : 'Credits:'}
+                          </span>
                           <select
                             value={sub.credits}
                             onChange={(e) => updateDemoCredits(sub.id, Number(e.target.value))}
-                            className="px-2 py-1 bg-zinc-100 sm:bg-white dark:bg-zinc-800 sm:dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 rounded-lg text-xs font-bold"
+                            className="bg-zinc-100 dark:bg-zinc-700 px-1.5 py-0.5 rounded-lg text-xs font-bold text-zinc-800 dark:text-zinc-200 focus:outline-hidden cursor-pointer"
                           >
-                            {[1, 2, 3, 4, 5].map(c => (
+                            {[1, 2, 3, 4, 5, 6].map(c => (
                               <option key={c} value={c}>{c}</option>
                             ))}
                           </select>
                         </div>
 
-                        <div className="flex items-center justify-between sm:justify-start gap-1.5 bg-white dark:bg-zinc-700/50 sm:bg-transparent px-2.5 py-1 sm:p-0 rounded-lg sm:rounded-none border sm:border-0 border-zinc-200 dark:border-zinc-700">
-                          <span className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 font-bold">{isAr ? 'التقدير:' : 'Grade:'}</span>
+                        {/* Grade select */}
+                        <div className="flex-1 sm:flex-initial flex items-center justify-between sm:justify-start gap-1.5 bg-white dark:bg-zinc-800/90 px-2.5 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800/80">
+                          <span className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 font-bold shrink-0">
+                            {isAr ? 'التقدير:' : 'Grade:'}
+                          </span>
                           <select
                             value={sub.grade}
                             onChange={(e) => updateDemoGrade(sub.id, e.target.value)}
-                            className="px-2 py-1 bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs font-black text-indigo-700 dark:text-indigo-300"
+                            className="bg-indigo-50 dark:bg-indigo-950/80 px-2 py-0.5 rounded-lg text-xs font-black text-indigo-700 dark:text-indigo-300 focus:outline-hidden cursor-pointer"
                           >
                             {gradeOptions.map(g => (
                               <option key={g.letter} value={g.letter}>{g.letter} ({g.points})</option>
