@@ -171,29 +171,28 @@ export function Landing() {
               {isAr ? 'EN' : 'عربي'}
             </button>
 
-            {/* Sign In Button */}
+            {/* Sign In Button (Desktop) */}
             <Link
               to="/auth"
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl text-xs font-bold text-zinc-700 dark:text-zinc-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-all"
+              className="hidden lg:inline-flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-bold text-zinc-700 dark:text-zinc-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-all"
             >
               <LogIn size={15} />
               <span>{isAr ? 'تسجيل الدخول' : 'Sign In'}</span>
             </Link>
 
-            {/* Create Account CTA */}
+            {/* Create Account CTA (Desktop) */}
             <Link
               to="/auth?mode=signup"
-              className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white text-xs sm:text-sm font-bold shadow-md sm:shadow-lg shadow-indigo-600/25 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
+              className="hidden lg:inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white text-xs font-bold shadow-lg shadow-indigo-600/25 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
             >
-              <UserPlus size={14} className="sm:w-[15px] sm:h-[15px]" />
-              <span className="sm:hidden">{isAr ? 'ابدأ الآن' : 'Start'}</span>
-              <span className="hidden sm:inline">{isAr ? 'إنشاء حساب مجاناً' : 'Get Started Free'}</span>
+              <UserPlus size={15} />
+              <span>{isAr ? 'إنشاء حساب مجاناً' : 'Get Started Free'}</span>
             </Link>
 
             {/* Mobile Menu Toggle */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 rounded-xl bg-zinc-100 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800"
+              className="lg:hidden p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 transition-all"
               aria-label="Toggle Menu"
             >
               {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
@@ -203,46 +202,56 @@ export function Landing() {
 
         {/* Mobile Dropdown Navigation */}
         {mobileMenuOpen && (
-          <div className="lg:hidden border-t border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md px-4 py-4 space-y-3 shadow-xl">
-            <nav className="flex flex-col gap-2.5 text-sm font-bold text-zinc-700 dark:text-zinc-200">
+          <div className="lg:hidden border-t border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md px-4 py-4 space-y-4 shadow-2xl">
+            <nav className="flex flex-col gap-1 text-sm font-bold text-zinc-700 dark:text-zinc-200">
               <a 
                 href="#features" 
                 onClick={() => setMobileMenuOpen(false)}
-                className="px-3 py-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                className="px-3.5 py-2.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors flex items-center justify-between"
               >
-                {isAr ? 'المميزات الأكاديمية' : 'Academic Tools'}
+                <span>{isAr ? 'المميزات الأكاديمية' : 'Academic Tools'}</span>
               </a>
               <a 
                 href="#productivity" 
                 onClick={() => setMobileMenuOpen(false)}
-                className="px-3 py-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                className="px-3.5 py-2.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors flex items-center justify-between"
               >
-                {isAr ? 'أدوات الإنتاجية' : 'Productivity Suite'}
+                <span>{isAr ? 'أدوات الإنتاجية' : 'Productivity Suite'}</span>
               </a>
               <a 
                 href="#simulator" 
                 onClick={() => setMobileMenuOpen(false)}
-                className="px-3 py-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                className="px-3.5 py-2.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors flex items-center justify-between"
               >
-                {isAr ? 'المحاكي التفاعلي' : 'Live Simulator'}
+                <span>{isAr ? 'المحاكي التفاعلي' : 'Live Simulator'}</span>
               </a>
               <a 
                 href="#faq" 
                 onClick={() => setMobileMenuOpen(false)}
-                className="px-3 py-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                className="px-3.5 py-2.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors flex items-center justify-between"
               >
-                {isAr ? 'الأسئلة الشائعة' : 'FAQ'}
+                <span>{isAr ? 'الأسئلة الشائعة' : 'FAQ'}</span>
               </a>
             </nav>
 
-            <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800 sm:hidden">
+            {/* Auth Actions inside Mobile Menu */}
+            <div className="pt-3 border-t border-zinc-200 dark:border-zinc-800/80 flex flex-col gap-2.5">
+              <Link
+                to="/auth?mode=signup"
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white text-sm font-bold shadow-md shadow-indigo-600/25 active:scale-[0.98] transition-all"
+              >
+                <UserPlus size={16} />
+                <span>{isAr ? 'إنشاء حساب مجاناً' : 'Get Started Free'}</span>
+              </Link>
+
               <Link
                 to="/auth"
                 onClick={() => setMobileMenuOpen(false)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-zinc-800 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-zinc-800 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 active:scale-[0.98] transition-all"
               >
-                <LogIn size={15} />
-                <span>{isAr ? 'تسجيل الدخول إلى حسابك' : 'Sign In to Account'}</span>
+                <LogIn size={16} />
+                <span>{isAr ? 'تسجيل الدخول' : 'Sign In'}</span>
               </Link>
             </div>
           </div>
