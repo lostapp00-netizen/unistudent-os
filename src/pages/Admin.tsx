@@ -985,10 +985,33 @@ export function Admin() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 {filteredSuggestions.map((fb) => {
                   const student = studentsList.find(s => s.id === fb.userId);
-                  const studentName = student?.name || fb.userName || (isAr ? 'طالب مسجل' : 'Registered Student');
-                  const studentEmail = student?.email || fb.userEmail;
-                  const studentUni = student?.university || (isAr ? 'جامعة غير محددة' : 'Not specified');
-                  const studentCollege = student?.college || '';
+                  
+                  // Accurate student name resolution
+                  let studentName = '';
+                  if (student?.name && student.name !== 'طالب مسجل' && student.name !== 'Registered Student') {
+                    studentName = student.name;
+                  } else if (fb.userName && fb.userName !== 'طالب مسجل' && fb.userName !== 'Student' && fb.userName !== 'طالب') {
+                    studentName = fb.userName;
+                  } else if (student?.email && student.email !== 'لم يحدد بريد' && student.email !== 'No email' && student.email.includes('@')) {
+                    studentName = student.email.split('@')[0];
+                  } else if (fb.userEmail && fb.userEmail !== 'student@unistudent.com' && fb.userEmail.includes('@')) {
+                    studentName = fb.userEmail.split('@')[0];
+                  } else {
+                    studentName = isAr ? 'طالب مسجل' : 'Registered Student';
+                  }
+
+                  // Accurate student email resolution
+                  let studentEmail = '';
+                  if (student?.email && student.email !== 'لم يحدد بريد' && student.email !== 'No email') {
+                    studentEmail = student.email;
+                  } else if (fb.userEmail && fb.userEmail !== 'student@unistudent.com') {
+                    studentEmail = fb.userEmail;
+                  } else {
+                    studentEmail = isAr ? 'لم يحدد بريد' : 'No email';
+                  }
+
+                  const studentUni = (student?.university && student.university !== 'غير محدد') ? student.university : (isAr ? 'جامعة غير محددة' : 'Not specified');
+                  const studentCollege = (student?.college && student.college !== 'غير محدد') ? student.college : '';
                   const studentCgpa = student?.cgpa !== undefined ? student.cgpa : 0;
                   const subjectsCount = student?.subjectsCount || 0;
                   const registeredHours = student?.registeredCreditHours || 0;
@@ -1062,7 +1085,7 @@ export function Admin() {
                               </div>
                               <div className="min-w-0">
                                 <p className="font-bold text-sm text-zinc-900 dark:text-white truncate">{studentName}</p>
-                                <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{studentEmail}</p>
+                                <p className="text-xs font-semibold text-purple-600 dark:text-purple-400 truncate dir-ltr text-right rtl:text-right">{studentEmail}</p>
                                 <p className="text-[11px] text-zinc-400 truncate">{studentUni} {studentCollege && `• ${studentCollege}`}</p>
                               </div>
                             </div>
@@ -1475,10 +1498,31 @@ export function Admin() {
       {/* --- DETAILED FEEDBACK & STUDENT COURSES MODAL --- */}
       {selectedFeedback && (() => {
         const student = studentsList.find(s => s.id === selectedFeedback.userId);
-        const studentName = student?.name || selectedFeedback.userName || (isAr ? 'طالب مسجل' : 'Registered Student');
-        const studentEmail = student?.email || selectedFeedback.userEmail;
-        const studentUni = student?.university || (isAr ? 'غير محددة' : 'Not specified');
-        const studentCollege = student?.college || '';
+        
+        let studentName = '';
+        if (student?.name && student.name !== 'طالب مسجل' && student.name !== 'Registered Student') {
+          studentName = student.name;
+        } else if (selectedFeedback.userName && selectedFeedback.userName !== 'طالب مسجل' && selectedFeedback.userName !== 'Student' && selectedFeedback.userName !== 'طالب') {
+          studentName = selectedFeedback.userName;
+        } else if (student?.email && student.email !== 'لم يحدد بريد' && student.email !== 'No email' && student.email.includes('@')) {
+          studentName = student.email.split('@')[0];
+        } else if (selectedFeedback.userEmail && selectedFeedback.userEmail !== 'student@unistudent.com' && selectedFeedback.userEmail.includes('@')) {
+          studentName = selectedFeedback.userEmail.split('@')[0];
+        } else {
+          studentName = isAr ? 'طالب مسجل' : 'Registered Student';
+        }
+
+        let studentEmail = '';
+        if (student?.email && student.email !== 'لم يحدد بريد' && student.email !== 'No email') {
+          studentEmail = student.email;
+        } else if (selectedFeedback.userEmail && selectedFeedback.userEmail !== 'student@unistudent.com') {
+          studentEmail = selectedFeedback.userEmail;
+        } else {
+          studentEmail = isAr ? 'لم يحدد بريد' : 'No email';
+        }
+
+        const studentUni = (student?.university && student.university !== 'غير محدد') ? student.university : (isAr ? 'جامعة غير محددة' : 'Not specified');
+        const studentCollege = (student?.college && student.college !== 'غير محدد') ? student.college : '';
         const studentCgpa = student?.cgpa !== undefined ? student.cgpa : 0;
         const studentSubjects: any[] = student?.raw?.subjects || [];
         const gradingScale = student?.raw?.settings?.grading_scale || settings.gradingScale || [];
@@ -1504,6 +1548,24 @@ export function Admin() {
             console.error('Failed to save note:', e);
           } finally {
             setSavingNote(false);
+          }
+        };
+
+        const handlePreviewAttachment = async (att: any) => {
+          try {
+            const { previewFile } = await import('../lib/backblaze');
+            await previewFile(att);
+          } catch (e) {
+            if (att.url) window.open(att.url, '_blank');
+          }
+        };
+
+        const handleDownloadAttachment = async (att: any) => {
+          try {
+            const { downloadFile } = await import('../lib/backblaze');
+            await downloadFile(att);
+          } catch (e) {
+            if (att.url) window.open(att.url, '_blank');
           }
         };
 
@@ -1578,7 +1640,7 @@ export function Admin() {
                     </div>
                     <div className="min-w-0">
                       <h4 className="font-bold text-base text-zinc-900 dark:text-white">{studentName}</h4>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400">{studentEmail}</p>
+                      <p className="text-xs font-semibold text-purple-600 dark:text-purple-400 dir-ltr text-right rtl:text-right">{studentEmail}</p>
                       <p className="text-xs text-zinc-400">{studentUni} {studentCollege && `• ${studentCollege}`}</p>
                     </div>
                   </div>
@@ -1639,28 +1701,23 @@ export function Admin() {
                           </div>
 
                           <div className="flex items-center gap-1.5 shrink-0">
-                            {att.url && (
-                              <a
-                                href={att.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="p-1.5 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 text-purple-600 dark:text-purple-300 rounded-lg text-xs font-bold flex items-center gap-1"
-                                title={isAr ? 'معاينة في نافذة جديدة' : 'Preview'}
-                              >
-                                <ExternalLink size={12} />
-                                <span>{isAr ? 'معاينة' : 'View'}</span>
-                              </a>
-                            )}
-                            {att.url && (
-                              <a
-                                href={att.url}
-                                download={att.name}
-                                className="p-1.5 bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 text-zinc-700 dark:text-zinc-200 rounded-lg text-xs"
-                                title={isAr ? 'تنزيل' : 'Download'}
-                              >
-                                <Download size={12} />
-                              </a>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => handlePreviewAttachment(att)}
+                              className="p-1.5 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 text-purple-600 dark:text-purple-300 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                              title={isAr ? 'معاينة في نافذة جديدة' : 'Preview'}
+                            >
+                              <ExternalLink size={12} />
+                              <span>{isAr ? 'معاينة' : 'View'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadAttachment(att)}
+                              className="p-1.5 bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 text-zinc-700 dark:text-zinc-200 rounded-lg text-xs cursor-pointer transition-colors"
+                              title={isAr ? 'تنزيل' : 'Download'}
+                            >
+                              <Download size={12} />
+                            </button>
                           </div>
                         </div>
                       ))}

@@ -18,7 +18,7 @@ export function LocalAttachmentUploader({ attachments, onChange }: LocalAttachme
     
     const uploadedFile = e.target.files[0];
     const fileId = uuidv4();
-    const b2Path = `attachments/${fileId}_${uploadedFile.name}`;
+    const b2Path = `attachments/${fileId}_${uploadedFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
     
     setIsUploading(true);
     try {
@@ -35,8 +35,19 @@ export function LocalAttachmentUploader({ attachments, onChange }: LocalAttachme
 
       onChange([...attachments, newAttachment]);
     } catch (err: any) {
-      console.error('Error uploading attachment:', err);
-      alert('فشل رفع المرفق. تأكد من إعدادات Backblaze. ' + (err.message || ''));
+      console.warn('B2 upload fallback to base64 for attachment:', err);
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64Url = reader.result as string;
+        const newAttachment: EntityAttachment = {
+          id: fileId,
+          name: uploadedFile.name,
+          size: uploadedFile.size,
+          url: base64Url
+        };
+        onChange([...attachments, newAttachment]);
+      };
+      reader.readAsDataURL(uploadedFile);
     } finally {
       setIsUploading(false);
       e.target.value = ''; // reset input
@@ -57,8 +68,8 @@ export function LocalAttachmentUploader({ attachments, onChange }: LocalAttachme
 
   const handleView = async (att: EntityAttachment) => {
     try {
-      const { openOrDownloadFile } = await import('../../lib/backblaze');
-      await openOrDownloadFile(att, 'view');
+      const { previewFile } = await import('../../lib/backblaze');
+      await previewFile(att);
     } catch (err) {
       if (att.url) window.open(att.url, '_blank');
       else alert('تعذر فتح الملف للمعاينة.');
@@ -67,8 +78,8 @@ export function LocalAttachmentUploader({ attachments, onChange }: LocalAttachme
 
   const handleDownload = async (att: EntityAttachment) => {
     try {
-      const { openOrDownloadFile } = await import('../../lib/backblaze');
-      await openOrDownloadFile(att, 'download');
+      const { downloadFile } = await import('../../lib/backblaze');
+      await downloadFile(att);
     } catch (err) {
       if (att.url) window.open(att.url, '_blank');
       else alert('تعذر تنزيل الملف.');

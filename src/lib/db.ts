@@ -408,8 +408,12 @@ export const db = {
     try {
       // 1. Sanitize attachments for localStorage to avoid 5MB quota exhaustion
       const sanitizedAttachments = (feedback.attachments || []).map(a => ({
-        ...a,
-        url: a.url?.startsWith('data:') && a.url.length > 50000 ? '' : a.url // Strip huge base64 from localStorage
+        id: a.id,
+        name: a.name,
+        size: a.size,
+        type: a.type,
+        url: a.url?.startsWith('data:') && a.url.length > 50000 ? '' : a.url,
+        b2FileId: (a as any).b2FileId || (a as any).b2_file_id
       }));
       const cachedFeedback = { ...feedback, attachments: sanitizedAttachments };
 
@@ -439,7 +443,8 @@ export const db = {
           name: a.name,
           size: a.size,
           type: a.type,
-          url: a.url?.startsWith('data:') && a.url.length > 200000 ? '' : a.url
+          url: a.url?.startsWith('data:') && a.url.length > 200000 ? '' : a.url,
+          b2FileId: (a as any).b2FileId || (a as any).b2_file_id
         })),
         created_at: feedback.createdAt,
         status: feedback.status,
@@ -463,7 +468,14 @@ export const db = {
           type: row.type || 'suggestion',
           title: row.title || '',
           content: row.content || '',
-          attachments: row.attachments || [],
+          attachments: (row.attachments || []).map((a: any) => ({
+            id: a.id || a.name,
+            name: a.name,
+            size: a.size || 0,
+            type: a.type || '',
+            url: a.url || '',
+            b2FileId: a.b2FileId || a.b2_file_id
+          })),
           createdAt: row.created_at || new Date().toISOString(),
           status: row.status || 'new',
           adminNotes: row.admin_notes || ''
@@ -491,7 +503,14 @@ export const db = {
           type: row.type || 'suggestion',
           title: row.title || '',
           content: row.content || '',
-          attachments: row.attachments || [],
+          attachments: (row.attachments || []).map((a: any) => ({
+            id: a.id || a.name,
+            name: a.name,
+            size: a.size || 0,
+            type: a.type || '',
+            url: a.url || '',
+            b2FileId: a.b2FileId || a.b2_file_id
+          })),
           createdAt: row.created_at || new Date().toISOString(),
           status: row.status || 'new',
           adminNotes: row.admin_notes || ''
@@ -530,8 +549,20 @@ export const db = {
 
     try {
       const payload: any = {};
-      if (updates.status) payload.status = updates.status;
-      if (updates.type) payload.type = updates.type;
+      if (updates.title !== undefined) payload.title = updates.title;
+      if (updates.content !== undefined) payload.content = updates.content;
+      if (updates.type !== undefined) payload.type = updates.type;
+      if (updates.status !== undefined) payload.status = updates.status;
+      if (updates.attachments !== undefined) {
+        payload.attachments = (updates.attachments || []).map(a => ({
+          id: a.id,
+          name: a.name,
+          size: a.size,
+          type: a.type,
+          url: a.url?.startsWith('data:') && a.url.length > 200000 ? '' : a.url,
+          b2FileId: (a as any).b2FileId || (a as any).b2_file_id
+        }));
+      }
       if (updates.adminNotes !== undefined) payload.admin_notes = updates.adminNotes;
       await supabase.from('suggestions').update(payload).eq('id', id);
     } catch (e) {

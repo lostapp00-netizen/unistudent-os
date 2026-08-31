@@ -262,68 +262,32 @@ export function DriveTab() {
     if (file.type === 'folder') {
       setCurrentFolderId(file.id);
     } else {
-      // Open or preview file
-      if (file.b2FileId) {
-        try {
-          const { openOrDownloadFile } = await import('../../lib/backblaze');
-          await openOrDownloadFile(file, 'view');
-          return;
-        } catch (err) {
-          console.warn('Error opening via B2:', err);
-        }
-      }
-
-      if (file.url) {
-        if (file.url.startsWith('data:')) {
-          // Open base64 data in new window or download
-          const win = window.open();
-          if (win) {
-            win.document.write(
-              `<iframe src="${file.url}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`
-            );
-          } else {
-            const a = document.createElement('a');
-            a.href = file.url;
-            a.download = file.name;
-            a.click();
-          }
-        } else {
+      try {
+        const { previewFile } = await import('../../lib/backblaze');
+        await previewFile(file);
+      } catch (err) {
+        console.error('Error previewing file:', err);
+        if (file.url) {
           window.open(file.url, '_blank');
+        } else {
+          alert(isAr ? 'لا يوجد رابط متاح لاستعراض هذا الملف.' : 'No preview URL available for this file.');
         }
-      } else {
-        alert(isAr ? 'لا يوجد رابط متاح لاستعراض هذا الملف.' : 'No preview URL available for this file.');
       }
     }
   };
 
   const handleDownload = async (e: React.MouseEvent, file: DriveFile) => {
     e.stopPropagation();
-    if (file.b2FileId) {
-      try {
-        const { openOrDownloadFile } = await import('../../lib/backblaze');
-        await openOrDownloadFile(file, 'download');
-        return;
-      } catch (err) {
-        console.warn('B2 download fallback:', err);
-      }
-    }
-
-    if (file.url) {
-      try {
-        const a = document.createElement('a');
-        a.href = file.url;
-        a.download = file.name;
-        a.target = '_blank';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          if (document.body.contains(a)) document.body.removeChild(a);
-        }, 500);
-      } catch {
+    try {
+      const { downloadFile } = await import('../../lib/backblaze');
+      await downloadFile(file);
+    } catch (err) {
+      console.error('Error downloading file:', err);
+      if (file.url) {
         window.open(file.url, '_blank');
+      } else {
+        alert(isAr ? 'فشل تنزيل الملف.' : 'Failed to download file.');
       }
-    } else {
-      alert(isAr ? 'فشل تنزيل الملف.' : 'Failed to download file.');
     }
   };
 
