@@ -36,7 +36,11 @@ import {
   Menu,
   ExternalLink,
   FileText,
-  Inbox
+  Inbox,
+  EyeOff,
+  HelpCircle,
+  Info,
+  Loader2
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { db } from '../lib/db';
@@ -99,6 +103,8 @@ export function Admin() {
   const [backupMessage, setBackupMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [emailConfig, setEmailConfig] = useState<EmailBackupConfig>(() => db.getEmailBackupConfig());
   const [emailSaveSuccess, setEmailSaveSuccess] = useState(false);
+  const [showAppPassword, setShowAppPassword] = useState(false);
+  const [showGoogleGuide, setShowGoogleGuide] = useState(false);
 
   // Load Admin Data
   const fetchData = async () => {
@@ -401,68 +407,53 @@ export function Admin() {
     setTimeout(() => setEmailSaveSuccess(false), 3000);
   };
 
-  // Send Backup Email Immediately (Invokes Supabase Edge Function + Local fallback)
+  // Send Backup Email Immediately (via Gmail SMTP with JSON attachment)
   const handleSendBackupEmailNow = async () => {
     try {
-      if (!emailConfig.targetEmail) {
-        alert(isAr ? 'يرجى كتابة البريد الإلكتروني أولاً.' : 'Please enter target email first.');
+      if (!emailConfig.targetEmail || !emailConfig.targetEmail.trim()) {
+        setBackupMessage({
+          type: 'error',
+          text: isAr ? 'يرجى كتابة البريد الإلكتروني المستلم للنسخة أولاً.' : 'Please enter recipient email first.'
+        });
         return;
       }
+      if (!emailConfig.senderEmail || !emailConfig.senderEmail.trim()) {
+        setBackupMessage({
+          type: 'error',
+          text: isAr ? 'يرجى إدخال بريد Gmail المرسل.' : 'Please enter sender Gmail address.'
+        });
+        return;
+      }
+      if (!emailConfig.appPassword || !emailConfig.appPassword.trim()) {
+        setBackupMessage({
+          type: 'error',
+          text: isAr ? 'يرجى إدخال كلمة مرور تطبيقات جوجل (Google App Password).' : 'Please enter your Google App Password.'
+        });
+        return;
+      }
+
       setBackupLoading(true);
       setBackupMessage(null);
 
-      let edgeFunctionSucceeded = false;
-      try {
-        const { supabase } = await import('../lib/supabase');
-        const { data, error } = await supabase.functions.invoke('send-database-backup', {
-          body: {
-            targetEmail: emailConfig.targetEmail,
-            frequency: emailConfig.frequency
-          }
-        });
+      const { sendDatabaseBackupEmail } = await import('../lib/emailBackup');
+      const result = await sendDatabaseBackupEmail(emailConfig);
 
-        if (!error && data) {
-          edgeFunctionSucceeded = true;
-          setBackupMessage({
-            type: 'success',
-            text: isAr 
-              ? `تم تشغيل الـ Edge Function وإرسال النسخة الاحتياطية إلى ${emailConfig.targetEmail} بنجاح!` 
-              : `Edge Function executed and backup sent to ${emailConfig.targetEmail}!`
-          });
-        }
-      } catch (edgeErr) {
-        console.warn('Edge function invoke error, falling back:', edgeErr);
-      }
-
-      if (!edgeFunctionSucceeded) {
-        const backup = await db.exportFullDatabaseBackup();
-        const summaryText = `UniStudent OS Backup Data Summary:
-- Total Students: ${backup.summary.totalStudents}
-- Total Subjects: ${backup.summary.totalSubjects}
-- Total Files: ${backup.summary.totalFiles}
-- Date: ${new Date().toLocaleString()}
-
-(Full JSON database backup snapshot generated).`;
-
-        const mailtoLink = `mailto:${encodeURIComponent(emailConfig.targetEmail)}?subject=${encodeURIComponent(`UniStudent OS Full Database Backup - ${new Date().toISOString().split('T')[0]}`)}&body=${encodeURIComponent(summaryText)}`;
-        window.open(mailtoLink, '_blank');
-
-        setBackupMessage({
-          type: 'success',
-          text: isAr ? `تم تجهيز النسخة الاحتياطية وإرسالها إلى ${emailConfig.targetEmail} بنجاح!` : `Backup email dispatched to ${emailConfig.targetEmail}!`
-        });
-      }
+      setBackupMessage({
+        type: 'success',
+        text: result.message
+      });
 
       const updatedConfig: EmailBackupConfig = {
         ...emailConfig,
-        lastSentAt: new Date().toISOString()
+        lastSentAt: new Date().toISOString(),
+        status: 'active'
       };
       setEmailConfig(updatedConfig);
       db.saveEmailBackupConfig(updatedConfig);
     } catch (e: any) {
       setBackupMessage({
         type: 'error',
-        text: e.message || 'Error triggering backup email'
+        text: e.message || (isAr ? 'حدث خطأ أثناء إرسال النسخة الاحتياطية.' : 'Error triggering backup email.')
       });
     } finally {
       setBackupLoading(false);
@@ -1300,14 +1291,89 @@ export function Admin() {
                   {emailSaveSuccess && (
                     <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-2">
                       <Check size={14} />
-                      <span>{isAr ? 'تم حفظ إعدادات الجدولة بنجاح!' : 'Email backup schedule saved!'}</span>
+                      <span>{isAr ? 'تم حفظ إعدادات البريد والجدولة بنجاح!' : 'Email backup settings saved!'}</span>
                     </div>
                   )}
 
-                  <form onSubmit={handleSaveEmailConfig} className="space-y-3.5">
+                  <form onSubmit={handleSaveEmailConfig} className="space-y-4">
+                    {/* Sender Gmail Credentials */}
+                    <div className="p-4 bg-purple-50/50 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-900/30 rounded-2xl space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Mail size={15} className="text-purple-600 dark:text-purple-400" />
+                          <h4 className="text-xs font-bold text-zinc-900 dark:text-white">
+                            {isAr ? 'بيانات بريد Gmail المرسل (Sender Gmail)' : 'Sender Gmail Configuration'}
+                          </h4>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowGoogleGuide(!showGoogleGuide)}
+                          className="text-[11px] font-bold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <HelpCircle size={13} />
+                          <span>{isAr ? 'كيف تستخرج كلمة مرور التطبيقات؟' : 'How to get App Password?'}</span>
+                        </button>
+                      </div>
+
+                      {/* Google App Password Guide Helper */}
+                      {showGoogleGuide && (
+                        <div className="p-3.5 bg-white dark:bg-zinc-900 border border-purple-200 dark:border-purple-800 rounded-xl text-xs space-y-2 text-zinc-700 dark:text-zinc-300">
+                          <p className="font-bold text-purple-600 dark:text-purple-400">
+                            {isAr ? 'خطوات تفعيل إرسال الإيميل من حسابك الجيميل (في 30 ثانية):' : 'Steps to get your Gmail App Password (30 seconds):'}
+                          </p>
+                          <ol className="list-decimal list-inside space-y-1 text-[11px] text-zinc-600 dark:text-zinc-400 pr-1">
+                            <li>{isAr ? 'ادخل على إعدادات حساب جوجل الخاص بك: myaccount.google.com' : 'Open your Google Account: myaccount.google.com'}</li>
+                            <li>{isAr ? 'اضغط على قسم «الأمان (Security)» وتأكد من تفعيل «التحقق بخطوتين (2-Step Verification)».' : 'Go to Security and make sure 2-Step Verification is turned ON.'}</li>
+                            <li>{isAr ? 'ابحث في شريط البحث بالأعلى عن «كلمات مرور التطبيقات (App Passwords)» أو ادخل عليها مباشرة.' : 'Search for "App Passwords" in the top search bar.'}</li>
+                            <li>{isAr ? 'اكتب اسماً للتطبيق مثل "UniStudent OS" واضغط إنشاء، وانسخ الـ 16 حرفاً الناتجة وضعها في الحقل بالأسفل.' : 'Enter app name "UniStudent OS", generate password, copy the 16 characters and paste below.'}</li>
+                          </ol>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                            {isAr ? 'بريد Gmail المرسل' : 'Sender Gmail Address'}
+                          </label>
+                          <input
+                            type="email"
+                            required
+                            value={emailConfig.senderEmail || ''}
+                            onChange={(e) => setEmailConfig({ ...emailConfig, senderEmail: e.target.value })}
+                            placeholder="yourname@gmail.com"
+                            className="w-full px-3.5 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                            {isAr ? 'كلمة مرور التطبيقات (App Password)' : 'Gmail App Password (16 chars)'}
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showAppPassword ? 'text' : 'password'}
+                              required
+                              value={emailConfig.appPassword || ''}
+                              onChange={(e) => setEmailConfig({ ...emailConfig, appPassword: e.target.value })}
+                              placeholder="xxxx xxxx xxxx xxxx"
+                              className="w-full px-3.5 py-2.5 pr-9 rtl:pr-3.5 rtl:pl-9 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowAppPassword(!showAppPassword)}
+                              className="absolute top-1/2 -translate-y-1/2 right-2.5 rtl:right-auto rtl:left-2.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
+                            >
+                              {showAppPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Target / Recipient Email */}
                     <div>
                       <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                        {isAr ? 'البريد الإلكتروني المستلم' : 'Target Email Address'}
+                        {isAr ? 'البريد الإلكتروني المستلم للنسخة الاحتياطية' : 'Recipient Email Address (Where backups will be delivered)'}
                       </label>
                       <input
                         type="email"
@@ -1319,6 +1385,7 @@ export function Admin() {
                       />
                     </div>
 
+                    {/* Schedule Timing & Frequency */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
                         <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
@@ -1329,6 +1396,7 @@ export function Admin() {
                           onChange={(e) => setEmailConfig({ ...emailConfig, frequency: e.target.value as any })}
                           className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none"
                         >
+                          <option value="thursday">{isAr ? 'أسبوعياً كل يوم خميس (Every Thursday)' : 'Weekly (Every Thursday)'}</option>
                           <option value="daily">{isAr ? 'يومياً (Daily)' : 'Daily'}</option>
                           <option value="weekly">{isAr ? 'أسبوعياً (Weekly)' : 'Weekly'}</option>
                           <option value="monthly">{isAr ? 'شهرياً (Monthly)' : 'Monthly'}</option>
@@ -1360,34 +1428,35 @@ export function Admin() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={emailConfig.enabled}
                           onChange={(e) => setEmailConfig({ ...emailConfig, enabled: e.target.checked })}
-                          className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500"
+                          className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
                         />
                         <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                          {isAr ? 'تفعيل الإرسال المجدول' : 'Enable Automated Schedule'}
+                          {isAr ? 'تفعيل الإرسال المجدول تلقائياً' : 'Enable Automated Schedule'}
                         </span>
                       </label>
 
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
+                          disabled={backupLoading}
                           onClick={handleSendBackupEmailNow}
-                          className="px-3 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold text-xs rounded-xl transition-all flex items-center gap-1"
+                          className="px-3.5 py-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 disabled:opacity-50 text-zinc-800 dark:text-zinc-200 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
                         >
-                          <Send size={12} />
-                          <span>{isAr ? 'إرسال تجريبي الآن' : 'Send Now'}</span>
+                          {backupLoading ? <Loader2 size={13} className="animate-spin text-purple-600" /> : <Send size={13} />}
+                          <span>{backupLoading ? (isAr ? 'جاري الإرسال...' : 'Sending...') : (isAr ? 'إرسال تجريبي الآن' : 'Send Test Now')}</span>
                         </button>
 
                         <button
                           type="submit"
-                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all"
+                          className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
                         >
-                          {isAr ? 'حفظ الجدولة' : 'Save Schedule'}
+                          {isAr ? 'حفظ الإعدادات والجدولة' : 'Save Settings'}
                         </button>
                       </div>
                     </div>

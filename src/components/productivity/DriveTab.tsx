@@ -224,19 +224,37 @@ export function DriveTab() {
     }
   };
 
+  const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
+
   const handleConfirmDelete = async () => {
     if (!fileToDelete) return;
     const file = fileToDelete;
 
     if (file.type === 'folder') {
       const descendantIds = getAllDescendantIds(file.id, files);
-      [file.id, ...descendantIds].forEach(id => deleteFile(id));
+      const allTargetIds = [file.id, ...descendantIds];
+      const descendantFiles = files.filter(f => allTargetIds.includes(f.id) && f.type === 'file');
+      
+      try {
+        const { deleteMultipleFromB2, extractB2KeyFromUrl } = await import('../../lib/backblaze');
+        const b2Keys = descendantFiles.map(f => f.b2FileId || extractB2KeyFromUrl(f.url)).filter(Boolean);
+        if (b2Keys.length > 0) {
+          await deleteMultipleFromB2(b2Keys);
+        }
+      } catch (err) {
+        console.error('Error batch deleting folder files from B2:', err);
+      }
+
+      allTargetIds.forEach(id => deleteFile(id));
     } else {
-      if (file.b2FileId) {
+      const b2Key = file.b2FileId || (file.url ? (await import('../../lib/backblaze')).extractB2KeyFromUrl(file.url) : null);
+      if (b2Key) {
         try {
           const { deleteFromB2 } = await import('../../lib/backblaze');
-          await deleteFromB2(file.b2FileId);
-        } catch (err) {}
+          await deleteFromB2(b2Key);
+        } catch (err) {
+          console.error('Error deleting single file from B2:', err);
+        }
       }
       deleteFile(file.id);
     }
@@ -279,6 +297,7 @@ export function DriveTab() {
   const handleDownload = async (e: React.MouseEvent, file: DriveFile) => {
     e.stopPropagation();
     try {
+      setDownloadingFileId(file.id);
       const { downloadFile } = await import('../../lib/backblaze');
       await downloadFile(file);
     } catch (err) {
@@ -288,6 +307,8 @@ export function DriveTab() {
       } else {
         alert(isAr ? 'فشل تنزيل الملف.' : 'Failed to download file.');
       }
+    } finally {
+      setDownloadingFileId(null);
     }
   };
 
@@ -439,10 +460,11 @@ export function DriveTab() {
                   {file.type === 'file' && (
                     <button
                       onClick={(e) => handleDownload(e, file)}
-                      className="p-2 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-all rounded-xl shadow-2xs"
+                      disabled={downloadingFileId === file.id}
+                      className="p-2 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 disabled:opacity-50 transition-all rounded-xl shadow-2xs cursor-pointer"
                       title={isAr ? 'تنزيل الملف' : 'Download'}
                     >
-                      <Download size={15} />
+                      {downloadingFileId === file.id ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
                     </button>
                   )}
 

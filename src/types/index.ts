@@ -184,7 +184,9 @@ export type FeedbackSuggestion = {
 export type EmailBackupConfig = {
   enabled: boolean;
   targetEmail: string;
-  frequency: 'daily' | 'weekly' | 'monthly' | 'custom_hours';
+  senderEmail?: string;
+  appPassword?: string;
+  frequency: 'thursday' | 'daily' | 'weekly' | 'monthly' | 'custom_hours';
   customHours?: number;
   startDate: string; // YYYY-MM-DD
   startTime: string; // HH:mm

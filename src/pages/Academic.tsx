@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useAppStore } from '../store/useAppStore';
 import { calculateSubjectGrade, calculateGPA, getWarningThreshold, isSubjectAtWarningRisk } from '../lib/academic';
 import { Subject } from '../types';
-import { Plus, ChevronLeft, ChevronRight, AlertTriangle, Filter, Check, Edit2, Trash2 } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, AlertTriangle, Filter, Check, Edit2, Trash2, X } from 'lucide-react';
 
 export function Academic() {
   const { t } = useTranslation();

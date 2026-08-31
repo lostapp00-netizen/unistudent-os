@@ -55,10 +55,12 @@ export function LocalAttachmentUploader({ attachments, onChange }: LocalAttachme
   };
 
   const handleRemove = async (attachmentId: string, b2FileId?: string) => {
-    if (b2FileId) {
+    const target = attachments.find(a => a.id === attachmentId);
+    const key = b2FileId || (target?.b2FileId) || (target?.url ? (await import('../../lib/backblaze')).extractB2KeyFromUrl(target.url) : null);
+    if (key) {
       try {
         const { deleteFromB2 } = await import('../../lib/backblaze');
-        await deleteFromB2(b2FileId);
+        await deleteFromB2(key);
       } catch (err) {
         console.error('Error deleting attachment from B2:', err);
       }

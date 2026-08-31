@@ -144,7 +144,21 @@ export function UserFeedbackSection() {
     e.target.value = '';
   };
 
-  const removeAttachment = (id: string, isEditMode: boolean = false) => {
+  const removeAttachment = async (id: string, isEditMode: boolean = false) => {
+    const list = isEditMode ? editAttachments : attachments;
+    const target = list.find((a) => a.id === id);
+    if (target) {
+      const key = (target as any).b2FileId || (target as any).b2_file_id || (target.url ? (await import('../../lib/backblaze')).extractB2KeyFromUrl(target.url) : null);
+      if (key) {
+        try {
+          const { deleteFromB2 } = await import('../../lib/backblaze');
+          await deleteFromB2(key);
+        } catch (err) {
+          console.error('Error deleting feedback attachment from B2:', err);
+        }
+      }
+    }
+
     if (isEditMode) {
       setEditAttachments((prev) => prev.filter((a) => a.id !== id));
     } else {

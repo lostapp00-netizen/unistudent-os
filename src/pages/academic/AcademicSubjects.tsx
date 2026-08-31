@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useAppStore } from '../../store/useAppStore';
 import { calculateSubjectGrade } from '../../lib/academic';
 import { Subject } from '../../types';
-import { Plus, Filter, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Filter, Edit2, Trash2, X } from 'lucide-react';
 
 export function AcademicSubjects() {
   const { t } = useTranslation();

@@ -301,9 +301,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { userId, files } = get();
     if (!userId) return;
     const target = files.find(f => f.id === id);
-    if (target?.b2FileId) {
-      import('../lib/backblaze').then(({ deleteFromB2 }) => {
-        deleteFromB2(target.b2FileId!).catch(console.error);
+    if (target) {
+      import('../lib/backblaze').then(({ deleteFromB2, extractB2KeyFromUrl }) => {
+        const key = target.b2FileId || extractB2KeyFromUrl(target.url);
+        if (key) {
+          deleteFromB2(key).catch(console.error);
+        }
       }).catch(console.error);
     }
     set((state) => ({ files: state.files.filter(f => f.id !== id) }));
@@ -326,8 +329,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         const newIds = new Set((updatedFields.attachments || []).map(a => a.id));
         const removed = current.attachments.filter(a => !newIds.has(a.id));
         if (removed.length > 0) {
-          import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
-            deleteMultipleFromB2(removed.map(a => a.b2FileId)).catch(console.error);
+          import('../lib/backblaze').then(({ deleteMultipleFromB2, extractB2KeyFromUrl }) => {
+            const keys = removed.map(a => a.b2FileId || (a as any).b2_file_id || extractB2KeyFromUrl(a.url)).filter(Boolean);
+            deleteMultipleFromB2(keys).catch(console.error);
           }).catch(console.error);
         }
       }
@@ -340,8 +344,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!userId) return;
     const target = notes.find(n => n.id === id);
     if (target?.attachments?.length) {
-      import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
-        deleteMultipleFromB2(target.attachments!.map(a => a.b2FileId)).catch(console.error);
+      import('../lib/backblaze').then(({ deleteMultipleFromB2, extractB2KeyFromUrl }) => {
+        const keys = target.attachments!.map(a => a.b2FileId || (a as any).b2_file_id || extractB2KeyFromUrl(a.url)).filter(Boolean);
+        deleteMultipleFromB2(keys).catch(console.error);
       }).catch(console.error);
     }
     set((state) => ({ notes: state.notes.filter(n => n.id !== id) }));
@@ -364,8 +369,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         const newIds = new Set((updatedFields.attachments || []).map(a => a.id));
         const removed = current.attachments.filter(a => !newIds.has(a.id));
         if (removed.length > 0) {
-          import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
-            deleteMultipleFromB2(removed.map(a => a.b2FileId)).catch(console.error);
+          import('../lib/backblaze').then(({ deleteMultipleFromB2, extractB2KeyFromUrl }) => {
+            const keys = removed.map(a => a.b2FileId || (a as any).b2_file_id || extractB2KeyFromUrl(a.url)).filter(Boolean);
+            deleteMultipleFromB2(keys).catch(console.error);
           }).catch(console.error);
         }
       }
@@ -378,8 +384,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!userId) return;
     const target = tasks.find(t => t.id === id);
     if (target?.attachments?.length) {
-      import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
-        deleteMultipleFromB2(target.attachments!.map(a => a.b2FileId)).catch(console.error);
+      import('../lib/backblaze').then(({ deleteMultipleFromB2, extractB2KeyFromUrl }) => {
+        const keys = target.attachments!.map(a => a.b2FileId || (a as any).b2_file_id || extractB2KeyFromUrl(a.url)).filter(Boolean);
+        deleteMultipleFromB2(keys).catch(console.error);
       }).catch(console.error);
     }
     set((state) => ({ tasks: state.tasks.filter(t => t.id !== id) }));
@@ -402,8 +409,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         const newIds = new Set((updatedFields.attachments || []).map(a => a.id));
         const removed = current.attachments.filter(a => !newIds.has(a.id));
         if (removed.length > 0) {
-          import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
-            deleteMultipleFromB2(removed.map(a => a.b2FileId)).catch(console.error);
+          import('../lib/backblaze').then(({ deleteMultipleFromB2, extractB2KeyFromUrl }) => {
+            const keys = removed.map(a => a.b2FileId || (a as any).b2_file_id || extractB2KeyFromUrl(a.url)).filter(Boolean);
+            deleteMultipleFromB2(keys).catch(console.error);
           }).catch(console.error);
         }
       }
@@ -416,8 +424,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!userId) return;
     const target = appointments.find(a => a.id === id);
     if (target?.attachments?.length) {
-      import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
-        deleteMultipleFromB2(target.attachments!.map(a => a.b2FileId)).catch(console.error);
+      import('../lib/backblaze').then(({ deleteMultipleFromB2, extractB2KeyFromUrl }) => {
+        const keys = target.attachments!.map(a => a.b2FileId || (a as any).b2_file_id || extractB2KeyFromUrl(a.url)).filter(Boolean);
+        deleteMultipleFromB2(keys).catch(console.error);
       }).catch(console.error);
     }
     set((state) => ({ appointments: state.appointments.filter(a => a.id !== id) }));
@@ -440,8 +449,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         const newIds = new Set((updatedFields.attachments || []).map(a => a.id));
         const removed = current.attachments.filter(a => !newIds.has(a.id));
         if (removed.length > 0) {
-          import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
-            deleteMultipleFromB2(removed.map(a => a.b2FileId)).catch(console.error);
+          import('../lib/backblaze').then(({ deleteMultipleFromB2, extractB2KeyFromUrl }) => {
+            const keys = removed.map(a => a.b2FileId || (a as any).b2_file_id || extractB2KeyFromUrl(a.url)).filter(Boolean);
+            deleteMultipleFromB2(keys).catch(console.error);
           }).catch(console.error);
         }
       }
@@ -454,8 +464,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!userId) return;
     const target = scheduleItems.find(s => s.id === id);
     if (target?.attachments?.length) {
-      import('../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
-        deleteMultipleFromB2(target.attachments!.map(a => a.b2FileId)).catch(console.error);
+      import('../lib/backblaze').then(({ deleteMultipleFromB2, extractB2KeyFromUrl }) => {
+        const keys = target.attachments!.map(a => a.b2FileId || (a as any).b2_file_id || extractB2KeyFromUrl(a.url)).filter(Boolean);
+        deleteMultipleFromB2(keys).catch(console.error);
       }).catch(console.error);
     }
     set((state) => ({ scheduleItems: state.scheduleItems.filter(s => s.id !== id) }));

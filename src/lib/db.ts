@@ -572,8 +572,40 @@ export const db = {
 
   async deleteFeedback(id: string) {
     try {
+      // Find feedback to extract all attachment B2 keys before deleting
       const allKey = 'unistudent_all_suggestions';
       const list: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(allKey) || '[]');
+      const targetLocal = list.find(f => f.id === id);
+
+      let attachmentsToDelete: any[] = targetLocal?.attachments || [];
+      if ((targetLocal as any)?.attachment_url) {
+        attachmentsToDelete.push({ url: (targetLocal as any).attachment_url });
+      }
+
+      // Also check supabase if online
+      try {
+        const { data } = await supabase.from('suggestions').select('attachments, attachment_url').eq('id', id).single();
+        if (data) {
+          if (Array.isArray(data.attachments)) {
+            attachmentsToDelete.push(...data.attachments);
+          }
+          if (data.attachment_url) {
+            attachmentsToDelete.push({ url: data.attachment_url });
+          }
+        }
+      } catch {}
+
+      if (attachmentsToDelete.length > 0) {
+        import('./backblaze').then(({ deleteMultipleFromB2, extractB2KeyFromUrl }) => {
+          const keys = attachmentsToDelete
+            .map(a => a.b2FileId || (a as any).b2_file_id || extractB2KeyFromUrl(a.url))
+            .filter(Boolean);
+          if (keys.length > 0) {
+            deleteMultipleFromB2(keys).catch(console.error);
+          }
+        }).catch(console.error);
+      }
+
       localStorage.setItem(allKey, JSON.stringify(list.filter(f => f.id !== id)));
 
       for (let i = 0; i < localStorage.length; i++) {
@@ -949,7 +981,9 @@ export const db = {
     return {
       enabled: false,
       targetEmail: '',
-      frequency: 'weekly',
+      senderEmail: '',
+      appPassword: '',
+      frequency: 'thursday',
       startDate: new Date().toISOString().split('T')[0],
       startTime: '09:00',
       status: 'paused'

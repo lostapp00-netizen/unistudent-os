@@ -48,29 +48,37 @@ export async function uploadToB2(file: File, path: string): Promise<string> {
  * @param path The path/filename of the file to delete
  */
 export async function deleteFromB2(path: string): Promise<void> {
+  if (!path) return;
+  let cleanKey = path.trim();
+  if (cleanKey.startsWith('/')) cleanKey = cleanKey.slice(1);
+  if (cleanKey.startsWith('http://') || cleanKey.startsWith('https://')) {
+    const extracted = extractB2KeyFromUrl(cleanKey);
+    if (extracted) cleanKey = extracted;
+  }
+
   try {
     // List all versions and delete markers for this object to perform hard delete
     const listVersions = new ListObjectVersionsCommand({
       Bucket: BUCKET_NAME,
-      Prefix: path,
+      Prefix: cleanKey,
     });
     const versionsRes = await b2Client.send(listVersions);
-    const versions = versionsRes.Versions?.filter(v => v.Key === path) || [];
-    const deleteMarkers = versionsRes.DeleteMarkers?.filter(d => d.Key === path) || [];
+    const versions = versionsRes.Versions?.filter(v => v.Key === cleanKey) || [];
+    const deleteMarkers = versionsRes.DeleteMarkers?.filter(d => d.Key === cleanKey) || [];
 
     if (versions.length > 0 || deleteMarkers.length > 0) {
-      await Promise.all([
+      await Promise.allSettled([
         ...versions.map(v => 
           b2Client.send(new DeleteObjectCommand({
             Bucket: BUCKET_NAME,
-            Key: path,
+            Key: cleanKey,
             VersionId: v.VersionId,
           }))
         ),
         ...deleteMarkers.map(d => 
           b2Client.send(new DeleteObjectCommand({
             Bucket: BUCKET_NAME,
-            Key: path,
+            Key: cleanKey,
             VersionId: d.VersionId,
           }))
         ),
@@ -81,13 +89,16 @@ export async function deleteFromB2(path: string): Promise<void> {
     console.warn('Could not list/hard-delete versions from B2, falling back to standard delete:', err);
   }
 
-  // Standard delete fallback
-  const command = new DeleteObjectCommand({
-    Bucket: BUCKET_NAME,
-    Key: path,
-  });
-
-  await b2Client.send(command);
+  try {
+    // Standard delete fallback
+    const command = new DeleteObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: cleanKey,
+    });
+    await b2Client.send(command);
+  } catch (err) {
+    console.error('Error in standard deleteFromB2:', err);
+  }
 }
 
 /**
@@ -107,18 +118,26 @@ export async function getPresignedDownloadUrl(
   downloadFilename?: string, 
   inline: boolean = false
 ): Promise<string> {
+  let cleanKey = path.trim();
+  if (cleanKey.startsWith('/')) cleanKey = cleanKey.slice(1);
+  if (cleanKey.startsWith('http://') || cleanKey.startsWith('https://')) {
+    const extracted = extractB2KeyFromUrl(cleanKey);
+    if (extracted) cleanKey = extracted;
+  }
+
   let contentDisposition: string | undefined = undefined;
 
   if (downloadFilename) {
-    const encodedName = encodeURIComponent(downloadFilename);
-    contentDisposition = `attachment; filename="${encodedName}"; filename*=UTF-8''${encodedName}`;
+    const safeAsciiName = downloadFilename.replace(/[^\x20-\x7E]/g, '_');
+    const utf8Encoded = encodeURIComponent(downloadFilename);
+    contentDisposition = `attachment; filename="${safeAsciiName}"; filename*=UTF-8''${utf8Encoded}`;
   } else if (inline) {
     contentDisposition = 'inline';
   }
 
   const command = new GetObjectCommand({
     Bucket: BUCKET_NAME,
-    Key: path,
+    Key: cleanKey,
     ResponseContentDisposition: contentDisposition,
   });
 
@@ -126,37 +145,44 @@ export async function getPresignedDownloadUrl(
 }
 
 /**
- * Utility to extract B2 object key from a full URL if b2FileId was not explicitly saved
+ * Utility to extract B2 object key from a full URL or path if b2FileId was not explicitly saved
  */
 export function extractB2KeyFromUrl(url?: string): string | null {
   if (!url) return null;
   if (url.startsWith('data:') || url.startsWith('blob:')) return null;
   
   try {
-    const urlObj = new URL(url);
-    const pathname = decodeURIComponent(urlObj.pathname);
-    
-    // Pattern 1: /BUCKET_NAME/key
-    if (BUCKET_NAME && pathname.startsWith(`/${BUCKET_NAME}/`)) {
-      return pathname.replace(`/${BUCKET_NAME}/`, '');
-    }
-    
-    // Pattern 2: /file/BUCKET_NAME/key
-    if (BUCKET_NAME && pathname.startsWith(`/file/${BUCKET_NAME}/`)) {
-      return pathname.replace(`/file/${BUCKET_NAME}/`, '');
-    }
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      const urlObj = new URL(url);
+      const pathname = decodeURIComponent(urlObj.pathname);
+      
+      // Pattern 1: /BUCKET_NAME/key
+      if (BUCKET_NAME && pathname.toLowerCase().startsWith(`/${BUCKET_NAME.toLowerCase()}/`)) {
+        return pathname.slice(BUCKET_NAME.length + 2);
+      }
+      
+      // Pattern 2: /file/BUCKET_NAME/key
+      if (BUCKET_NAME && pathname.toLowerCase().startsWith(`/file/${BUCKET_NAME.toLowerCase()}/`)) {
+        return pathname.slice(BUCKET_NAME.length + 7);
+      }
 
-    // Pattern 3: attachments/ or feedback_ or UUID_ prefix in path
-    const parts = pathname.split('/').filter(Boolean);
-    if (parts.length > 0) {
-      const lastPart = parts[parts.length - 1];
-      if (parts.includes('attachments')) {
-        const attIdx = parts.indexOf('attachments');
-        return parts.slice(attIdx).join('/');
+      // Pattern 3: attachments/ or feedback_ or UUID_ prefix in path
+      const parts = pathname.split('/').filter(Boolean);
+      if (parts.length > 0) {
+        if (parts.includes('attachments')) {
+          const attIdx = parts.indexOf('attachments');
+          return parts.slice(attIdx).join('/');
+        }
+        const lastPart = parts[parts.length - 1];
+        if (lastPart.startsWith('feedback_') || /^[0-9a-f]{8}-/i.test(lastPart) || lastPart.includes('_')) {
+          return lastPart;
+        }
       }
-      if (lastPart.startsWith('feedback_') || lastPart.includes('_')) {
-        return lastPart;
-      }
+    } else {
+      // If it's already a clean key path
+      let clean = url.trim();
+      if (clean.startsWith('/')) clean = clean.slice(1);
+      return clean;
     }
   } catch {}
   return null;
@@ -181,7 +207,7 @@ export function dataUrlToBlob(dataUrl: string): Blob {
 }
 
 /**
- * Downloads a file directly to the user's device
+ * Downloads a file directly to the user's device via native Blob anchor click
  */
 export async function triggerBrowserDownload(url: string, filename: string): Promise<void> {
   // 1. If it's a data URL, convert to Blob and download
@@ -197,7 +223,7 @@ export async function triggerBrowserDownload(url: string, filename: string): Pro
       setTimeout(() => {
         window.URL.revokeObjectURL(blobUrl);
         if (document.body.contains(link)) document.body.removeChild(link);
-      }, 1000);
+      }, 2000);
       return;
     } catch (e) {
       console.warn('Error downloading data URL as blob:', e);
@@ -213,7 +239,7 @@ export async function triggerBrowserDownload(url: string, filename: string): Pro
     link.click();
     setTimeout(() => {
       if (document.body.contains(link)) document.body.removeChild(link);
-    }, 1000);
+    }, 2000);
     return;
   }
 
@@ -231,15 +257,23 @@ export async function triggerBrowserDownload(url: string, filename: string): Pro
       setTimeout(() => {
         window.URL.revokeObjectURL(blobUrl);
         if (document.body.contains(link)) document.body.removeChild(link);
-      }, 1000);
+      }, 2000);
       return;
     }
   } catch (e) {
-    // CORS or fetch error: fallback to iframe/link
+    // CORS or fetch error: fallback to anchor / iframe
   }
 
-  // 4. Fallback for cross-origin or presigned URLs with attachment header
+  // 4. Fallback for cross-origin or presigned URLs
   try {
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = url;
+    document.body.appendChild(iframe);
+    setTimeout(() => {
+      if (document.body.contains(iframe)) document.body.removeChild(iframe);
+    }, 5000);
+  } catch {
     const link = document.createElement('a');
     link.href = url;
     link.setAttribute('download', filename);
@@ -249,9 +283,7 @@ export async function triggerBrowserDownload(url: string, filename: string): Pro
     link.click();
     setTimeout(() => {
       if (document.body.contains(link)) document.body.removeChild(link);
-    }, 1000);
-  } catch {
-    window.open(url, '_blank');
+    }, 2000);
   }
 }
 
@@ -265,7 +297,7 @@ export async function openOrDownloadFile(
   const b2Key = file.b2FileId || extractB2KeyFromUrl(file.url);
 
   if (action === 'view') {
-    // Data URL preview: convert to blob URL to avoid browser security restrictions on data: navigation
+    // Data URL preview
     if (file.url?.startsWith('data:')) {
       try {
         const blob = dataUrlToBlob(file.url);
@@ -283,14 +315,31 @@ export async function openOrDownloadFile(
       return;
     }
 
-    // Backblaze S3 key: generate presigned inline URL
+    // Backblaze S3 direct / presigned inline URL
     if (b2Key) {
       try {
+        // Try direct S3 getObject to create a local blob for seamless preview
+        try {
+          const res = await b2Client.send(new GetObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: b2Key,
+          }));
+          const bytes = await res.Body?.transformToByteArray();
+          if (bytes) {
+            const blob = new Blob([bytes], { type: res.ContentType || 'application/octet-stream' });
+            const blobUrl = window.URL.createObjectURL(blob);
+            window.open(blobUrl, '_blank');
+            return;
+          }
+        } catch (clientErr) {
+          console.warn('Direct client getObject preview fallback to presigned:', clientErr);
+        }
+
         const presignedUrl = await getPresignedDownloadUrl(b2Key, undefined, true);
         window.open(presignedUrl, '_blank');
         return;
       } catch (err) {
-        console.warn('Error generating presigned view URL for B2 key:', b2Key, err);
+        console.warn('Error generating preview URL for B2 key:', b2Key, err);
       }
     }
 
@@ -312,14 +361,37 @@ export async function openOrDownloadFile(
       return;
     }
 
-    // Backblaze S3 key: generate presigned URL with attachment disposition
+    // Backblaze S3 key: fetch directly as Blob to guarantee 100% reliable download with exact filename
     if (b2Key) {
       try {
-        const presignedUrl = await getPresignedDownloadUrl(b2Key, file.name);
-        await triggerBrowserDownload(presignedUrl, file.name);
-        return;
-      } catch (err) {
-        console.warn('Error getting presigned download URL for B2 key:', b2Key, err);
+        const res = await b2Client.send(new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: b2Key,
+        }));
+        const bytes = await res.Body?.transformToByteArray();
+        if (bytes) {
+          const blob = new Blob([bytes], { type: res.ContentType || 'application/octet-stream' });
+          const blobUrl = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = file.name;
+          document.body.appendChild(link);
+          link.click();
+          setTimeout(() => {
+            window.URL.revokeObjectURL(blobUrl);
+            if (document.body.contains(link)) document.body.removeChild(link);
+          }, 3000);
+          return;
+        }
+      } catch (directErr) {
+        console.warn('Direct S3 download fallback to presigned download URL:', directErr);
+        try {
+          const presignedUrl = await getPresignedDownloadUrl(b2Key, file.name);
+          await triggerBrowserDownload(presignedUrl, file.name);
+          return;
+        } catch (presignedErr) {
+          console.warn('Presigned download error:', presignedErr);
+        }
       }
     }
 
