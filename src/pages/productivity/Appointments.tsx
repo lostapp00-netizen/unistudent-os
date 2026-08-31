@@ -10,11 +10,13 @@ import { Calendar as CalendarIcon, Clock, Plus, Trash2, Edit2, Link as LinkIcon,
 import { EntityLinker } from '../../components/ui/EntityLinker';
 import { LocalAttachmentUploader } from '../../components/ui/LocalAttachmentUploader';
 import { AttachmentBadge } from '../../components/ui/AttachmentBadge';
+import { ConfirmModal } from '../../components/ui/CustomModal';
 
 export function Appointments() {
   const { t } = useTranslation();
   const { appointments, addAppointment, updateAppointment, deleteAppointment, subjects, files, settings, groups } = useAppStore();
   
+  const [appointmentToDelete, setAppointmentToDelete] = useState<Appointment | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [dateFilter, setDateFilter] = useState<ProductivityFilterState>({ type: "all", from: "", to: "" });
@@ -128,8 +130,9 @@ export function Appointments() {
                   <Edit2 size={15} />
                 </button>
                 <button 
-                  onClick={() => deleteAppointment(app.id)} 
-                  className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs"
+                  type="button"
+                  onClick={() => setAppointmentToDelete(app)} 
+                  className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs cursor-pointer"
                   title={settings.language === 'ar' ? 'حذف' : 'Delete'}
                 >
                   <Trash2 size={15} />
@@ -257,6 +260,23 @@ export function Appointments() {
         </div>
       )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!appointmentToDelete}
+        title={settings.language === 'ar' ? 'حذف الموعد' : 'Delete Appointment'}
+        message={settings.language === 'ar' ? `هل أنت متأكد من حذف الموعد "${appointmentToDelete?.title}"؟` : `Are you sure you want to delete appointment "${appointmentToDelete?.title}"?`}
+        confirmText={settings.language === 'ar' ? 'نعم، حذف' : 'Delete'}
+        cancelText={settings.language === 'ar' ? 'إلغاء' : 'Cancel'}
+        variant="danger"
+        onConfirm={() => {
+          if (appointmentToDelete) {
+            deleteAppointment(appointmentToDelete.id);
+            setAppointmentToDelete(null);
+          }
+        }}
+        onCancel={() => setAppointmentToDelete(null)}
+      />
     </div>
   );
 }

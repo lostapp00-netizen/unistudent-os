@@ -1,11 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore } from '../store/useAppStore';
 import { calculateSubjectGrade, calculateGPA, getWarningThreshold, isSubjectAtWarningRisk } from '../lib/academic';
 import { Subject } from '../types';
-import { Plus, ChevronLeft, ChevronRight, AlertTriangle, Filter, Check, Edit2, Trash2, X } from 'lucide-react';
+import { Plus, AlertTriangle, Edit2, Trash2, X } from 'lucide-react';
+import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../components/ui/UnifiedSemesterFilter';
 
 export function Academic() {
   const { t } = useTranslation();
@@ -17,27 +18,14 @@ export function Academic() {
   const [filterSemesters, setFilterSemesters] = useState<number[]>(currentSemester ? [currentSemester.semesterIndex] : [1]);
   const [showModal, setShowModal] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
-  const [showFilterPopover, setShowFilterPopover] = useState(false);
-
-  const filterPopoverRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (filterPopoverRef.current && !filterPopoverRef.current.contains(event.target as Node)) {
-        setShowFilterPopover(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const [formData, setFormData] = useState({
     code: '',
     name: '',
     creditHours: 3,
     totalMarks: 100,
-    yearIndex: filterYears.length === 1 ? filterYears[0] : (currentSemester?.yearIndex || 1),
-    semesterIndex: filterSemesters.length === 1 ? filterSemesters[0] : (currentSemester?.semesterIndex || 1)
+    yearIndex: currentSemester?.yearIndex || 1,
+    semesterIndex: currentSemester?.semesterIndex || 1
   });
 
   const handleOpenAdd = () => {
@@ -47,8 +35,8 @@ export function Academic() {
       name: '',
       creditHours: 3,
       totalMarks: 100,
-      yearIndex: filterYears.length === 1 ? filterYears[0] : (currentSemester?.yearIndex || 1),
-      semesterIndex: filterSemesters.length === 1 ? filterSemesters[0] : (currentSemester?.semesterIndex || 1)
+      yearIndex: currentSemester?.yearIndex || 1,
+      semesterIndex: currentSemester?.semesterIndex || 1
     });
     setShowModal(true);
   };
@@ -69,7 +57,7 @@ export function Academic() {
 
   const handleDelete = (e: React.MouseEvent, subjectId: string) => {
     e.stopPropagation();
-    if (window.confirm(settings.language === 'ar' ? 'هل أنت متأكد من حذف هذه المادة؟ سيتم حذف كافة التقييمات المرتبطة بها.' : 'Are you sure you want to delete this subject? All associated grade distributions will be removed.')) {
+    if (window.confirm(isAr ? 'هل أنت متأكد من حذف هذه المادة؟ سيتم حذف كافة التقييمات المرتبطة بها.' : 'Are you sure you want to delete this subject? All associated grade distributions will be removed.')) {
       deleteSubject(subjectId);
     }
   };
@@ -118,14 +106,6 @@ export function Academic() {
     isSubjectAtWarningRisk(s, settings.gradingScale, threshold.points)
   );
 
-  const toggleYear = (y: number) => {
-    setFilterYears(prev => prev.includes(y) ? prev.filter(yr => yr !== y) : [...prev, y]);
-  };
-
-  const toggleSemester = (s: number) => {
-    setFilterSemesters(prev => prev.includes(s) ? prev.filter(sem => sem !== s) : [...prev, s]);
-  };
-
   const isAr = settings.language === 'ar';
 
   return (
@@ -133,105 +113,21 @@ export function Academic() {
       <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <h1 className="text-3xl font-extrabold">{t('academic')}</h1>
-          <p className="text-zinc-500 mt-1">{t('gpa')}: {totalGPA > 0 ? totalGPA : '--'} | الفصل المختار: {semesterGPA > 0 ? semesterGPA : '--'}</p>
-        </div>
-        <div className="flex flex-wrap gap-3 items-center relative">
-          <div ref={filterPopoverRef} className="relative">
-            <button 
-              onClick={() => setShowFilterPopover(!showFilterPopover)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold transition-all border shadow-xs ${
-                filterYears.length > 0 || filterSemesters.length > 0 
-                  ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/40 dark:border-indigo-800 dark:text-indigo-300' 
-                  : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'
-              }`}
-            >
-              <Filter size={16} />
-              <span>{t('filter')}</span>
-              {(filterYears.length > 0 || filterSemesters.length > 0) && (
-                <span className="flex items-center justify-center bg-indigo-600 text-white w-5 h-5 rounded-full text-xs font-bold mr-1 rtl:mr-0 rtl:ml-1">
-                  {filterYears.length + filterSemesters.length}
-                </span>
-              )}
-            </button>
-            
-            {showFilterPopover && (
-              <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-                <div 
-                  ref={filterPopoverRef}
-                  className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-5 animate-in zoom-in-95 duration-200"
-                >
-                  <div className="flex justify-between items-center pb-3 border-b border-zinc-100 dark:border-zinc-800">
-                    <div className="flex items-center gap-2">
-                      <Filter size={18} className="text-indigo-600 dark:text-indigo-400" />
-                      <span className="font-bold text-base text-zinc-900 dark:text-white">{t('filter')}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {(filterYears.length > 0 || filterSemesters.length > 0) && (
-                        <button 
-                          onClick={() => { setFilterYears([]); setFilterSemesters([]); }}
-                          className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline px-2 py-1"
-                        >
-                          {t('clear_all') || (isAr ? 'مسح الكل' : 'Clear All')}
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setShowFilterPopover(false)}
-                        className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <div>
-                      <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2.5">{t('year')}</h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        {Array.from({ length: settings.totalYears }).map((_, i) => (
-                          <label key={i} className="flex items-center gap-2.5 text-sm cursor-pointer bg-zinc-50 dark:bg-zinc-800/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 p-2.5 rounded-xl border border-zinc-200/60 dark:border-zinc-700/60 transition-colors">
-                            <input 
-                              type="checkbox" 
-                              checked={filterYears.includes(i + 1)} 
-                              onChange={() => toggleYear(i + 1)} 
-                              className="rounded text-indigo-600 focus:ring-indigo-500 border-zinc-300 dark:border-zinc-700 bg-transparent w-4 h-4" 
-                            />
-                            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{t('year')} {i + 1}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2.5">{t('semester')}</h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        {Array.from({ length: settings.semestersPerYear }).map((_, i) => (
-                          <label key={i} className="flex items-center gap-2.5 text-sm cursor-pointer bg-zinc-50 dark:bg-zinc-800/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 p-2.5 rounded-xl border border-zinc-200/60 dark:border-zinc-700/60 transition-colors">
-                            <input 
-                              type="checkbox" 
-                              checked={filterSemesters.includes(i + 1)} 
-                              onChange={() => toggleSemester(i + 1)} 
-                              className="rounded text-indigo-600 focus:ring-indigo-500 border-zinc-300 dark:border-zinc-700 bg-transparent w-4 h-4" 
-                            />
-                            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{t('semester')} {i + 1}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 flex justify-end">
-                    <button
-                      onClick={() => setShowFilterPopover(false)}
-                      className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all text-center"
-                    >
-                      {isAr ? 'تطبيق الفلتر' : 'Apply Filter'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+             <UnifiedFilterBadge 
+              filterYears={filterYears} 
+              filterSemesters={filterSemesters} 
+            />
+            <p className="text-zinc-500">{t('gpa')}: {totalGPA > 0 ? totalGPA.toFixed(2) : '--'} | {t('semester')}: {semesterGPA > 0 ? semesterGPA.toFixed(2) : '--'}</p>
           </div>
-          
+        </div>
+        <div className="flex flex-wrap gap-3 items-center">
+          <UnifiedSemesterFilter
+            filterYears={filterYears}
+            filterSemesters={filterSemesters}
+            setFilterYears={setFilterYears}
+            setFilterSemesters={setFilterSemesters}
+          />
           <button 
             onClick={handleOpenAdd} 
             className="bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors"

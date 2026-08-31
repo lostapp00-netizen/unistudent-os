@@ -1,9 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWarningRisk, calculateGraduationEstimate } from '../../lib/academic';
-import { AlertTriangle, Filter, Library, Target, BookOpen, GraduationCap, TrendingDown, ArrowRight, Award, X } from 'lucide-react';
+import { AlertTriangle, Library, Target, BookOpen, GraduationCap, TrendingDown, ArrowRight, Award } from 'lucide-react';
+import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../../components/ui/UnifiedSemesterFilter';
 
 export function AcademicDashboard() {
   const { t } = useTranslation();
@@ -13,34 +14,6 @@ export function AcademicDashboard() {
   
   const [filterYears, setFilterYears] = useState<number[]>(currentSemester ? [currentSemester.yearIndex] : []);
   const [filterSemesters, setFilterSemesters] = useState<number[]>(currentSemester ? [currentSemester.semesterIndex] : []);
-  const [showFilterPopover, setShowFilterPopover] = useState(false);
-  const filterPopoverRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (filterPopoverRef.current && !filterPopoverRef.current.contains(event.target as Node)) {
-        setShowFilterPopover(false);
-      }
-    }
-    if (showFilterPopover) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showFilterPopover]);
-
-  const toggleYear = (year: number) => {
-    setFilterYears(prev => 
-      prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]
-    );
-  };
-
-  const toggleSemester = (sem: number) => {
-    setFilterSemesters(prev => 
-      prev.includes(sem) ? prev.filter(s => s !== sem) : [...prev, sem]
-    );
-  };
 
   const filteredSubjects = subjects.filter(s => 
     (filterYears.length === 0 || filterYears.includes(s.yearIndex)) &&
@@ -68,110 +41,24 @@ export function AcademicDashboard() {
 
   return (
     <div className="flex flex-col min-h-full gap-6 pb-8">
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold">{t('academic_dashboard')}</h1>
-          <p className="text-zinc-500 mt-1">
-            {isAr ? 'نظرة عامة على أدائك الأكاديمي' : 'Overview of your academic performance'}
-          </p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white">{t('academic_dashboard')}</h1>
+          <div className="mt-1.5 flex items-center gap-2">
+            <UnifiedFilterBadge 
+              filterYears={filterYears} 
+              filterSemesters={filterSemesters} 
+            />
+          </div>
         </div>
         
-        <div className="flex flex-wrap gap-3 items-center relative">
-          <div>
-            <button 
-              onClick={() => setShowFilterPopover(!showFilterPopover)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold transition-all border shadow-xs ${
-                filterYears.length > 0 || filterSemesters.length > 0 
-                  ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/40 dark:border-indigo-800 dark:text-indigo-300' 
-                  : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'
-              }`}
-            >
-              <Filter size={16} />
-              <span>{t('filter')}</span>
-              {(filterYears.length > 0 || filterSemesters.length > 0) && (
-                <span className="flex items-center justify-center bg-indigo-600 text-white w-5 h-5 rounded-full text-xs font-bold mr-1 rtl:mr-0 rtl:ml-1">
-                  {filterYears.length + filterSemesters.length}
-                </span>
-              )}
-            </button>
-            
-            {showFilterPopover && (
-              <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-                <div 
-                  ref={filterPopoverRef}
-                  className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-5 animate-in zoom-in-95 duration-200"
-                >
-                  <div className="flex justify-between items-center pb-3 border-b border-zinc-100 dark:border-zinc-800">
-                    <div className="flex items-center gap-2">
-                      <Filter size={18} className="text-indigo-600 dark:text-indigo-400" />
-                      <span className="font-bold text-base text-zinc-900 dark:text-white">{t('filter')}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {(filterYears.length > 0 || filterSemesters.length > 0) && (
-                        <button 
-                          onClick={() => { setFilterYears([]); setFilterSemesters([]); }}
-                          className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline px-2 py-1"
-                        >
-                          {t('clear_all') || (isAr ? 'مسح الكل' : 'Clear All')}
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setShowFilterPopover(false)}
-                        className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div>
-                      <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2.5">{t('year')}</h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        {Array.from({ length: settings.totalYears }).map((_, i) => (
-                          <label key={i} className="flex items-center gap-2.5 text-sm cursor-pointer bg-zinc-50 dark:bg-zinc-800/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 p-2.5 rounded-xl border border-zinc-200/60 dark:border-zinc-700/60 transition-colors">
-                            <input 
-                              type="checkbox" 
-                              checked={filterYears.includes(i + 1)} 
-                              onChange={() => toggleYear(i + 1)} 
-                              className="rounded text-indigo-600 focus:ring-indigo-500 border-zinc-300 dark:border-zinc-700 bg-transparent w-4 h-4" 
-                            />
-                            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{t('year')} {i + 1}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2.5">{t('semester')}</h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        {Array.from({ length: settings.semestersPerYear }).map((_, i) => (
-                          <label key={i} className="flex items-center gap-2.5 text-sm cursor-pointer bg-zinc-50 dark:bg-zinc-800/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 p-2.5 rounded-xl border border-zinc-200/60 dark:border-zinc-700/60 transition-colors">
-                            <input 
-                              type="checkbox" 
-                              checked={filterSemesters.includes(i + 1)} 
-                              onChange={() => toggleSemester(i + 1)} 
-                              className="rounded text-indigo-600 focus:ring-indigo-500 border-zinc-300 dark:border-zinc-700 bg-transparent w-4 h-4" 
-                            />
-                            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{t('semester')} {i + 1}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 flex justify-end">
-                    <button
-                      onClick={() => setShowFilterPopover(false)}
-                      className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all text-center"
-                    >
-                      {isAr ? 'تطبيق الفلتر' : 'Apply Filter'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+        <div className="flex flex-wrap gap-3 items-center">
+          <UnifiedSemesterFilter
+            filterYears={filterYears}
+            filterSemesters={filterSemesters}
+            setFilterYears={setFilterYears}
+            setFilterSemesters={setFilterSemesters}
+          />
         </div>
       </header>
 

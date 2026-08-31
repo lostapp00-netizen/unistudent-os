@@ -9,12 +9,14 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSam
 import { EntityLinker } from '../../components/ui/EntityLinker';
 import { LocalAttachmentUploader } from '../../components/ui/LocalAttachmentUploader';
 import { AttachmentBadge } from '../../components/ui/AttachmentBadge';
+import { ConfirmModal } from '../../components/ui/CustomModal';
 
 export function Schedule() {
   const { t, i18n } = useTranslation();
   const { scheduleItems, addScheduleItem, updateScheduleItem, deleteScheduleItem, subjects, settings, files, notes, tasks } = useAppStore();
   const [filterSemester, setFilterSemester] = useState<'current' | 'all'>('current');
   
+  const [itemToDelete, setItemToDelete] = useState<ScheduleItem | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
@@ -176,8 +178,9 @@ export function Schedule() {
                                 <Edit2 size={13}/>
                               </button>
                               <button 
-                                onClick={() => deleteScheduleItem(item.id)} 
-                                className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 rounded-xl shadow-xs transition-colors"
+                                type="button"
+                                onClick={() => setItemToDelete(item)} 
+                                className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 rounded-xl shadow-xs transition-colors cursor-pointer"
                                 title={settings.language === 'ar' ? 'حذف' : 'Delete'}
                               >
                                 <Trash2 size={13}/>
@@ -480,6 +483,26 @@ export function Schedule() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!itemToDelete}
+        title={settings.language === 'ar' ? 'حذف من الجدول' : 'Delete Schedule Item'}
+        message={settings.language === 'ar' ? 'هل أنت متأكد من حذف هذه الحصة/المحاضرة من جدولك الدراسي؟' : 'Are you sure you want to delete this class from your timetable?'}
+        confirmText={settings.language === 'ar' ? 'نعم، حذف' : 'Delete'}
+        cancelText={settings.language === 'ar' ? 'إلغاء' : 'Cancel'}
+        variant="danger"
+        onConfirm={() => {
+          if (itemToDelete) {
+            deleteScheduleItem(itemToDelete.id);
+            setItemToDelete(null);
+            if (editingItem?.id === itemToDelete.id) {
+              setShowAddModal(false);
+            }
+          }
+        }}
+        onCancel={() => setItemToDelete(null)}
+      />
     </div>
   );
 }

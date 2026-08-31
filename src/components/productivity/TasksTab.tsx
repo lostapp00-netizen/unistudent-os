@@ -11,12 +11,14 @@ import { AttachmentBadge } from '../ui/AttachmentBadge';
 import { ProductivityGroupTabs } from './ProductivityGroupTabs';
 import { ProductivityFilter, ProductivityFilterState } from './ProductivityFilter';
 import { isDateMatchingFilter } from '../../lib/dateFilters';
+import { ConfirmModal } from '../ui/CustomModal';
 
 export function TasksTab() {
   const [showAddForm, setShowAddForm] = useState(false);
   const { t } = useTranslation();
   const { tasks, notes, files, subjects, groups, addGroup, addTask, updateTask, deleteTask, addFile, settings } = useAppStore();
   
+  const [taskToDelete, setTaskToDelete] = useState<any | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -261,8 +263,9 @@ export function TasksTab() {
                   <Edit2 size={16} />
                 </button>
                 <button 
-                  onClick={() => deleteTask(task.id)} 
-                  className="p-2 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all rounded-xl shadow-xs"
+                  type="button"
+                  onClick={() => setTaskToDelete(task)} 
+                  className="p-2 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all rounded-xl shadow-xs cursor-pointer"
                   title={settings.language === 'ar' ? 'حذف' : 'Delete'}
                 >
                   <Trash2 size={16} />
@@ -273,6 +276,23 @@ export function TasksTab() {
         ))}
       </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!taskToDelete}
+        title={settings.language === 'ar' ? 'حذف المهمة' : 'Delete Task'}
+        message={settings.language === 'ar' ? `هل أنت متأكد من حذف المهمة "${taskToDelete?.title}"؟` : `Are you sure you want to delete task "${taskToDelete?.title}"?`}
+        confirmText={settings.language === 'ar' ? 'نعم، حذف' : 'Delete'}
+        cancelText={settings.language === 'ar' ? 'إلغاء' : 'Cancel'}
+        variant="danger"
+        onConfirm={() => {
+          if (taskToDelete) {
+            deleteTask(taskToDelete.id);
+            setTaskToDelete(null);
+          }
+        }}
+        onCancel={() => setTaskToDelete(null)}
+      />
     </div>
   );
 }

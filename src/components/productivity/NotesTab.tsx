@@ -11,12 +11,14 @@ import { AttachmentBadge } from '../ui/AttachmentBadge';
 import { ProductivityGroupTabs } from './ProductivityGroupTabs';
 import { ProductivityFilter, ProductivityFilterState } from './ProductivityFilter';
 import { isDateMatchingFilter } from '../../lib/dateFilters';
+import { ConfirmModal } from '../ui/CustomModal';
 
 export function NotesTab() {
   const [showAddForm, setShowAddForm] = useState(false);
   const { t } = useTranslation();
   const { notes, tasks, files, subjects, groups, addGroup, addNote, updateNote, deleteNote, settings } = useAppStore();
   
+  const [noteToDelete, setNoteToDelete] = useState<any | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -224,8 +226,9 @@ export function NotesTab() {
                   <Edit2 size={14}/>
                 </button>
                 <button 
-                  onClick={() => deleteNote(note.id)} 
-                  className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs"
+                  type="button"
+                  onClick={() => setNoteToDelete(note)} 
+                  className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs cursor-pointer"
                   title={settings.language === 'ar' ? 'حذف' : 'Delete'}
                 >
                   <Trash2 size={14}/>
@@ -261,6 +264,23 @@ export function NotesTab() {
         ))}
       </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!noteToDelete}
+        title={settings.language === 'ar' ? 'حذف الملاحظة' : 'Delete Note'}
+        message={settings.language === 'ar' ? `هل أنت متأكد من حذف الملاحظة "${noteToDelete?.title}"؟` : `Are you sure you want to delete note "${noteToDelete?.title}"?`}
+        confirmText={settings.language === 'ar' ? 'نعم، حذف' : 'Delete'}
+        cancelText={settings.language === 'ar' ? 'إلغاء' : 'Cancel'}
+        variant="danger"
+        onConfirm={() => {
+          if (noteToDelete) {
+            deleteNote(noteToDelete.id);
+            setNoteToDelete(null);
+          }
+        }}
+        onCancel={() => setNoteToDelete(null)}
+      />
     </div>
   );
 }
