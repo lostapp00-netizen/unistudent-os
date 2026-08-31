@@ -244,18 +244,29 @@ export function UserFeedbackSection() {
 
           <div>
             <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
-              {isAr ? 'نوع المشاركة' : 'Category'}
+              {isAr ? 'نوع المشاركة / التصنيف' : 'Category'}
             </label>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as any)}
-              className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="suggestion">{isAr ? 'اقتراح ميزة' : 'Feature Suggestion'}</option>
-              <option value="complaint">{isAr ? 'شكوى / مشكلة' : 'Complaint'}</option>
-              <option value="bug">{isAr ? 'إبلاغ عن خطأ تقني' : 'Bug Report'}</option>
-              <option value="other">{isAr ? 'عام / أخرى' : 'Other'}</option>
-            </select>
+            <div className="flex items-center gap-1.5">
+              {[
+                { id: 'suggestion', label: isAr ? 'اقتراح' : 'Suggestion' },
+                { id: 'complaint', label: isAr ? 'شكوى' : 'Complaint' },
+                { id: 'bug', label: isAr ? 'عطل تقني' : 'Bug' },
+                { id: 'other', label: isAr ? 'أخرى' : 'Other' }
+              ].map(cat => (
+                <button
+                  type="button"
+                  key={cat.id}
+                  onClick={() => setType(cat.id as any)}
+                  className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition-all border ${
+                    type === cat.id
+                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                      : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

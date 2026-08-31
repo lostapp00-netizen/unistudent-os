@@ -1,10 +1,9 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWarningRisk, calculateGraduationEstimate } from '../../lib/academic';
-import { AlertTriangle, Filter, Library, Target, BookOpen, GraduationCap, TrendingDown, ArrowRight, Award } from 'lucide-react';
+import { AlertTriangle, Filter, Library, Target, BookOpen, GraduationCap, TrendingDown, ArrowRight, Award, X } from 'lucide-react';
 
 export function AcademicDashboard() {
   const { t } = useTranslation();
@@ -23,12 +22,25 @@ export function AcademicDashboard() {
         setShowFilterPopover(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+    if (showFilterPopover) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showFilterPopover]);
 
-  const toggleYear = (y: number) => setFilterYears(prev => prev.includes(y) ? prev.filter(yr => yr !== y) : [...prev, y]);
-  const toggleSemester = (s: number) => setFilterSemesters(prev => prev.includes(s) ? prev.filter(sem => sem !== s) : [...prev, s]);
+  const toggleYear = (year: number) => {
+    setFilterYears(prev => 
+      prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]
+    );
+  };
+
+  const toggleSemester = (sem: number) => {
+    setFilterSemesters(prev => 
+      prev.includes(sem) ? prev.filter(s => s !== sem) : [...prev, sem]
+    );
+  };
 
   const filteredSubjects = subjects.filter(s => 
     (filterYears.length === 0 || filterYears.includes(s.yearIndex)) &&
@@ -65,7 +77,7 @@ export function AcademicDashboard() {
         </div>
         
         <div className="flex flex-wrap gap-3 items-center relative">
-          <div ref={filterPopoverRef} className="relative z-20">
+          <div>
             <button 
               onClick={() => setShowFilterPopover(!showFilterPopover)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold transition-all border shadow-xs ${
@@ -84,50 +96,77 @@ export function AcademicDashboard() {
             </button>
             
             {showFilterPopover && (
-              <div className="absolute top-full mt-2 w-72 max-w-[calc(100vw-2rem)] right-0 rtl:right-auto rtl:left-0 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl z-50 p-4">
-                <div className="flex justify-between items-center mb-3 pb-2 border-b border-zinc-100 dark:border-zinc-800">
-                  <span className="font-bold text-sm text-zinc-900 dark:text-white">{t('filter')}</span>
-                  {(filterYears.length > 0 || filterSemesters.length > 0) && (
-                    <button 
-                      onClick={() => { setFilterYears([]); setFilterSemesters([]); }}
-                      className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
-                    >
-                      {t('clear_all') || (isAr ? 'مسح الكل' : 'Clear All')}
-                    </button>
-                  )}
-                </div>
-
-                <div className="mb-4">
-                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">{t('year')}</h4>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {Array.from({ length: settings.totalYears }).map((_, i) => (
-                      <label key={i} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 p-1.5 rounded-lg transition-colors">
-                        <input 
-                          type="checkbox" 
-                          checked={filterYears.includes(i + 1)} 
-                          onChange={() => toggleYear(i + 1)} 
-                          className="rounded text-indigo-600 focus:ring-indigo-500 border-zinc-300 dark:border-zinc-700 bg-transparent" 
-                        />
-                        <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">{t('year')} {i + 1}</span>
-                      </label>
-                    ))}
+              <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+                <div 
+                  ref={filterPopoverRef}
+                  className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-5 animate-in zoom-in-95 duration-200"
+                >
+                  <div className="flex justify-between items-center pb-3 border-b border-zinc-100 dark:border-zinc-800">
+                    <div className="flex items-center gap-2">
+                      <Filter size={18} className="text-indigo-600 dark:text-indigo-400" />
+                      <span className="font-bold text-base text-zinc-900 dark:text-white">{t('filter')}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(filterYears.length > 0 || filterSemesters.length > 0) && (
+                        <button 
+                          onClick={() => { setFilterYears([]); setFilterSemesters([]); }}
+                          className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline px-2 py-1"
+                        >
+                          {t('clear_all') || (isAr ? 'مسح الكل' : 'Clear All')}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setShowFilterPopover(false)}
+                        className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">{t('semester')}</h4>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {Array.from({ length: settings.semestersPerYear }).map((_, i) => (
-                      <label key={i} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 p-1.5 rounded-lg transition-colors">
-                        <input 
-                          type="checkbox" 
-                          checked={filterSemesters.includes(i + 1)} 
-                          onChange={() => toggleSemester(i + 1)} 
-                          className="rounded text-indigo-600 focus:ring-indigo-500 border-zinc-300 dark:border-zinc-700 bg-transparent" 
-                        />
-                        <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">{t('semester')} {i + 1}</span>
-                      </label>
-                    ))}
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2.5">{t('year')}</h4>
+                      <div className="grid grid-cols-2 gap-2">
+                        {Array.from({ length: settings.totalYears }).map((_, i) => (
+                          <label key={i} className="flex items-center gap-2.5 text-sm cursor-pointer bg-zinc-50 dark:bg-zinc-800/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 p-2.5 rounded-xl border border-zinc-200/60 dark:border-zinc-700/60 transition-colors">
+                            <input 
+                              type="checkbox" 
+                              checked={filterYears.includes(i + 1)} 
+                              onChange={() => toggleYear(i + 1)} 
+                              className="rounded text-indigo-600 focus:ring-indigo-500 border-zinc-300 dark:border-zinc-700 bg-transparent w-4 h-4" 
+                            />
+                            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{t('year')} {i + 1}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2.5">{t('semester')}</h4>
+                      <div className="grid grid-cols-2 gap-2">
+                        {Array.from({ length: settings.semestersPerYear }).map((_, i) => (
+                          <label key={i} className="flex items-center gap-2.5 text-sm cursor-pointer bg-zinc-50 dark:bg-zinc-800/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 p-2.5 rounded-xl border border-zinc-200/60 dark:border-zinc-700/60 transition-colors">
+                            <input 
+                              type="checkbox" 
+                              checked={filterSemesters.includes(i + 1)} 
+                              onChange={() => toggleSemester(i + 1)} 
+                              className="rounded text-indigo-600 focus:ring-indigo-500 border-zinc-300 dark:border-zinc-700 bg-transparent w-4 h-4" 
+                            />
+                            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{t('semester')} {i + 1}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      onClick={() => setShowFilterPopover(false)}
+                      className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all text-center"
+                    >
+                      {isAr ? 'تطبيق الفلتر' : 'Apply Filter'}
+                    </button>
                   </div>
                 </div>
               </div>

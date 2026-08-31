@@ -531,6 +531,7 @@ export const db = {
     try {
       const payload: any = {};
       if (updates.status) payload.status = updates.status;
+      if (updates.type) payload.type = updates.type;
       if (updates.adminNotes !== undefined) payload.admin_notes = updates.adminNotes;
       await supabase.from('suggestions').update(payload).eq('id', id);
     } catch (e) {

@@ -294,6 +294,39 @@ export function Admin() {
     });
   }, [adminData, feedbackSubTab, suggestionTypeFilter, feedbackSearch, studentsList]);
 
+  // Instant optimistic feedback updates
+  const handleUpdateFeedbackStatus = async (id: string, newStatus: FeedbackSuggestion['status']) => {
+    setAdminData(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        feedbacks: prev.feedbacks.map(f => f.id === id ? { ...f, status: newStatus } : f)
+      };
+    });
+    setSelectedFeedback(prev => (prev && prev.id === id ? { ...prev, status: newStatus } : prev));
+    try {
+      await db.updateFeedback(id, { status: newStatus });
+    } catch (e) {
+      console.error('Error updating feedback status:', e);
+    }
+  };
+
+  const handleUpdateFeedbackType = async (id: string, newType: FeedbackSuggestion['type']) => {
+    setAdminData(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        feedbacks: prev.feedbacks.map(f => f.id === id ? { ...f, type: newType } : f)
+      };
+    });
+    setSelectedFeedback(prev => (prev && prev.id === id ? { ...prev, type: newType } : prev));
+    try {
+      await db.updateFeedback(id, { type: newType });
+    } catch (e) {
+      console.error('Error updating feedback type:', e);
+    }
+  };
+
   // Export Backup
   const handleExportBackup = async () => {
     try {
@@ -973,20 +1006,33 @@ export function Admin() {
                       className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md hover:border-purple-300 dark:hover:border-purple-700/60 transition-all cursor-pointer flex flex-col justify-between space-y-4 group relative"
                     >
                       <div className="space-y-3.5">
-                        {/* Header Badges */}
-                        <div className="flex items-start justify-between gap-2 border-b border-zinc-100 dark:border-zinc-800 pb-3">
+                        {/* Header Badges with Interactive Category and Status Switcher */}
+                        <div className="flex items-start justify-between gap-2 border-b border-zinc-100 dark:border-zinc-800 pb-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`px-2.5 py-1 rounded-xl text-[11px] font-black uppercase tracking-wider ${
-                              fb.type === 'complaint' 
-                                ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/40' 
-                                : fb.type === 'bug'
-                                ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40'
-                                : fb.type === 'suggestion'
-                                ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/40'
-                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700'
-                            }`}>
-                              {fb.type === 'complaint' ? (isAr ? 'شكوى' : 'Complaint') : fb.type === 'bug' ? (isAr ? 'عطل تقني' : 'Bug') : fb.type === 'suggestion' ? (isAr ? 'اقتراح' : 'Suggestion') : (isAr ? 'أخرى' : 'Other')}
-                            </span>
+                            {/* Interactive Category Selector Pills */}
+                            <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/80 p-0.5 rounded-xl border border-zinc-200/50 dark:border-zinc-700/50">
+                              {(['complaint', 'suggestion', 'bug', 'other'] as const).map((tType) => (
+                                <button
+                                  key={tType}
+                                  type="button"
+                                  onClick={() => handleUpdateFeedbackType(fb.id, tType)}
+                                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all ${
+                                    fb.type === tType
+                                      ? (tType === 'complaint'
+                                          ? 'bg-rose-600 text-white shadow-2xs'
+                                          : tType === 'bug'
+                                          ? 'bg-amber-600 text-white shadow-2xs'
+                                          : tType === 'suggestion'
+                                          ? 'bg-indigo-600 text-white shadow-2xs'
+                                          : 'bg-zinc-700 text-white shadow-2xs')
+                                      : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
+                                  }`}
+                                  title={isAr ? 'تغيير التصنيف فوراً' : 'Change category'}
+                                >
+                                  {tType === 'complaint' ? (isAr ? 'شكوى' : 'Complaint') : tType === 'bug' ? (isAr ? 'عطل' : 'Bug') : tType === 'suggestion' ? (isAr ? 'مقترح' : 'Suggestion') : (isAr ? 'أخرى' : 'Other')}
+                                </button>
+                              ))}
+                            </div>
 
                             <span className={`px-2.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1 ${
                               fb.status === 'resolved' 
@@ -1002,7 +1048,7 @@ export function Admin() {
                             </span>
                           </div>
 
-                          <span className="text-[11px] text-zinc-400 font-medium">
+                          <span className="text-[11px] text-zinc-400 font-medium shrink-0">
                             {formatDateTime(fb.createdAt, isAr)}
                           </span>
                         </div>
@@ -1091,14 +1137,11 @@ export function Admin() {
                           <span>{isAr ? 'عرض التفاصيل والمواد' : 'View Details & Courses'}</span>
                         </button>
 
-                        {/* Status Switcher Buttons */}
+                        {/* Instant Status Switcher Buttons */}
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {fb.status !== 'new' && (
                             <button
-                              onClick={async () => {
-                                await db.updateFeedback(fb.id, { status: 'new' });
-                                await fetchData();
-                              }}
+                              onClick={() => handleUpdateFeedbackStatus(fb.id, 'new')}
                               className="px-2.5 py-1.5 bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 text-purple-700 dark:text-purple-300 text-[11px] font-bold rounded-xl border border-purple-200 dark:border-purple-800/40 transition-all"
                               title={isAr ? 'إرجاع للرئيسية (الوارد)' : 'Move to Inbox'}
                             >
@@ -1108,10 +1151,7 @@ export function Admin() {
 
                           {fb.status !== 'reviewed' && (
                             <button
-                              onClick={async () => {
-                                await db.updateFeedback(fb.id, { status: 'reviewed' });
-                                await fetchData();
-                              }}
+                              onClick={() => handleUpdateFeedbackStatus(fb.id, 'reviewed')}
                               className="px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 text-blue-700 dark:text-blue-300 text-[11px] font-bold rounded-xl border border-blue-200 dark:border-blue-800/40 transition-all"
                               title={isAr ? 'نقل لقيد المراجعة' : 'Move to Under Review'}
                             >
@@ -1121,10 +1161,7 @@ export function Admin() {
 
                           {fb.status !== 'resolved' && (
                             <button
-                              onClick={async () => {
-                                await db.updateFeedback(fb.id, { status: 'resolved' });
-                                await fetchData();
-                              }}
+                              onClick={() => handleUpdateFeedbackStatus(fb.id, 'resolved')}
                               className="px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold rounded-xl border border-emerald-200 dark:border-emerald-800/40 transition-all"
                               title={isAr ? 'تم الرد والحل' : 'Mark as Resolved'}
                             >
@@ -1454,7 +1491,13 @@ export function Admin() {
             setSavingNote(true);
             await db.updateFeedback(selectedFeedback.id, { adminNotes: adminNoteInput });
             setSelectedFeedback((prev: any) => prev ? { ...prev, adminNotes: adminNoteInput } : null);
-            await fetchData();
+            setAdminData(prev => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                feedbacks: prev.feedbacks.map(f => f.id === selectedFeedback.id ? { ...f, adminNotes: adminNoteInput } : f)
+              };
+            });
             setNoteSavedSuccess(true);
             setTimeout(() => setNoteSavedSuccess(false), 2500);
           } catch (e) {
@@ -1462,12 +1505,6 @@ export function Admin() {
           } finally {
             setSavingNote(false);
           }
-        };
-
-        const handleUpdateType = async (newType: FeedbackSuggestion['type']) => {
-          await db.updateFeedback(selectedFeedback.id, { type: newType });
-          setSelectedFeedback((prev: any) => prev ? { ...prev, type: newType } : null);
-          await fetchData();
         };
 
         return (
@@ -1483,7 +1520,7 @@ export function Admin() {
                       {(['complaint', 'suggestion', 'bug', 'other'] as const).map((tType) => (
                         <button
                           key={tType}
-                          onClick={() => handleUpdateType(tType)}
+                          onClick={() => handleUpdateFeedbackType(selectedFeedback.id, tType)}
                           className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all ${
                             selectedFeedback.type === tType
                               ? (tType === 'complaint' 
@@ -1709,11 +1746,7 @@ export function Admin() {
                   <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300">{isAr ? 'تغيير حالة الطلب والتنقل بين الأقسام:' : 'Update Ticket Status:'}</span>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={async () => {
-                        await db.updateFeedback(selectedFeedback.id, { status: 'new' });
-                        setSelectedFeedback((prev: any) => prev ? { ...prev, status: 'new' } : null);
-                        await fetchData();
-                      }}
+                      onClick={() => handleUpdateFeedbackStatus(selectedFeedback.id, 'new')}
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                         selectedFeedback.status === 'new'
                           ? 'bg-purple-600 text-white shadow-xs'
@@ -1724,11 +1757,7 @@ export function Admin() {
                     </button>
 
                     <button
-                      onClick={async () => {
-                        await db.updateFeedback(selectedFeedback.id, { status: 'reviewed' });
-                        setSelectedFeedback((prev: any) => prev ? { ...prev, status: 'reviewed' } : null);
-                        await fetchData();
-                      }}
+                      onClick={() => handleUpdateFeedbackStatus(selectedFeedback.id, 'reviewed')}
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                         selectedFeedback.status === 'reviewed'
                           ? 'bg-blue-600 text-white shadow-xs'
@@ -1739,11 +1768,7 @@ export function Admin() {
                     </button>
 
                     <button
-                      onClick={async () => {
-                        await db.updateFeedback(selectedFeedback.id, { status: 'resolved' });
-                        setSelectedFeedback((prev: any) => prev ? { ...prev, status: 'resolved' } : null);
-                        await fetchData();
-                      }}
+                      onClick={() => handleUpdateFeedbackStatus(selectedFeedback.id, 'resolved')}
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                         selectedFeedback.status === 'resolved'
                           ? 'bg-emerald-600 text-white shadow-xs'
