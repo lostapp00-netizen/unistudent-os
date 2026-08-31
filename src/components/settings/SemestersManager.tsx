@@ -30,7 +30,7 @@ export function SemestersManager({
 }: Props) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { settings } = useAppStore();
+  const { settings, subjects } = useAppStore();
 
   const isAr = i18n.language === 'ar' || settings.language === 'ar';
 
@@ -80,6 +80,8 @@ export function SemestersManager({
 
   const currentSemester = semesters.find(s => s.isCurrent);
   const isBeyondFirstSemester = currentSemester && !(currentSemester.yearIndex === 1 && currentSemester.semesterIndex === 1);
+  const hasRegisteredCoursesInFirstTerm = subjects.some(s => s.yearIndex === 1 && s.semesterIndex === 1);
+  const shouldShowPastAcademicSetup = isBeyondFirstSemester && !hasRegisteredCoursesInFirstTerm;
 
   return (
     <div className="space-y-6">
@@ -157,8 +159,8 @@ export function SemestersManager({
         </table>
       </div>
 
-      {/* Past Academic Setup Options (Shown when current semester is beyond Year 1 Sem 1) */}
-      {isBeyondFirstSemester && (
+      {/* Past Academic Setup Options (Shown only when active semester is beyond Year 1 Sem 1 AND student has no subjects in Year 1 Sem 1) */}
+      {shouldShowPastAcademicSetup && currentSemester && (
         <div className="mt-6 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-900/40 bg-gradient-to-br from-indigo-50/50 to-white dark:from-indigo-950/20 dark:to-zinc-900 shadow-sm space-y-4">
           <div className="flex items-start gap-3">
             <div className="p-2.5 rounded-xl bg-indigo-600 text-white shadow-md">

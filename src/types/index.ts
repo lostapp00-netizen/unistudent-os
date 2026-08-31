@@ -89,6 +89,19 @@ export type Task = {
   attachments?: EntityAttachment[];
 };
 
+export type GraduationGradeRule = {
+  id: string;
+  letter: string; // e.g. 'A+' or 'EX'
+  nameAr: string; // e.g. 'ممتاز مع مرتبة الشرف'
+  nameEn: string; // e.g. 'Excellent with Honors'
+  minPercentage: number;
+  maxPercentage: number;
+  maxOperator?: '<' | '<=';
+  minGpa: number; // e.g. 3.50
+  maxGpa: number; // e.g. 4.00
+  gpaOperator?: '<' | '<=';
+};
+
 export type UserSettings = {
   name: string;
   email?: string;
@@ -106,6 +119,8 @@ export type UserSettings = {
   setupMode?: 'initial_gpa' | 'manual_subjects';
   warningGradeLetter?: string;
   warningGpaPoints?: number;
+  enableGraduationScale?: boolean;
+  graduationGradingScale?: GraduationGradeRule[];
 };
 
 export type Appointment = {

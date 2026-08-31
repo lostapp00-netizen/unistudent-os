@@ -23,9 +23,18 @@ export function DistributionItemCard({ distribution, isSubjectFinished, onUpdate
   const isLocked = isSubjectFinished || (distribution.status === 'final' && !isEditing);
 
   const handleSave = (status: 'current' | 'final') => {
+    if (tempMarks.trim() === '') {
+      onUpdate(distribution.id, {
+        achievedMarks: null,
+        status
+      });
+      setIsEditing(false);
+      return;
+    }
+
     const parsed = Number(tempMarks);
-    if (tempMarks === '' || isNaN(parsed) || parsed < 0 || parsed > distribution.maxMarks) {
-      alert(isRtl ? 'يرجى إدخال درجة صحيحة' : 'Please enter a valid grade');
+    if (isNaN(parsed) || parsed < 0 || parsed > distribution.maxMarks) {
+      alert(isRtl ? `يرجى إدخال درجة صحيحة بين 0 و ${distribution.maxMarks}` : `Please enter a valid grade between 0 and ${distribution.maxMarks}`);
       return;
     }
     

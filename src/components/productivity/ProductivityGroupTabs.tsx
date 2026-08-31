@@ -147,7 +147,7 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
                       className="fixed inset-0 z-40" 
                       onClick={(e) => { e.stopPropagation(); setShowOptionsId(null); }}
                     />
-                    <div className={`absolute z-50 ${isAr ? 'right-0' : 'left-0'} top-full mt-1.5 w-36 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl py-1 divide-y divide-zinc-100 dark:divide-zinc-800`}>
+                    <div className="absolute z-50 left-1/2 -translate-x-1/2 top-full mt-1.5 w-36 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl py-1 divide-y divide-zinc-100 dark:divide-zinc-800">
                       <button
                         onClick={(e) => { e.stopPropagation(); handleEdit(group); }}
                         className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors text-left rtl:text-right"

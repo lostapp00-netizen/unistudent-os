@@ -52,33 +52,56 @@ export function UserFeedbackSection() {
     loadFeedbacks();
   }, [userId]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach((file) => {
-      // 5MB limit per file
-      if (file.size > 5 * 1024 * 1024) {
-        setErrorMessage(isAr ? `الملف ${file.name} كبير جداً (الحد الأقصى 5 ميجابايت).` : `File ${file.name} is too large (max 5MB).`);
-        return;
+    for (const file of Array.from(files)) {
+      if (file.size > 10 * 1024 * 1024) {
+        setErrorMessage(isAr ? `الملف ${file.name} كبير جداً (الحد الأقصى 10 ميجابايت).` : `File ${file.name} is too large (max 10MB).`);
+        continue;
       }
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const base64Url = event.target?.result as string;
+      const fileId = uuidv4();
+      let uploadedUrl = '';
+
+      try {
+        const { uploadToB2 } = await import('../../lib/backblaze');
+        const b2Path = `feedback_${fileId}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        uploadedUrl = await uploadToB2(file, b2Path);
+      } catch (uploadErr) {
+        console.warn('Direct B2 upload fallback to base64:', uploadErr);
+      }
+
+      if (uploadedUrl) {
         setAttachments((prev) => [
           ...prev,
           {
-            id: uuidv4(),
+            id: fileId,
             name: file.name,
             size: file.size,
             type: file.type,
-            url: base64Url
+            url: uploadedUrl
           }
         ]);
-      };
-      reader.readAsDataURL(file);
-    });
+      } else {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const base64Url = event.target?.result as string;
+          setAttachments((prev) => [
+            ...prev,
+            {
+              id: fileId,
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              url: base64Url
+            }
+          ]);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
 
     e.target.value = '';
   };

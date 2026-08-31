@@ -106,53 +106,124 @@ export function CalendarTab() {
           </button>
         </div>
         
-        <div className="grid grid-cols-7 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/20">
-          {weekDays.map(day => (
-            <div key={day} className="py-4 text-center text-sm font-bold text-zinc-500">
-              {day}
+        {/* Horizontal scroll container for full visibility */}
+        <div className="overflow-x-auto flex-1">
+          <div className="min-w-[950px]">
+            <div className="grid grid-cols-7 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/20">
+              {weekDays.map(day => (
+                <div key={day} className="py-3.5 text-center text-sm font-black text-zinc-600 dark:text-zinc-300">
+                  {day}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        
-        <div className="grid grid-cols-7 auto-rows-fr bg-zinc-200 dark:bg-zinc-800 gap-px">
-          {days.map((day, idx) => {
-            const events = getEventsForDay(day);
-            const isToday = isSameDay(day, new Date());
-            const isCurrentMonth = isSameMonth(day, currentDate);
             
-            return (
-              <div 
-                key={day.toString()} 
-                className={`min-h-[140px] bg-white dark:bg-zinc-900 p-2 transition-colors ${!isCurrentMonth ? 'text-zinc-400 dark:text-zinc-600 bg-zinc-50/50 dark:bg-zinc-900/50' : ''}`}
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm ${isToday ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-500/30' : 'font-medium'}`}>
-                    {format(day, 'd')}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[100px] hide-scrollbar">
-                  {events.map(event => (
-                    <div 
-                      key={event.id}
-                      title={event.title}
-                      className={`text-xs px-2 py-1.5 rounded-lg border-l-4 flex flex-col gap-0.5 ${
-                        event.priority === 'high' 
-                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
-                          : event.priority === 'low' 
-                          ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
-                          : 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300'
-                      }`}
-                    >
-                      <span className="font-semibold truncate">{event.title}</span>
-                      {event.eventType === 'appointment' && event.time && (
-                        <span className="text-[10px] opacity-80 flex items-center gap-1"><Clock size={10}/> {event.time}</span>
-                      )}
+            <div className="grid grid-cols-7 auto-rows-fr bg-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 gap-px">
+              {days.map((day, idx) => {
+                const events = getEventsForDay(day);
+                const isToday = isSameDay(day, new Date());
+                const isCurrentMonth = isSameMonth(day, currentDate);
+                const dayFormatted = format(day, 'yyyy-MM-dd');
+                
+                return (
+                  <div 
+                    key={day.toString()} 
+                    className={`min-h-[220px] bg-white dark:bg-zinc-900 p-2.5 transition-colors flex flex-col justify-between ${
+                      !isCurrentMonth ? 'text-zinc-400 dark:text-zinc-600 bg-zinc-50/60 dark:bg-zinc-900/60' : ''
+                    }`}
+                  >
+                    <div>
+                      {/* Day Header */}
+                      <div className="flex justify-between items-center mb-2 pb-1.5 border-b border-zinc-100 dark:border-zinc-800/60">
+                        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-xl text-xs font-bold ${
+                          isToday 
+                            ? 'bg-purple-600 text-white font-black shadow-md shadow-purple-500/30' 
+                            : 'text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800'
+                        }`}>
+                          {format(day, 'd')}
+                        </span>
+
+                        <button
+                          onClick={() => {
+                            setForm(prev => ({ ...prev, date: dayFormatted }));
+                            setShowQuickAdd(true);
+                          }}
+                          className="p-1 text-zinc-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/40 rounded-lg transition-colors"
+                          title={settings.language === 'ar' ? 'إضافة إلى هذا اليوم' : 'Add to this day'}
+                        >
+                          <Plus size={14} />
+                        </button>
+                      </div>
+
+                      {/* Events List */}
+                      <div className="flex flex-col gap-2 overflow-y-auto max-h-[160px] pr-1">
+                        {events.map(event => {
+                          const isTask = event.eventType === 'task';
+                          const isNote = event.eventType === 'note';
+                          const isAppt = event.eventType === 'appointment';
+
+                          const linkedSubs = subjects.filter(s => (event.linkedSubjectIds || []).includes(s.id));
+
+                          return (
+                            <div 
+                              key={event.id}
+                              title={event.title}
+                              className={`text-xs p-2 rounded-xl border flex flex-col gap-1 transition-all shadow-2xs hover:shadow-xs ${
+                                event.priority === 'high' 
+                                  ? 'border-blue-300 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-950/40 text-blue-800 dark:text-blue-200'
+                                  : event.priority === 'low' 
+                                  ? 'border-red-300 dark:border-red-800 bg-red-50/70 dark:bg-red-950/40 text-red-800 dark:text-red-200'
+                                  : 'border-amber-300 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200'
+                              }`}
+                            >
+                              {/* Event Header: Type Icon & Title */}
+                              <div className="flex items-start gap-1.5">
+                                {isTask && <CheckSquare size={13} className="shrink-0 text-emerald-600 mt-0.5" />}
+                                {isNote && <StickyNote size={13} className="shrink-0 text-amber-600 mt-0.5" />}
+                                {isAppt && <CalendarIcon size={13} className="shrink-0 text-indigo-600 mt-0.5" />}
+                                <span className="font-bold text-xs leading-snug break-words">{event.title}</span>
+                              </div>
+
+                              {/* Time if present */}
+                              {event.time && (
+                                <div className="text-[10px] font-semibold opacity-90 flex items-center gap-1">
+                                  <Clock size={10} />
+                                  <span>{event.time}</span>
+                                </div>
+                              )}
+
+                              {/* Linked Subjects */}
+                              {linkedSubs.length > 0 && (
+                                <div className="flex flex-wrap gap-1 pt-0.5">
+                                  {linkedSubs.map(s => (
+                                    <span key={s.id} className="text-[9px] font-bold px-1.5 py-0.2 bg-white/70 dark:bg-zinc-800/80 rounded-md truncate max-w-[120px]">
+                                      {s.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Description Preview */}
+                              {(event.description || event.content || event.notes) && (
+                                <p className="text-[10px] opacity-75 line-clamp-1">
+                                  {event.description || event.content || event.notes}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {events.length === 0 && (
+                          <div className="h-full flex items-center justify-center py-6 opacity-20">
+                            <span className="text-[10px] text-zinc-400 font-medium">{settings.language === 'ar' ? 'فارغ' : 'Empty'}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
 

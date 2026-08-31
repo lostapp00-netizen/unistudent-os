@@ -33,7 +33,9 @@ import {
   Paperclip,
   LogOut,
   LayoutDashboard,
-  Menu
+  Menu,
+  ExternalLink,
+  FileText
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { db } from '../lib/db';
@@ -80,6 +82,10 @@ export function Admin() {
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
 
   // --- Suggestions Filter & Modals ---
+  const [feedbackSubTab, setFeedbackSubTab] = useState<'all' | 'reviewed' | 'resolved'>('all');
+  const [selectedFeedback, setSelectedFeedback] = useState<FeedbackSuggestion | null>(null);
+  const [feedbackSearch, setFeedbackSearch] = useState('');
+  const [adminNoteInput, setAdminNoteInput] = useState('');
   const [suggestionTypeFilter, setSuggestionTypeFilter] = useState<string>('all');
   const [suggestionStatusFilter, setSuggestionStatusFilter] = useState<string>('all');
   const [feedbackToDelete, setFeedbackToDelete] = useState<string | null>(null);
@@ -253,16 +259,28 @@ export function Admin() {
   const avgCgpa = totalStudents > 0 ? (studentsList.reduce((acc, s) => acc + s.cgpa, 0) / totalStudents).toFixed(2) : '0.00';
   const totalStorageMB = (studentsList.reduce((acc, s) => acc + s.totalStorageBytes, 0) / (1024 * 1024)).toFixed(1);
   const pendingFeedbacks = adminData?.feedbacks.filter(f => f.status === 'new').length || 0;
+  const reviewedFeedbacks = adminData?.feedbacks.filter(f => f.status === 'reviewed').length || 0;
+  const resolvedFeedbacks = adminData?.feedbacks.filter(f => f.status === 'resolved').length || 0;
 
-  // Filtered Suggestions (Emojis completely removed)
+  // Filtered Suggestions
   const filteredSuggestions = React.useMemo(() => {
     if (!adminData) return [];
     return adminData.feedbacks.filter(fb => {
+      if (feedbackSubTab === 'reviewed' && fb.status !== 'reviewed') return false;
+      if (feedbackSubTab === 'resolved' && fb.status !== 'resolved') return false;
+      if (feedbackSubTab === 'all' && suggestionStatusFilter !== 'all' && fb.status !== suggestionStatusFilter) return false;
       if (suggestionTypeFilter !== 'all' && fb.type !== suggestionTypeFilter) return false;
-      if (suggestionStatusFilter !== 'all' && fb.status !== suggestionStatusFilter) return false;
+      if (feedbackSearch.trim()) {
+        const q = feedbackSearch.toLowerCase();
+        const matches = fb.title.toLowerCase().includes(q) ||
+          fb.content.toLowerCase().includes(q) ||
+          fb.userEmail.toLowerCase().includes(q) ||
+          (fb.userName || '').toLowerCase().includes(q);
+        if (!matches) return false;
+      }
       return true;
     });
-  }, [adminData, suggestionTypeFilter, suggestionStatusFilter]);
+  }, [adminData, feedbackSubTab, suggestionTypeFilter, suggestionStatusFilter, feedbackSearch]);
 
   // Export Backup
   const handleExportBackup = async () => {
@@ -837,159 +855,252 @@ export function Admin() {
 
           {/* TAB 3: SUGGESTIONS & FEEDBACK HUB */}
           {activeTab === 'suggestions' && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-zinc-400">{isAr ? 'تصفية حسب النوع:' : 'Type:'}</span>
+            <div className="space-y-6">
+              {/* Sub-Tabs: الرئيسية / قيد المراجعة / تم الرد عليها */}
+              <div className="flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-zinc-900 p-4 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                <div className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800/80 p-1.5 rounded-2xl border border-zinc-200 dark:border-zinc-700/60">
+                  <button
+                    onClick={() => setFeedbackSubTab('all')}
+                    className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+                      feedbackSubTab === 'all'
+                        ? 'bg-white dark:bg-zinc-900 text-purple-600 dark:text-purple-400 shadow-sm'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span>{isAr ? 'القسم الرئيسي (كافة الشكاوى)' : 'All Submissions'}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-black">
+                      {adminData?.feedbacks.length || 0}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setFeedbackSubTab('reviewed')}
+                    className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+                      feedbackSubTab === 'reviewed'
+                        ? 'bg-white dark:bg-zinc-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span>{isAr ? 'قيد المراجعة' : 'Under Review'}</span>
+                    {reviewedFeedbacks > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-black">
+                        {reviewedFeedbacks}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => setFeedbackSubTab('resolved')}
+                    className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+                      feedbackSubTab === 'resolved'
+                        ? 'bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span>{isAr ? 'تم الرد عليها / تم الحل' : 'Resolved'}</span>
+                    {resolvedFeedbacks > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-black">
+                        {resolvedFeedbacks}
+                      </span>
+                    )}
+                  </button>
+                </div>
+
+                {/* Filter and Search Bar */}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <div className="relative">
+                    <Search className="absolute left-3 rtl:right-3 rtl:left-auto top-1/2 -translate-y-1/2 text-zinc-400 w-3.5 h-3.5" />
+                    <input
+                      type="text"
+                      value={feedbackSearch}
+                      onChange={(e) => setFeedbackSearch(e.target.value)}
+                      placeholder={isAr ? 'بحث في الشكاوى أو الطلاب...' : 'Search feedback or student...'}
+                      className="pl-9 rtl:pr-9 rtl:pl-3 pr-3 py-1.5 text-xs bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-purple-500 w-48 sm:w-60 text-zinc-900 dark:text-zinc-100"
+                    />
+                  </div>
+
                   <select
                     value={suggestionTypeFilter}
                     onChange={(e) => setSuggestionTypeFilter(e.target.value)}
-                    className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none"
+                    className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none text-zinc-800 dark:text-zinc-200"
                   >
-                    <option value="all">{isAr ? 'الكل' : 'All Categories'}</option>
-                    <option value="suggestion">{isAr ? 'اقتراحات' : 'Suggestions'}</option>
-                    <option value="complaint">{isAr ? 'شكاوى' : 'Complaints'}</option>
-                    <option value="bug">{isAr ? 'أخطاء تقنية' : 'Bugs'}</option>
+                    <option value="all">{isAr ? 'كل الأنواع' : 'All Categories'}</option>
+                    <option value="suggestion">{isAr ? 'اقتراح وتطوير' : 'Suggestions'}</option>
+                    <option value="complaint">{isAr ? 'شكاوى ومشاكل' : 'Complaints'}</option>
+                    <option value="bug">{isAr ? 'أخطاء تقنية' : 'Bug Reports'}</option>
                     <option value="other">{isAr ? 'أخرى' : 'Other'}</option>
                   </select>
-                </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-zinc-400">{isAr ? 'الحالة:' : 'Status:'}</span>
-                  <select
-                    value={suggestionStatusFilter}
-                    onChange={(e) => setSuggestionStatusFilter(e.target.value)}
-                    className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none"
-                  >
-                    <option value="all">{isAr ? 'جميع الحالات' : 'All Statuses'}</option>
-                    <option value="new">{isAr ? 'جديد' : 'New'}</option>
-                    <option value="reviewed">{isAr ? 'قيد المراجعة' : 'Under Review'}</option>
-                    <option value="resolved">{isAr ? 'تم الحل' : 'Resolved'}</option>
-                  </select>
+                  {feedbackSubTab === 'all' && (
+                    <select
+                      value={suggestionStatusFilter}
+                      onChange={(e) => setSuggestionStatusFilter(e.target.value)}
+                      className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none text-zinc-800 dark:text-zinc-200"
+                    >
+                      <option value="all">{isAr ? 'كل الحالات' : 'All Statuses'}</option>
+                      <option value="new">{isAr ? 'جديد ومستلم' : 'New'}</option>
+                      <option value="reviewed">{isAr ? 'قيد المراجعة' : 'Under Review'}</option>
+                      <option value="resolved">{isAr ? 'تم الحل' : 'Resolved'}</option>
+                    </select>
+                  )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredSuggestions.map((fb) => (
-                  <div
-                    key={fb.id}
-                    className="bg-white dark:bg-zinc-900 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex flex-col justify-between space-y-4"
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div>
-                          <h4 className="font-bold text-sm text-zinc-900 dark:text-white">{fb.title}</h4>
-                          <p className="text-xs text-zinc-400 mt-0.5">{fb.userName || 'Student'} • {fb.userEmail}</p>
+              {/* Cards Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {filteredSuggestions.map((fb) => {
+                  const student = studentsList.find(s => s.id === fb.userId);
+                  const studentName = student?.name || fb.userName || (isAr ? 'طالب مسجل' : 'Student');
+                  const studentEmail = student?.email || fb.userEmail;
+                  const studentUni = student?.university || (isAr ? 'جامعة غير محددة' : 'Not specified');
+                  const studentCollege = student?.college || '';
+                  const studentCgpa = student?.cgpa !== undefined ? student.cgpa : 0;
+                  const subjectsCount = student?.subjectsCount || 0;
+                  const creditsCount = student?.registeredCreditHours || 0;
+
+                  return (
+                    <div
+                      key={fb.id}
+                      onClick={() => setSelectedFeedback(fb)}
+                      className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md hover:border-purple-300 dark:hover:border-purple-700/60 transition-all cursor-pointer flex flex-col justify-between space-y-4 group relative"
+                    >
+                      <div className="space-y-3.5">
+                        {/* Header Badges */}
+                        <div className="flex items-start justify-between gap-2 border-b border-zinc-100 dark:border-zinc-800 pb-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2.5 py-1 rounded-xl text-[11px] font-black uppercase tracking-wider ${
+                              fb.type === 'complaint' 
+                                ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/40' 
+                                : fb.type === 'bug'
+                                ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40'
+                                : 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/40'
+                            }`}>
+                              {fb.type === 'complaint' ? (isAr ? 'شكوى' : 'Complaint') : fb.type === 'bug' ? (isAr ? 'عطل تقني' : 'Bug') : (isAr ? 'اقتراح' : 'Suggestion')}
+                            </span>
+
+                            <span className={`px-2.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1 ${
+                              fb.status === 'resolved' 
+                                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
+                                : fb.status === 'reviewed' 
+                                ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300' 
+                                : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                            }`}>
+                              {fb.status === 'resolved' && <CheckCircle2 size={12} />}
+                              {fb.status === 'reviewed' && <Clock size={12} />}
+                              <span>{fb.status === 'resolved' ? (isAr ? 'تم الحل والرد' : 'Resolved') : fb.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد' : 'New')}</span>
+                            </span>
+                          </div>
+
+                          <span className="text-[11px] text-zinc-400 font-medium">
+                            {new Date(fb.createdAt).toLocaleDateString(isAr ? 'ar-EG' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' } as any)}
+                          </span>
                         </div>
 
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                          fb.status === 'resolved' 
-                            ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
-                            : (fb.status === 'reviewed' 
-                                ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300' 
-                                : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300')
-                        }`}>
-                          {fb.status === 'resolved' ? (isAr ? 'تم الحل' : 'Resolved') : (fb.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد' : 'New'))}
-                        </span>
-                      </div>
+                        {/* Student Profile Card Header */}
+                        <div className="p-3.5 bg-gradient-to-r from-zinc-50 to-purple-50/40 dark:from-zinc-800/40 dark:to-purple-950/20 rounded-2xl border border-zinc-200/70 dark:border-zinc-700/60 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-sm">
+                              {studentName.charAt(0)}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-bold text-sm text-zinc-900 dark:text-white truncate">{studentName}</p>
+                              <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{studentEmail}</p>
+                              <p className="text-[11px] text-zinc-400 truncate">{studentUni} {studentCollege && `• ${studentCollege}`}</p>
+                            </div>
+                          </div>
 
-                      <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap bg-zinc-50 dark:bg-zinc-800/50 p-3.5 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-                        {fb.content}
-                      </p>
-
-                      {/* Attachments Display */}
-                      {fb.attachments && fb.attachments.length > 0 && (
-                        <div className="mt-3 space-y-1">
-                          <span className="text-[11px] font-bold text-zinc-500 flex items-center gap-1">
-                            <Paperclip size={12} />
-                            <span>{isAr ? 'المرفقات المرفوعة:' : 'Uploaded Attachments:'}</span>
-                          </span>
-                          <div className="flex flex-wrap gap-2 pt-1">
-                            {fb.attachments.map((att) => (
-                              <a
-                                key={att.id}
-                                href={att.url}
-                                download={att.name}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-purple-50 dark:hover:bg-purple-950/50 text-zinc-800 dark:text-zinc-200 hover:text-purple-600 dark:hover:text-purple-300 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold transition-all shadow-2xs"
-                              >
-                                <Paperclip size={12} className="text-purple-500" />
-                                <span className="max-w-[150px] truncate">{att.name}</span>
-                                <Download size={12} className="text-zinc-400" />
-                              </a>
-                            ))}
+                          {/* Student Academic Mini Badges */}
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <span className={`px-2.5 py-1 rounded-xl text-xs font-black border ${
+                              studentCgpa >= 3.5 
+                                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800' 
+                                : studentCgpa >= 2.0 
+                                ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800' 
+                                : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                            }`}>
+                              {studentCgpa.toFixed(2)} CGPA
+                            </span>
+                            <span className="text-[10px] font-bold text-zinc-500">
+                              {subjectsCount} {isAr ? 'مواد' : 'subjects'} • {creditsCount} {isAr ? 'ساعات' : 'hrs'}
+                            </span>
                           </div>
                         </div>
-                      )}
-                    </div>
 
-                    <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] text-zinc-400">{isAr ? 'تغيير الحالة:' : 'Status:'}</span>
-                        {fb.status !== 'reviewed' && (
-                          <button
-                            onClick={async () => {
-                              await db.updateFeedback(fb.id, { status: 'reviewed' });
-                              await fetchData();
-                            }}
-                            className="px-2.5 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-[11px] font-bold rounded-lg transition-all"
-                          >
-                            {isAr ? 'قيد المراجعة' : 'In Review'}
-                          </button>
-                        )}
+                        {/* Complaint / Message Title & Content */}
+                        <div className="space-y-1.5">
+                          <h4 className="font-bold text-base text-zinc-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                            {fb.title}
+                          </h4>
+                          <p className="text-xs text-zinc-600 dark:text-zinc-300 line-clamp-2 leading-relaxed bg-zinc-50/70 dark:bg-zinc-800/30 p-3 rounded-2xl border border-zinc-100 dark:border-zinc-800/80">
+                            {fb.content}
+                          </p>
+                        </div>
 
-                        {fb.status !== 'resolved' && (
-                          <button
-                            onClick={async () => {
-                              await db.updateFeedback(fb.id, { status: 'resolved' });
-                              await fetchData();
-                            }}
-                            className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold rounded-lg border border-emerald-200 dark:border-emerald-800/40 transition-all"
-                          >
-                            {isAr ? 'تم الرد والحل' : 'Mark Resolved'}
-                          </button>
-                        )}
-
-                        {fb.status !== 'new' && (
-                          <button
-                            onClick={async () => {
-                              await db.updateFeedback(fb.id, { status: 'new' });
-                              await fetchData();
-                            }}
-                            className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 text-[11px] font-bold rounded-lg transition-all"
-                          >
-                            {isAr ? 'تعيين كـ جديد' : 'Set New'}
-                          </button>
+                        {/* Attachments Indicator */}
+                        {fb.attachments && fb.attachments.length > 0 && (
+                          <div className="flex items-center gap-1.5 text-xs text-purple-600 dark:text-purple-400 font-bold">
+                            <Paperclip size={13} />
+                            <span>{fb.attachments.length} {isAr ? 'مرفقات مرفوعة' : 'attachments'}</span>
+                          </div>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <a
-                          href={`mailto:${fb.userEmail}?subject=${encodeURIComponent(`رد إدارة UniStudent بخصوص: ${fb.title}`)}&body=${encodeURIComponent(`مرحباً ${fb.userName || 'طالبنا العزيز'}،\n\nبخصوص طلبك/شكوتك بعنوان "${fb.title}":\n\n`)}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex items-center gap-1 text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline bg-purple-50 dark:bg-purple-950/40 px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-800/40 transition-all"
-                        >
-                          <Mail size={12} />
-                          <span>{isAr ? 'الرد عبر الإيميل' : 'Reply via Email'}</span>
-                        </a>
+                      {/* Action Bar */}
+                      <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setSelectedFeedback(fb)}
+                            className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/50 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-xs font-bold rounded-xl border border-purple-200 dark:border-purple-800/60 transition-all flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <Eye size={13} />
+                            <span>{isAr ? 'عرض التفاصيل والمواد' : 'View Details & Courses'}</span>
+                          </button>
+                        </div>
 
-                        <button
-                          onClick={() => setFeedbackToDelete(fb.id)}
-                          className="text-rose-500 hover:text-rose-700 p-1"
-                          title={isAr ? 'حذف' : 'Delete'}
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        {/* Status Switchers */}
+                        <div className="flex items-center gap-1.5">
+                          {fb.status !== 'reviewed' && (
+                            <button
+                              onClick={async () => {
+                                await db.updateFeedback(fb.id, { status: 'reviewed' });
+                                await fetchData();
+                              }}
+                              className="px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 text-blue-700 dark:text-blue-300 text-[11px] font-bold rounded-xl border border-blue-200 dark:border-blue-800/40 transition-all"
+                            >
+                              {isAr ? 'نقل لقيد المراجعة' : 'To Review'}
+                            </button>
+                          )}
+
+                          {fb.status !== 'resolved' && (
+                            <button
+                              onClick={async () => {
+                                await db.updateFeedback(fb.id, { status: 'resolved' });
+                                await fetchData();
+                              }}
+                              className="px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold rounded-xl border border-emerald-200 dark:border-emerald-800/40 transition-all"
+                            >
+                              {isAr ? 'تم الحل والرد' : 'Resolve'}
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => setFeedbackToDelete(fb.id)}
+                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
+                            title={isAr ? 'حذف' : 'Delete'}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {filteredSuggestions.length === 0 && (
-                  <div className="col-span-full text-center py-12 text-zinc-400 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-3xl">
-                    {isAr ? 'لا توجد مقترحات مسجلة حالياً.' : 'No feedback submissions found.'}
+                  <div className="col-span-full py-16 text-center text-zinc-400 bg-white dark:bg-zinc-900 rounded-3xl border border-dashed border-zinc-200 dark:border-zinc-800">
+                    <MessageSquare size={48} className="mx-auto mb-3 opacity-30 text-zinc-500" />
+                    <p className="font-bold text-sm text-zinc-600 dark:text-zinc-400">{isAr ? 'لا توجد مقترحات أو شكاوى في هذا القسم.' : 'No feedback found in this category.'}</p>
+                    <p className="text-xs text-zinc-400 mt-1">{isAr ? 'يمكنك تغيير التبويب أو تصفية البحث.' : 'Try changing filters or search.'}</p>
                   </div>
                 )}
               </div>
@@ -1274,6 +1385,316 @@ export function Admin() {
           </div>
         </div>
       )}
+
+      {/* --- DETAILED FEEDBACK & STUDENT COURSES MODAL --- */}
+      {selectedFeedback && (() => {
+        const student = studentsList.find(s => s.id === selectedFeedback.userId);
+        const studentName = student?.name || selectedFeedback.userName || (isAr ? 'طالب مسجل' : 'Student');
+        const studentEmail = student?.email || selectedFeedback.userEmail;
+        const studentUni = student?.university || (isAr ? 'غير محددة' : 'Not specified');
+        const studentCollege = student?.college || '';
+        const studentCgpa = student?.cgpa !== undefined ? student.cgpa : 0;
+        const studentSubjects: any[] = student?.raw?.subjects || [];
+        const gradingScale = student?.raw?.settings?.grading_scale || settings.gradingScale || [];
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-3xl w-full max-h-[92vh] overflow-y-auto border border-zinc-200 dark:border-zinc-800 shadow-2xl p-5 sm:p-7 space-y-6">
+              {/* Modal Header */}
+              <div className="flex items-start justify-between gap-3 pb-4 border-b border-zinc-100 dark:border-zinc-800">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase ${
+                      selectedFeedback.type === 'complaint'
+                        ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
+                        : selectedFeedback.type === 'bug'
+                        ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                        : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
+                    }`}>
+                      {selectedFeedback.type === 'complaint' ? (isAr ? 'شكوى رسمية' : 'Complaint') : selectedFeedback.type === 'bug' ? (isAr ? 'عطل تقني' : 'Bug') : (isAr ? 'اقتراح تطويري' : 'Suggestion')}
+                    </span>
+
+                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase flex items-center gap-1 ${
+                      selectedFeedback.status === 'resolved'
+                        ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                        : selectedFeedback.status === 'reviewed'
+                        ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                        : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                    }`}>
+                      {selectedFeedback.status === 'resolved' && <CheckCircle2 size={12} />}
+                      {selectedFeedback.status === 'reviewed' && <Clock size={12} />}
+                      <span>{selectedFeedback.status === 'resolved' ? (isAr ? 'تم الحل والرد' : 'Resolved') : selectedFeedback.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد' : 'New')}</span>
+                    </span>
+
+                    <span className="text-xs text-zinc-400">
+                      {new Date(selectedFeedback.createdAt).toLocaleString(isAr ? 'ar-EG' : 'en-US')}
+                    </span>
+                  </div>
+
+                  <h3 className="font-black text-lg sm:text-xl text-zinc-900 dark:text-white">
+                    {selectedFeedback.title}
+                  </h3>
+                </div>
+
+                <button
+                  onClick={() => setSelectedFeedback(null)}
+                  className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Student Overview Profile */}
+              <div className="p-4 bg-gradient-to-br from-purple-500/10 via-zinc-50 dark:via-zinc-800/50 to-purple-500/5 rounded-3xl border border-purple-200/60 dark:border-purple-900/40 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-purple-600 text-white font-black text-lg flex items-center justify-center shadow-md">
+                      {studentName.charAt(0)}
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-base text-zinc-900 dark:text-white">{studentName}</h4>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">{studentEmail}</p>
+                      <p className="text-xs text-zinc-400">{studentUni} {studentCollege && `• ${studentCollege}`}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="px-3.5 py-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
+                      <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'المعدل التراكمي CGPA' : 'CGPA'}</span>
+                      <span className="text-base font-black text-purple-600 dark:text-purple-400">{studentCgpa.toFixed(2)}</span>
+                    </div>
+
+                    <div className="px-3.5 py-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
+                      <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'المواد المسجلة' : 'Subjects'}</span>
+                      <span className="text-base font-black text-zinc-800 dark:text-zinc-200">{studentSubjects.length}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Message Details & Attachments */}
+              <div className="space-y-3">
+                <h4 className="font-bold text-sm text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                  <MessageSquare size={16} className="text-purple-500" />
+                  <span>{isAr ? 'نص الشكوى أو المقترح بالكامل:' : 'Full Message Details:'}</span>
+                </h4>
+                <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 text-xs sm:text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed">
+                  {selectedFeedback.content}
+                </div>
+
+                {/* Uploaded Attachments */}
+                {selectedFeedback.attachments && selectedFeedback.attachments.length > 0 && (
+                  <div className="space-y-2 pt-2">
+                    <h5 className="text-xs font-bold text-zinc-500 flex items-center gap-1.5">
+                      <Paperclip size={14} className="text-purple-500" />
+                      <span>{isAr ? 'الملفات المرفقة مع الطلب:' : 'Attached Files:'}</span>
+                    </h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {selectedFeedback.attachments.map((att) => (
+                        <div
+                          key={att.id}
+                          className="p-3 bg-zinc-50 dark:bg-zinc-800/80 rounded-2xl border border-zinc-200 dark:border-zinc-700 flex items-center justify-between gap-2"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileText size={16} className="text-purple-500 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="font-bold text-xs text-zinc-800 dark:text-zinc-200 truncate">{att.name}</p>
+                              <p className="text-[10px] text-zinc-400">{Math.round(att.size / 1024)} KB</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {att.url && (
+                              <a
+                                href={att.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="p-1.5 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 text-purple-600 dark:text-purple-300 rounded-lg text-xs font-bold flex items-center gap-1"
+                                title={isAr ? 'معاينة في نافذة جديدة' : 'Preview'}
+                              >
+                                <ExternalLink size={12} />
+                                <span>{isAr ? 'معاينة' : 'View'}</span>
+                              </a>
+                            )}
+                            {att.url && (
+                              <a
+                                href={att.url}
+                                download={att.name}
+                                className="p-1.5 bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 text-zinc-700 dark:text-zinc-200 rounded-lg text-xs"
+                                title={isAr ? 'تنزيل' : 'Download'}
+                              >
+                                <Download size={12} />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Student's Current Registered Courses with Detailed Breakdown */}
+              <div className="space-y-3 pt-2">
+                <h4 className="font-bold text-sm text-zinc-800 dark:text-zinc-200 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <BookOpen size={16} className="text-purple-500" />
+                    <span>{isAr ? 'المواد الحالية وتفاصيل تقسيم الدرجات للطالب:' : 'Current Student Courses & Grading Breakdown:'}</span>
+                  </span>
+                  <span className="text-xs text-zinc-400 font-medium">
+                    {studentSubjects.length} {isAr ? 'مادة مسجلة' : 'subjects'}
+                  </span>
+                </h4>
+
+                <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                  {studentSubjects.map((sub: any) => {
+                    const gr = calculateSubjectGrade(sub, gradingScale);
+                    return (
+                      <div
+                        key={sub.id}
+                        className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 space-y-2.5"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-bold text-sm text-zinc-900 dark:text-white">{sub.name}</p>
+                            <p className="text-[11px] text-zinc-400">
+                              {sub.code} • {sub.credit_hours || sub.creditHours} {isAr ? 'ساعات' : 'credits'} • {sub.total_marks || sub.totalMarks} {isAr ? 'درجة إجمالية' : 'total marks'}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-xs text-zinc-600 dark:text-zinc-300">
+                              {gr?.totalAchieved || 0} / {sub.total_marks || sub.totalMarks} ({Math.round(gr?.percentage || 0)}%)
+                            </span>
+                            <span className="px-2.5 py-1 rounded-xl bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 font-black text-xs">
+                              {gr?.letter || 'F'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Distributions Breakdown */}
+                        {sub.distributions && sub.distributions.length > 0 && (
+                          <div className="flex flex-wrap gap-2 pt-1 border-t border-zinc-200/50 dark:border-zinc-700/40">
+                            {sub.distributions.map((d: any, idx: number) => (
+                              <div
+                                key={idx}
+                                className="px-2.5 py-1 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700/60 text-[11px] flex items-center gap-1.5 shadow-2xs"
+                              >
+                                <span className="font-bold text-zinc-700 dark:text-zinc-300">{d.name}:</span>
+                                <span className="font-black text-purple-600 dark:text-purple-400">
+                                  {d.achievedMarks !== null && d.achievedMarks !== undefined ? d.achievedMarks : '-'} / {d.maxMarks}
+                                </span>
+                                <span className={`text-[9px] px-1.5 py-0.2 rounded-md font-bold ${
+                                  d.status === 'final' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
+                                }`}>
+                                  {d.status === 'final' ? (isAr ? 'نهائي' : 'Final') : (isAr ? 'حالي' : 'Current')}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {studentSubjects.length === 0 && (
+                    <p className="text-center py-6 text-xs text-zinc-400 bg-zinc-50 dark:bg-zinc-800/40 rounded-2xl">
+                      {isAr ? 'لا توجد مواد مسجلة لهذا الطالب حالياً.' : 'No courses registered.'}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Status Classification & Admin Notes */}
+              <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300">{isAr ? 'تصنيف حالة الطلب:' : 'Update Status:'}</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={async () => {
+                        await db.updateFeedback(selectedFeedback.id, { status: 'new' });
+                        setSelectedFeedback((prev: any) => prev ? { ...prev, status: 'new' } : null);
+                        await fetchData();
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                        selectedFeedback.status === 'new'
+                          ? 'bg-amber-500 text-white shadow-xs'
+                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-amber-100'
+                      }`}
+                    >
+                      {isAr ? 'جديد (الرئيسية)' : 'Set New'}
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        await db.updateFeedback(selectedFeedback.id, { status: 'reviewed' });
+                        setSelectedFeedback((prev: any) => prev ? { ...prev, status: 'reviewed' } : null);
+                        await fetchData();
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                        selectedFeedback.status === 'reviewed'
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-blue-100'
+                      }`}
+                    >
+                      {isAr ? 'قيد المراجعة' : 'In Review'}
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        await db.updateFeedback(selectedFeedback.id, { status: 'resolved' });
+                        setSelectedFeedback((prev: any) => prev ? { ...prev, status: 'resolved' } : null);
+                        await fetchData();
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                        selectedFeedback.status === 'resolved'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-emerald-100'
+                      }`}
+                    >
+                      {isAr ? 'تم الرد والحل' : 'Mark Resolved'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer Controls */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                <button
+                  onClick={() => {
+                    const id = selectedFeedback.id;
+                    setSelectedFeedback(null);
+                    setFeedbackToDelete(id);
+                  }}
+                  className="px-4 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-bold rounded-xl border border-rose-200 dark:border-rose-800/50 transition-all flex items-center gap-1.5"
+                >
+                  <Trash2 size={14} />
+                  <span>{isAr ? 'حذف الشكوى' : 'Delete Feedback'}</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`mailto:${studentEmail}?subject=${encodeURIComponent(`رد إدارة UniStudent بخصوص: ${selectedFeedback.title}`)}&body=${encodeURIComponent(`مرحباً ${studentName}،\n\nبخصوص طلبك/شكوتك بعنوان "${selectedFeedback.title}":\n\n`)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2"
+                  >
+                    <Mail size={14} />
+                    <span>{isAr ? 'الرد على الطالب عبر البريد' : 'Reply via Email'}</span>
+                  </a>
+
+                  <button
+                    onClick={() => setSelectedFeedback(null)}
+                    className="px-5 py-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold text-xs rounded-xl transition-all"
+                  >
+                    {isAr ? 'إغلاق' : 'Close'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Delete Feedback Confirmation Modal */}
       <ConfirmModal

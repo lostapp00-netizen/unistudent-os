@@ -38,7 +38,14 @@ export const db = {
     if (settings.warningGpaPoints !== undefined) payload.warning_gpa_points = settings.warningGpaPoints;
 
     try {
-      localStorage.setItem(`unistudent_settings_${userId}`, JSON.stringify(settings));
+      const existingRaw = localStorage.getItem(`unistudent_settings_${userId}`);
+      const existingObj = existingRaw ? JSON.parse(existingRaw) : {};
+      localStorage.setItem(`unistudent_settings_${userId}`, JSON.stringify({
+        ...existingObj,
+        ...settings,
+        enableGraduationScale: settings.enableGraduationScale !== undefined ? settings.enableGraduationScale : existingObj.enableGraduationScale,
+        graduationGradingScale: settings.graduationGradingScale !== undefined ? settings.graduationGradingScale : existingObj.graduationGradingScale
+      }));
     } catch {}
 
     const { error } = await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
@@ -59,18 +66,66 @@ export const db = {
   },
 
   // --- Subjects ---
-  async getSubjects(userId: string) {
-    const { data, error } = await supabase.from('subjects').select('*').eq('user_id', userId);
-    if (error) console.error('Error fetching subjects:', error);
-    return (data || []).map(mapSubjectFromDB);
+  async getSubjects(userId: string): Promise<Subject[]> {
+    let dbSubjects: Subject[] = [];
+    try {
+      const { data, error } = await supabase.from('subjects').select('*').eq('user_id', userId);
+      if (error) console.error('Error fetching subjects:', error);
+      if (data && data.length > 0) {
+        dbSubjects = data.map(mapSubjectFromDB);
+      }
+    } catch (e) {
+      console.warn('Supabase fetch subjects failed, checking cache:', e);
+    }
+
+    try {
+      const cached = localStorage.getItem(`unistudent_subjects_${userId}`);
+      if (cached) {
+        const localList: Subject[] = JSON.parse(cached);
+        if (dbSubjects.length === 0) return localList;
+        // Merge with local changes if any
+        const mergedMap = new Map<string, Subject>();
+        dbSubjects.forEach(s => mergedMap.set(s.id, s));
+        localList.forEach(s => {
+          if (!mergedMap.has(s.id)) mergedMap.set(s.id, s);
+        });
+        const result = Array.from(mergedMap.values());
+        localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(result));
+        return result;
+      } else if (dbSubjects.length > 0) {
+        localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(dbSubjects));
+      }
+    } catch {}
+
+    return dbSubjects;
   },
   async addSubject(userId: string, subject: Subject) {
-    const { error } = await supabase.from('subjects').insert([mapSubjectToDB(userId, subject)]);
-    if (error) console.error('Error adding subject:', error);
+    try {
+      const key = `unistudent_subjects_${userId}`;
+      const list: Subject[] = JSON.parse(localStorage.getItem(key) || '[]');
+      localStorage.setItem(key, JSON.stringify([...list.filter(s => s.id !== subject.id), subject]));
+    } catch {}
+
+    try {
+      const { error } = await supabase.from('subjects').insert([mapSubjectToDB(userId, subject)]);
+      if (error) {
+        // Retry without non-critical columns if schema difference
+        const payload: any = mapSubjectToDB(userId, subject);
+        delete payload.include_in_gpa;
+        delete payload.final_grade_letter;
+        await supabase.from('subjects').insert([payload]);
+      }
+    } catch (err) {
+      console.warn('Supabase addSubject fallback:', err);
+    }
   },
   async updateSubject(userId: string, id: string, subject: Partial<Subject>) {
-    // We only pass the fields that need updating. Since we map it, we can just send the whole mapped object
-    // For partial, we need to map the keys. This is a bit tricky, so we'll just update the whole subject usually, or map specific keys.
+    try {
+      const key = `unistudent_subjects_${userId}`;
+      const list: Subject[] = JSON.parse(localStorage.getItem(key) || '[]');
+      localStorage.setItem(key, JSON.stringify(list.map(s => s.id === id ? { ...s, ...subject } : s)));
+    } catch {}
+
     const payload: any = {};
     if (subject.code !== undefined) payload.code = subject.code;
     if (subject.name !== undefined) payload.name = subject.name;
@@ -82,12 +137,27 @@ export const db = {
     if (subject.distributions !== undefined) payload.distributions = subject.distributions;
     if (subject.finalGradeLetter !== undefined) payload.final_grade_letter = subject.finalGradeLetter;
     
-    const { error } = await supabase.from('subjects').update(payload).eq('id', id).eq('user_id', userId);
-    if (error) console.error('Error updating subject:', error);
+    try {
+      const { error } = await supabase.from('subjects').update(payload).eq('id', id).eq('user_id', userId);
+      if (error) {
+        delete payload.final_grade_letter;
+        await supabase.from('subjects').update(payload).eq('id', id).eq('user_id', userId);
+      }
+    } catch (e) {
+      console.warn('Supabase updateSubject error:', e);
+    }
   },
   async deleteSubject(userId: string, id: string) {
-    const { error } = await supabase.from('subjects').delete().eq('id', id).eq('user_id', userId);
-    if (error) console.error('Error deleting subject:', error);
+    try {
+      const key = `unistudent_subjects_${userId}`;
+      const list: Subject[] = JSON.parse(localStorage.getItem(key) || '[]');
+      localStorage.setItem(key, JSON.stringify(list.filter(s => s.id !== id)));
+    } catch {}
+
+    try {
+      const { error } = await supabase.from('subjects').delete().eq('id', id).eq('user_id', userId);
+      if (error) console.error('Error deleting subject:', error);
+    } catch (e) {}
   },
 
   // --- Tasks ---
@@ -319,6 +389,15 @@ export const db = {
     }]);
     if (error) console.error('Error adding drive_file:', error);
   },
+  async updateDriveFile(userId: string, id: string, file: Partial<DriveFile>) {
+    const payload: any = {};
+    if (file.name !== undefined) payload.name = file.name;
+    if (file.parentId !== undefined) payload.parent_id = file.parentId;
+    if (file.url !== undefined) payload.url = file.url;
+
+    const { error } = await supabase.from('drive_files').update(payload).eq('id', id).eq('user_id', userId);
+    if (error) console.error('Error updating drive_file:', error);
+  },
   async deleteDriveFile(userId: string, id: string) {
     const { error } = await supabase.from('drive_files').delete().eq('id', id).eq('user_id', userId);
     if (error) console.error('Error deleting drive_file:', error);
@@ -327,15 +406,21 @@ export const db = {
   // --- Feedback & Suggestions ---
   async addFeedback(feedback: FeedbackSuggestion) {
     try {
-      // 1. Local Cache
+      // 1. Sanitize attachments for localStorage to avoid 5MB quota exhaustion
+      const sanitizedAttachments = (feedback.attachments || []).map(a => ({
+        ...a,
+        url: a.url?.startsWith('data:') && a.url.length > 50000 ? '' : a.url // Strip huge base64 from localStorage
+      }));
+      const cachedFeedback = { ...feedback, attachments: sanitizedAttachments };
+
       const allKey = 'unistudent_all_suggestions';
       const existingAll: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(allKey) || '[]');
-      const updatedAll = [feedback, ...existingAll.filter(f => f.id !== feedback.id)];
-      localStorage.setItem(allKey, JSON.stringify(updatedAll));
+      const updatedAll = [cachedFeedback, ...existingAll.filter(f => f.id !== feedback.id)];
+      localStorage.setItem(allKey, JSON.stringify(updatedAll.slice(0, 100)));
 
       const userKey = `unistudent_user_suggestions_${feedback.userId}`;
       const existingUser: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(userKey) || '[]');
-      localStorage.setItem(userKey, JSON.stringify([feedback, ...existingUser.filter(f => f.id !== feedback.id)]));
+      localStorage.setItem(userKey, JSON.stringify([cachedFeedback, ...existingUser.filter(f => f.id !== feedback.id)].slice(0, 50)));
     } catch (e) {
       console.warn('LocalStorage error in addFeedback:', e);
     }
@@ -349,7 +434,13 @@ export const db = {
         type: feedback.type,
         title: feedback.title,
         content: feedback.content,
-        attachments: feedback.attachments || [],
+        attachments: (feedback.attachments || []).map(a => ({
+          id: a.id,
+          name: a.name,
+          size: a.size,
+          type: a.type,
+          url: a.url?.startsWith('data:') && a.url.length > 200000 ? '' : a.url
+        })),
         created_at: feedback.createdAt,
         status: feedback.status,
         admin_notes: feedback.adminNotes || ''
@@ -422,6 +513,19 @@ export const db = {
       const list: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(allKey) || '[]');
       const updated = list.map(item => item.id === id ? { ...item, ...updates } : item);
       localStorage.setItem(allKey, JSON.stringify(updated));
+
+      // Also update user cache if exists
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('unistudent_user_suggestions_')) {
+          try {
+            const uList: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(key) || '[]');
+            if (uList.some(f => f.id === id)) {
+              localStorage.setItem(key, JSON.stringify(uList.map(item => item.id === id ? { ...item, ...updates } : item)));
+            }
+          } catch {}
+        }
+      }
     } catch {}
 
     try {
@@ -439,6 +543,16 @@ export const db = {
       const allKey = 'unistudent_all_suggestions';
       const list: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(allKey) || '[]');
       localStorage.setItem(allKey, JSON.stringify(list.filter(f => f.id !== id)));
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('unistudent_user_suggestions_')) {
+          try {
+            const uList: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(key) || '[]');
+            localStorage.setItem(key, JSON.stringify(uList.filter(f => f.id !== id)));
+          } catch {}
+        }
+      }
     } catch {}
 
     try {
@@ -874,7 +988,9 @@ function mapSettingsFromDB(row: any): UserSettings {
     initialCompletedCreditHours: row.initial_completed_credit_hours !== undefined ? row.initial_completed_credit_hours : (localExtra.initialCompletedCreditHours ?? null),
     setupMode: row.setup_mode || localExtra.setupMode || 'initial_gpa',
     warningGradeLetter: row.warning_grade_letter !== undefined ? row.warning_grade_letter : (localExtra.warningGradeLetter ?? 'C'),
-    warningGpaPoints: row.warning_gpa_points !== undefined ? Number(row.warning_gpa_points) : (localExtra.warningGpaPoints !== undefined ? Number(localExtra.warningGpaPoints) : 2.0)
+    warningGpaPoints: row.warning_gpa_points !== undefined ? Number(row.warning_gpa_points) : (localExtra.warningGpaPoints !== undefined ? Number(localExtra.warningGpaPoints) : 2.0),
+    enableGraduationScale: row.enable_graduation_scale !== undefined ? row.enable_graduation_scale : (localExtra.enableGraduationScale ?? false),
+    graduationGradingScale: row.graduation_grading_scale || localExtra.graduationGradingScale || []
   };
 }
 

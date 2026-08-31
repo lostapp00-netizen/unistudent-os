@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group } from '../types';
+import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, GraduationGradeRule } from '../types';
 import { db } from '../lib/db';
 
 const getInitialTheme = (): 'light' | 'dark' => {
@@ -18,6 +18,16 @@ const getInitialLang = (): 'ar' | 'en' => {
   } catch {}
   return 'ar';
 };
+
+export const defaultGraduationScale: GraduationGradeRule[] = [
+  { id: '1', letter: 'A+', nameAr: 'ممتاز مع مرتبة الشرف', nameEn: 'Excellent with High Honors', minPercentage: 95, maxPercentage: 100, minGpa: 3.75, maxGpa: 4.0, gpaOperator: '<=' },
+  { id: '2', letter: 'A', nameAr: 'ممتاز', nameEn: 'Excellent', minPercentage: 85, maxPercentage: 94.99, maxOperator: '<', minGpa: 3.50, maxGpa: 3.74, gpaOperator: '<' },
+  { id: '3', letter: 'B+', nameAr: 'جيد جداً مرتفع', nameEn: 'Very Good High', minPercentage: 80, maxPercentage: 84.99, maxOperator: '<', minGpa: 3.00, maxGpa: 3.49, gpaOperator: '<' },
+  { id: '4', letter: 'B', nameAr: 'جيد جداً', nameEn: 'Very Good', minPercentage: 75, maxPercentage: 79.99, maxOperator: '<', minGpa: 2.50, maxGpa: 2.99, gpaOperator: '<' },
+  { id: '5', letter: 'C', nameAr: 'جيد', nameEn: 'Good', minPercentage: 65, maxPercentage: 74.99, maxOperator: '<', minGpa: 2.00, maxGpa: 2.49, gpaOperator: '<' },
+  { id: '6', letter: 'D', nameAr: 'مقبول', nameEn: 'Pass', minPercentage: 50, maxPercentage: 64.99, maxOperator: '<', minGpa: 1.50, maxGpa: 1.99, gpaOperator: '<' },
+  { id: '7', letter: 'F', nameAr: 'راسب', nameEn: 'Fail', minPercentage: 0, maxPercentage: 49.99, maxOperator: '<', minGpa: 0.00, maxGpa: 1.49, gpaOperator: '<' },
+];
 
 const defaultSettings: UserSettings = {
   name: '',
@@ -38,6 +48,8 @@ const defaultSettings: UserSettings = {
   setupMode: 'initial_gpa',
   warningGradeLetter: 'C',
   warningGpaPoints: 2.0,
+  enableGraduationScale: false,
+  graduationGradingScale: defaultGraduationScale,
 };
 
 export interface AppState {
@@ -63,6 +75,7 @@ export interface AppState {
   updateSubject: (id: string, subject: Partial<Subject>) => void;
   deleteSubject: (id: string) => void;
   addFile: (file: DriveFile) => void;
+  updateFile: (id: string, file: Partial<DriveFile>) => void;
   deleteFile: (id: string) => void;
   addNote: (note: Note) => void;
   updateNote: (id: string, note: Partial<Note>) => void;
@@ -249,8 +262,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   addSubject: (subject) => {
     const { userId } = get();
     if (!userId) return;
-    set((state) => ({ subjects: [...state.subjects, subject] }));
-    db.addSubject(userId, subject);
+    const finalSubject: Subject = {
+      ...subject,
+      code: subject.code?.trim() || `SUB-${Math.floor(100 + Math.random() * 900)}`,
+      distributions: subject.distributions || [],
+      includeInGpa: subject.includeInGpa !== false
+    };
+    set((state) => ({ subjects: [...state.subjects.filter(s => s.id !== finalSubject.id), finalSubject] }));
+    db.addSubject(userId, finalSubject);
   },
   updateSubject: (id, updatedFields) => {
     const { userId } = get();
@@ -271,6 +290,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!userId) return;
     set((state) => ({ files: [...state.files, file] }));
     db.addDriveFile(userId, file);
+  },
+  updateFile: (id, updatedFields) => {
+    const { userId } = get();
+    if (!userId) return;
+    set((state) => ({ files: state.files.map(f => f.id === id ? { ...f, ...updatedFields } : f) }));
+    db.updateDriveFile(userId, id, updatedFields);
   },
   deleteFile: (id) => {
     const { userId, files } = get();

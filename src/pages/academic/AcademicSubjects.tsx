@@ -74,17 +74,25 @@ export function AcademicSubjects() {
     }
   };
 
+  const [formError, setFormError] = useState<string | null>(null);
+
   const handleSaveSubject = () => {
-    if (!formData.name.trim() || !formData.code.trim()) return;
+    if (!formData.name.trim()) {
+      setFormError(settings.language === 'ar' ? 'يرجى إدخال اسم المادة الدراسية.' : 'Please enter subject name.');
+      return;
+    }
+
+    setFormError(null);
+    const finalCode = formData.code.trim() || `SUB-${Math.floor(100 + Math.random() * 900)}`;
 
     if (editingSubject) {
       updateSubject(editingSubject.id, {
         name: formData.name.trim(),
-        code: formData.code.trim(),
-        creditHours: Number(formData.creditHours),
-        totalMarks: Number(formData.totalMarks),
-        yearIndex: Number(formData.yearIndex),
-        semesterIndex: Number(formData.semesterIndex)
+        code: finalCode,
+        creditHours: Number(formData.creditHours) || 3,
+        totalMarks: Number(formData.totalMarks) || 100,
+        yearIndex: Number(formData.yearIndex) || 1,
+        semesterIndex: Number(formData.semesterIndex) || 1
       });
       setShowModal(false);
     } else {
@@ -92,12 +100,14 @@ export function AcademicSubjects() {
       const subject: Subject = {
         id: newSubId,
         name: formData.name.trim(),
-        code: formData.code.trim(),
-        creditHours: Number(formData.creditHours),
-        totalMarks: Number(formData.totalMarks),
-        yearIndex: Number(formData.yearIndex),
-        semesterIndex: Number(formData.semesterIndex),
-        distributions: []
+        code: finalCode,
+        creditHours: Number(formData.creditHours) || 3,
+        totalMarks: Number(formData.totalMarks) || 100,
+        yearIndex: Number(formData.yearIndex) || (currentSemester?.yearIndex || 1),
+        semesterIndex: Number(formData.semesterIndex) || (currentSemester?.semesterIndex || 1),
+        status: 'current',
+        distributions: [],
+        includeInGpa: true
       };
       addSubject(subject);
       setShowModal(false);
@@ -139,7 +149,7 @@ export function AcademicSubjects() {
             </button>
 
             {showFilterPopover && (
-              <div className="absolute top-full mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-4 z-40 left-1/2 -translate-x-1/2 sm:translate-x-0 rtl:sm:right-0 rtl:sm:left-auto ltr:sm:left-0 ltr:sm:right-auto">
+              <div className="absolute top-full mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-4 z-40 left-1/2 -translate-x-1/2">
                 <div className="flex justify-between items-center mb-3">
                   <span className="font-bold text-sm">{t('filter')}</span>
                   {(filterYears.length > 0 || filterSemesters.length > 0) && (
@@ -264,27 +274,42 @@ export function AcademicSubjects() {
       {showModal && (
         <div className="fixed inset-0 bg-zinc-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 md:p-8 w-full max-w-md shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[90vh]">
-            <h2 className="text-2xl font-bold mb-6">
+            <h2 className="text-2xl font-bold mb-4">
               {editingSubject ? (isAr ? 'تعديل المادة' : 'Edit Subject') : t('add_subject')}
             </h2>
+
+            {formError && (
+              <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-bold border border-rose-200 dark:border-rose-800/40">
+                {formError}
+              </div>
+            )}
+
             <div className="overflow-y-auto pr-2 space-y-4 flex-1 hide-scrollbar">
               <div>
-                <label className="block text-sm font-medium mb-1">{t('subject_name')}</label>
+                <label className="block text-sm font-medium mb-1">
+                  {t('subject_name')} <span className="text-rose-500">*</span>
+                </label>
                 <input 
                   type="text" 
                   value={formData.name} 
-                  onChange={e => setFormData({...formData, name: e.target.value})} 
+                  onChange={e => {
+                    setFormData({...formData, name: e.target.value});
+                    if (formError) setFormError(null);
+                  }} 
                   placeholder={isAr ? 'مثال: الرياضيات المتقدمة' : 'e.g. Advanced Math'}
                   className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">{t('subject_code')}</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-sm font-medium">{t('subject_code')}</label>
+                  <span className="text-[11px] text-zinc-400 font-normal">{isAr ? '(اختياري - يولد تلقائياً)' : '(Optional)'}</span>
+                </div>
                 <input 
                   type="text" 
                   value={formData.code} 
                   onChange={e => setFormData({...formData, code: e.target.value})} 
-                  placeholder={isAr ? 'مثال: MATH101' : 'e.g. MATH101'}
+                  placeholder={isAr ? 'مثال: MATH101 (اتركه فارغاً للتوليد التلقائي)' : 'e.g. MATH101'}
                   className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
                 />
               </div>

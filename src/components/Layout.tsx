@@ -4,7 +4,7 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, BookOpen, Calendar, LayoutDashboard, Settings, Sun, Moon, 
   ChevronDown, ChevronRight, CheckSquare, StickyNote, HardDrive, 
-  Clock, AlertTriangle, Library, ListTodo, Menu, X, Calculator, Target, LogOut } from 'lucide-react';
+  Clock, AlertTriangle, Library, ListTodo, Menu, X, Calculator, Target, LogOut, HelpCircle } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { supabase } from '../lib/supabase';
 import { getWarningThreshold, isSubjectAtWarningRisk } from '../lib/academic';
@@ -223,9 +223,22 @@ export function Layout() {
           </div>
 
           <NavLink
+            to="/guide"
+            className={({ isActive }) => cn(
+              "flex items-center gap-3 p-3 rounded-xl text-sm font-medium transition-colors mt-1",
+              isActive 
+                ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-600 dark:text-white" 
+                : "text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+            )}
+          >
+            <HelpCircle className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+            {isSidebarOpen && (settings.language === 'ar' ? 'دليل الطالب والـ GPA' : 'Student Guide & GPA')}
+          </NavLink>
+
+          <NavLink
             to="/settings"
             className={({ isActive }) => cn(
-              "flex items-center gap-3 p-3 rounded-xl text-sm font-medium transition-colors mt-2",
+              "flex items-center gap-3 p-3 rounded-xl text-sm font-medium transition-colors mt-1",
               isActive 
                 ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-600 dark:text-white" 
                 : "text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"

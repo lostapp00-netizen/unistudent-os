@@ -259,51 +259,114 @@ export function Schedule() {
             </button>
           </div>
           
-          <div className="grid grid-cols-7 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/20">
-            {days.map(day => (
-              <div key={day} className="py-3 text-center text-xs font-bold text-zinc-500">
-                {day.substring(0, 3)}
+          <div className="overflow-x-auto flex-1">
+            <div className="min-w-[950px]">
+              <div className="grid grid-cols-7 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/20">
+                {days.map(day => (
+                  <div key={day} className="py-3.5 text-center text-xs font-black text-zinc-600 dark:text-zinc-300">
+                    {day}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          
-          <div className="grid grid-cols-7 auto-rows-fr bg-zinc-200 dark:bg-zinc-800 gap-px">
-            {calendarDays.map((day, idx) => {
-              const dayOfWeek = day.getDay();
-              const dayItems = filteredScheduleItems.filter(s => s.dayOfWeek === dayOfWeek).sort((a, b) => a.startTime.localeCompare(b.startTime));
-              const isToday = isSameDay(day, new Date());
-              const isCurrentMonth = isSameMonth(day, currentDate);
               
-              return (
-                <div 
-                  key={day.toString()} 
-                  className={`min-h-[120px] bg-white dark:bg-zinc-900 p-1.5 transition-colors ${!isCurrentMonth ? 'text-zinc-400 dark:text-zinc-600 bg-zinc-50/50 dark:bg-zinc-900/50' : ''}`}
-                >
-                  <div className="flex justify-between items-start mb-1">
-                    <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs ${isToday ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-500/30' : 'font-medium'}`}>
-                      {format(day, 'd')}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1 overflow-y-auto max-h-[85px] hide-scrollbar">
-                    {dayItems.map(item => {
-                      const subject = subjects.find(s => s.id === item.subjectId);
-                      const pColor = item.priority ? priorityColors[item.priority] : priorityColors.medium;
-                      return (
-                        <div 
-                          key={item.id}
-                          title={`${subject?.name} - ${item.startTime}`}
-                          className={`text-[10px] px-1.5 py-1 rounded-md border-l-2 flex flex-col gap-0.5 cursor-pointer hover:opacity-80 ${pColor}`}
-                          onClick={() => openEdit(item)}
-                        >
-                          <span className="font-bold truncate">{subject?.name}</span>
-                          <span className="opacity-80 flex items-center gap-0.5"><Clock size={8}/> {item.startTime}</span>
+              <div className="grid grid-cols-7 auto-rows-fr bg-zinc-200 dark:bg-zinc-800 gap-px">
+                {calendarDays.map((day, idx) => {
+                  const dayOfWeek = day.getDay();
+                  const dayItems = filteredScheduleItems.filter(s => s.dayOfWeek === dayOfWeek).sort((a, b) => a.startTime.localeCompare(b.startTime));
+                  const isToday = isSameDay(day, new Date());
+                  const isCurrentMonth = isSameMonth(day, currentDate);
+                  
+                  return (
+                    <div 
+                      key={day.toString()} 
+                      className={`min-h-[220px] bg-white dark:bg-zinc-900 p-2.5 transition-colors flex flex-col justify-between ${
+                        !isCurrentMonth ? 'text-zinc-400 dark:text-zinc-600 bg-zinc-50/60 dark:bg-zinc-900/60' : ''
+                      }`}
+                    >
+                      <div>
+                        {/* Day Header */}
+                        <div className="flex justify-between items-center mb-2 pb-1.5 border-b border-zinc-100 dark:border-zinc-800/60">
+                          <span className={`inline-flex items-center justify-center w-7 h-7 rounded-xl text-xs font-bold ${
+                            isToday 
+                              ? 'bg-indigo-600 text-white font-black shadow-md shadow-indigo-500/30' 
+                              : 'text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800'
+                          }`}>
+                            {format(day, 'd')}
+                          </span>
+
+                          <button
+                            onClick={() => openAdd(dayOfWeek)}
+                            className="p-1 text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors"
+                            title={settings.language === 'ar' ? 'إضافة إلى هذا اليوم' : 'Add to this day'}
+                          >
+                            <Plus size={14} />
+                          </button>
                         </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              );
-            })}
+
+                        {/* Items List */}
+                        <div className="flex flex-col gap-2 overflow-y-auto max-h-[160px] pr-1">
+                          {dayItems.map(item => {
+                            const subject = subjects.find(s => s.id === item.subjectId);
+                            const pColor = item.priority ? priorityColors[item.priority] : priorityColors.medium;
+                            const typeLabel = item.type === 'lecture' 
+                              ? (settings.language === 'ar' ? 'محاضرة' : 'Lecture') 
+                              : item.type === 'tutorial' 
+                              ? (settings.language === 'ar' ? 'سكشن' : 'Section') 
+                              : item.type === 'lab' 
+                              ? (settings.language === 'ar' ? 'معمل' : 'Lab') 
+                              : (settings.language === 'ar' ? 'امتحان' : 'Exam');
+
+                            return (
+                              <div 
+                                key={item.id}
+                                title={`${subject?.name} (${typeLabel})`}
+                                className={`text-xs p-2.5 rounded-xl border flex flex-col gap-1 cursor-pointer hover:shadow-xs transition-all ${pColor}`}
+                                onClick={() => openEdit(item)}
+                              >
+                                {/* Subject Name & Type */}
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="font-black text-xs leading-snug break-words">{subject?.name || 'مادة'}</span>
+                                  <span className="text-[9px] font-black px-1.5 py-0.2 rounded-md bg-white/80 dark:bg-zinc-800/90 shrink-0">
+                                    {typeLabel}
+                                  </span>
+                                </div>
+
+                                {/* Time */}
+                                <div className="text-[10px] font-bold opacity-90 flex items-center gap-1">
+                                  <Clock size={10} />
+                                  <span>{item.startTime} - {item.endTime}</span>
+                                </div>
+
+                                {/* Instructor / Doctor */}
+                                {item.doctorName && (
+                                  <div className="text-[10px] opacity-80 flex items-center gap-1">
+                                    <User size={10} />
+                                    <span className="truncate">{item.doctorName}</span>
+                                  </div>
+                                )}
+
+                                {/* Location */}
+                                {item.location && (
+                                  <div className="text-[10px] opacity-80 truncate">
+                                    📍 {item.location}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+
+                          {dayItems.length === 0 && (
+                            <div className="h-full flex items-center justify-center py-6 opacity-20">
+                              <span className="text-[10px] text-zinc-400 font-medium">{settings.language === 'ar' ? 'فارغ' : 'Empty'}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       )}

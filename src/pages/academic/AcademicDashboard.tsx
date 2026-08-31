@@ -3,8 +3,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
-import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWarningRisk } from '../../lib/academic';
-import { AlertTriangle, Filter, Library, Target, BookOpen, GraduationCap, TrendingDown, ArrowRight } from 'lucide-react';
+import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWarningRisk, calculateGraduationEstimate } from '../../lib/academic';
+import { AlertTriangle, Filter, Library, Target, BookOpen, GraduationCap, TrendingDown, ArrowRight, Award } from 'lucide-react';
 
 export function AcademicDashboard() {
   const { t } = useTranslation();
@@ -50,6 +50,10 @@ export function AcademicDashboard() {
 
   const isAr = settings.language === 'ar';
 
+  const gradEstimate = settings.enableGraduationScale && settings.graduationGradingScale && settings.graduationGradingScale.length > 0 && totalGPA > 0
+    ? calculateGraduationEstimate(totalGPA, undefined, settings.graduationGradingScale)
+    : null;
+
   return (
     <div className="flex flex-col min-h-full gap-6 pb-8">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
@@ -80,7 +84,7 @@ export function AcademicDashboard() {
             </button>
             
             {showFilterPopover && (
-              <div className={`absolute top-full mt-2 w-64 max-w-[calc(100vw-2rem)] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl z-50 p-4 left-1/2 -translate-x-1/2 sm:translate-x-0 ${isAr ? 'sm:left-auto sm:right-0' : 'sm:right-auto sm:left-0'}`}>
+              <div className="absolute top-full mt-2 w-64 max-w-[calc(100vw-2rem)] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl z-50 p-4 left-1/2 -translate-x-1/2">
                 <div className="mb-4">
                   <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">{t('year')}</h4>
                   <div className="space-y-1">
@@ -110,7 +114,7 @@ export function AcademicDashboard() {
       </header>
 
       {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className={`grid grid-cols-1 md:grid-cols-2 ${gradEstimate ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-5`}>
         {/* cGPA Card */}
         <div className="bg-indigo-600 dark:bg-indigo-900 text-white p-6 rounded-3xl shadow-lg relative overflow-hidden">
           <div className="relative z-10">
@@ -119,6 +123,18 @@ export function AcademicDashboard() {
           </div>
           <GraduationCap className="absolute -bottom-4 -right-4 w-24 h-24 text-white opacity-20" />
         </div>
+
+        {/* Graduation Estimate Card (When Enabled) */}
+        {gradEstimate && (
+          <div className="bg-gradient-to-br from-purple-600 to-indigo-700 text-white p-6 rounded-3xl shadow-lg relative overflow-hidden">
+            <div className="relative z-10 space-y-1">
+              <h3 className="text-purple-100 font-medium text-xs sm:text-sm">{isAr ? 'تقدير التخرج المتوقع' : 'Graduation Estimate'}</h3>
+              <div className="text-2xl sm:text-3xl font-black">{isAr ? gradEstimate.nameAr : (gradEstimate.nameEn || gradEstimate.nameAr)}</div>
+              <p className="text-xs text-purple-200 font-bold">{gradEstimate.letter}</p>
+            </div>
+            <Award className="absolute -bottom-4 -right-4 w-24 h-24 text-white opacity-20" />
+          </div>
+        )}
         
         {/* GPA Card */}
         <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800">
@@ -158,6 +174,7 @@ export function AcademicDashboard() {
             </div>
           </div>
         </div>
+        
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

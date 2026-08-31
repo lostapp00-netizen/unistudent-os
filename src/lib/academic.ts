@@ -1,4 +1,4 @@
-import { Subject, GradeRule } from '../types';
+import { Subject, GradeRule, GraduationGradeRule } from '../types';
 
 export function calculateSubjectGrade(subject: Subject, gradingScale: GradeRule[]) {
   if (gradingScale.length === 0 || subject.totalMarks === 0) return null;
@@ -160,6 +160,8 @@ export function getWarningThreshold(settings: {
 }
 
 export function isSubjectAtWarningRisk(subject: Subject, scale: GradeRule[], thresholdPoints: number): boolean {
+  if (subject.status === 'finished') return false; // Finished / locked subjects cannot be improved
+  
   let gradeObj = calculateSubjectGrade(subject, scale);
   if (!gradeObj && subject.finalGradeLetter) {
     const rule = getMatchingGradeRuleByLetter(subject.finalGradeLetter, scale);
@@ -175,4 +177,46 @@ export function isSubjectAtWarningRisk(subject: Subject, scale: GradeRule[], thr
   if (!gradeObj) return false;
   return gradeObj.points <= thresholdPoints;
 }
+
+export function calculateGraduationEstimate(
+  cgpa: number,
+  percentage: number = 0,
+  graduationScale?: GraduationGradeRule[]
+): { letter: string; nameAr: string; nameEn: string; rule?: GraduationGradeRule } | null {
+  if (!graduationScale || graduationScale.length === 0) {
+    // Default fallback graduation estimate
+    if (cgpa >= 3.75) return { letter: 'A+', nameAr: 'ممتاز مع مرتبة الشرف', nameEn: 'Excellent with High Honors' };
+    if (cgpa >= 3.5) return { letter: 'A', nameAr: 'ممتاز', nameEn: 'Excellent' };
+    if (cgpa >= 3.0) return { letter: 'B+', nameAr: 'جيد جداً مرتفع', nameEn: 'Very Good High' };
+    if (cgpa >= 2.5) return { letter: 'B', nameAr: 'جيد جداً', nameEn: 'Very Good' };
+    if (cgpa >= 2.0) return { letter: 'C', nameAr: 'جيد', nameEn: 'Good' };
+    if (cgpa >= 1.5) return { letter: 'D', nameAr: 'مقبول', nameEn: 'Pass' };
+    return { letter: 'F', nameAr: 'راسب', nameEn: 'Fail' };
+  }
+
+  // Sort descending by minGpa
+  const sorted = [...graduationScale].sort((a, b) => b.minGpa - a.minGpa);
+
+  const matched = sorted.find((rule, idx) => {
+    if (cgpa < rule.minGpa) return false;
+    const isMaxInclusive = rule.gpaOperator ? rule.gpaOperator === '<=' : (rule.maxGpa >= 4.0 || idx === 0);
+    if (isMaxInclusive) {
+      return cgpa <= rule.maxGpa;
+    } else {
+      return cgpa < rule.maxGpa;
+    }
+  }) || sorted.find(r => cgpa >= r.minGpa) || sorted[sorted.length - 1];
+
+  if (matched) {
+    return {
+      letter: matched.letter,
+      nameAr: matched.nameAr,
+      nameEn: matched.nameEn,
+      rule: matched
+    };
+  }
+
+  return null;
+}
+
 

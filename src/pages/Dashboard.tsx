@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
-import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWarningRisk } from '../lib/academic';
-import { BookOpen, AlertTriangle, CheckCircle, Clock, Filter } from 'lucide-react';
+import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWarningRisk, calculateGraduationEstimate } from '../lib/academic';
+import { BookOpen, AlertTriangle, CheckCircle, Clock, Filter, Award } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export function Dashboard() {
@@ -139,6 +139,22 @@ export function Dashboard() {
             <p className="text-[11px] text-indigo-200 uppercase font-bold tracking-wider">{isAr ? 'التراكمي cGPA' : 'cGPA'}</p>
             <p className="text-xl font-black">{totalGPA > 0 ? totalGPA.toFixed(2) : '--'}</p>
           </div>
+
+          {/* Graduation Estimate Badge if Enabled */}
+          {settings.enableGraduationScale && settings.graduationGradingScale && settings.graduationGradingScale.length > 0 && totalGPA > 0 && (() => {
+            const est = calculateGraduationEstimate(totalGPA, undefined, settings.graduationGradingScale);
+            if (!est) return null;
+            return (
+              <div
+                onClick={() => navigate('/academic')}
+                className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-3 px-4 rounded-2xl shadow-sm cursor-pointer hover:opacity-95 transition-opacity text-center min-w-[110px]"
+                title={isAr ? 'تقدير التخرج التراكمي' : 'Graduation Estimate'}
+              >
+                <p className="text-[10px] text-purple-200 uppercase font-bold tracking-wider">{isAr ? 'تقدير التخرج' : 'Graduation'}</p>
+                <p className="text-xs sm:text-sm font-black truncate">{isAr ? est.nameAr : (est.nameEn || est.nameAr)}</p>
+              </div>
+            );
+          })()}
 
           {/* GPA (معدل الفصل المختار) */}
           <div 

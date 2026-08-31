@@ -16,6 +16,8 @@ import { AcademicSimulation } from './pages/academic/AcademicSimulation';
 import { AcademicWarnings } from './pages/academic/AcademicWarnings';
 import { SubjectDetails } from './pages/SubjectDetails';
 
+import { StudentGuide } from './pages/StudentGuide';
+
 // Productivity
 import { ProductivityDashboard } from './pages/productivity/ProductivityDashboard';
 import { TasksTab } from './components/productivity/TasksTab';
@@ -128,6 +130,7 @@ export function App() {
               </Route>
               
               <Route path="settings" element={<Settings />} />
+              <Route path="guide" element={<StudentGuide />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </>
