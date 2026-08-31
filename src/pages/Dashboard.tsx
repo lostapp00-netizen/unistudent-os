@@ -93,35 +93,48 @@ export function Dashboard() {
             </button>
             
             {showFilterPopover && (
-              <div className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl z-50 p-4">
+              <div className="absolute top-full right-0 rtl:right-auto rtl:left-0 mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl z-50 p-4">
+                <div className="flex justify-between items-center mb-3 pb-2 border-b border-zinc-100 dark:border-zinc-800">
+                  <span className="font-bold text-sm text-zinc-900 dark:text-white">{t('filter')}</span>
+                  {(filterYears.length > 0 || filterSemesters.length > 0) && (
+                    <button 
+                      onClick={() => { setFilterYears([]); setFilterSemesters([]); }}
+                      className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                    >
+                      {t('clear_all') || (isAr ? 'مسح الكل' : 'Clear All')}
+                    </button>
+                  )}
+                </div>
+
                 <div className="mb-4">
                   <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">{t('year')}</h4>
-                  <div className="space-y-1">
+                  <div className="grid grid-cols-2 gap-1.5">
                     {Array.from({ length: settings.totalYears }).map((_, i) => (
                       <label key={i} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 p-1.5 rounded-lg transition-colors">
                         <input 
                           type="checkbox" 
                           checked={filterYears.includes(i + 1)}
                           onChange={() => toggleYear(i + 1)}
-                          className="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 bg-transparent"
+                          className="rounded text-indigo-600 focus:ring-indigo-500 border-zinc-300 dark:border-zinc-700 bg-transparent"
                         />
-                        {t('year')} {i + 1}
+                        <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">{t('year')} {i + 1}</span>
                       </label>
                     ))}
                   </div>
                 </div>
+
                 <div>
                   <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">{t('semester')}</h4>
-                  <div className="space-y-1">
+                  <div className="grid grid-cols-2 gap-1.5">
                     {Array.from({ length: settings.semestersPerYear }).map((_, i) => (
                       <label key={i} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 p-1.5 rounded-lg transition-colors">
                         <input 
                           type="checkbox" 
                           checked={filterSemesters.includes(i + 1)}
                           onChange={() => toggleSemester(i + 1)}
-                          className="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 bg-transparent"
+                          className="rounded text-indigo-600 focus:ring-indigo-500 border-zinc-300 dark:border-zinc-700 bg-transparent"
                         />
-                        {t('semester')} {i + 1}
+                        <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">{t('semester')} {i + 1}</span>
                       </label>
                     ))}
                   </div>

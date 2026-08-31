@@ -133,54 +133,64 @@ export function AcademicSubjects() {
           <div ref={filterPopoverRef} className="relative">
             <button 
               onClick={() => setShowFilterPopover(!showFilterPopover)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors border ${
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold transition-all border shadow-xs ${
                 filterYears.length > 0 || filterSemesters.length > 0 
-                  ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-300' 
-                  : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300'
+                  ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/40 dark:border-indigo-800 dark:text-indigo-300' 
+                  : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'
               }`}
             >
               <Filter size={16} />
-              {t('filter')}
+              <span>{t('filter')}</span>
               {(filterYears.length > 0 || filterSemesters.length > 0) && (
-                <span className="flex items-center justify-center bg-indigo-600 text-white w-5 h-5 rounded-full text-xs ml-1">
+                <span className="flex items-center justify-center bg-indigo-600 text-white w-5 h-5 rounded-full text-xs font-bold mr-1 rtl:mr-0 rtl:ml-1">
                   {filterYears.length + filterSemesters.length}
                 </span>
               )}
             </button>
 
             {showFilterPopover && (
-              <div className="absolute top-full mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-4 z-40 left-1/2 -translate-x-1/2">
-                <div className="flex justify-between items-center mb-3">
-                  <span className="font-bold text-sm">{t('filter')}</span>
+              <div className="absolute top-full mt-2 w-72 max-w-[calc(100vw-2rem)] right-0 rtl:right-auto rtl:left-0 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-4 z-40">
+                <div className="flex justify-between items-center mb-3 pb-2 border-b border-zinc-100 dark:border-zinc-800">
+                  <span className="font-bold text-sm text-zinc-900 dark:text-white">{t('filter')}</span>
                   {(filterYears.length > 0 || filterSemesters.length > 0) && (
                     <button 
                       onClick={() => { setFilterYears([]); setFilterSemesters([]); }}
-                      className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                      className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
                     >
-                      {t('clear_all')}
+                      {t('clear_all') || (isAr ? 'مسح الكل' : 'Clear All')}
                     </button>
                   )}
                 </div>
                 
                 <div className="mb-4">
-                  <span className="text-xs font-semibold text-zinc-400 block mb-2">{t('year')}</span>
+                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">{t('year')}</h4>
                   <div className="grid grid-cols-2 gap-1.5">
                     {Array.from({ length: settings.totalYears }).map((_, i) => (
                       <label key={i} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 p-1.5 rounded-lg transition-colors">
-                        <input type="checkbox" checked={filterYears.includes(i + 1)} onChange={() => toggleYear(i + 1)} className="rounded" />
-                        {t('year')} {i + 1}
+                        <input 
+                          type="checkbox" 
+                          checked={filterYears.includes(i + 1)} 
+                          onChange={() => toggleYear(i + 1)} 
+                          className="rounded text-indigo-600 focus:ring-indigo-500 border-zinc-300 dark:border-zinc-700 bg-transparent" 
+                        />
+                        <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">{t('year')} {i + 1}</span>
                       </label>
                     ))}
                   </div>
                 </div>
 
                 <div>
-                  <span className="text-xs font-semibold text-zinc-400 block mb-2">{t('semester')}</span>
+                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">{t('semester')}</h4>
                   <div className="grid grid-cols-2 gap-1.5">
                     {Array.from({ length: settings.semestersPerYear }).map((_, i) => (
                       <label key={i} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 p-1.5 rounded-lg transition-colors">
-                        <input type="checkbox" checked={filterSemesters.includes(i + 1)} onChange={() => toggleSemester(i + 1)} className="rounded" />
-                        {t('semester')} {i + 1}
+                        <input 
+                          type="checkbox" 
+                          checked={filterSemesters.includes(i + 1)} 
+                          onChange={() => toggleSemester(i + 1)} 
+                          className="rounded text-indigo-600 focus:ring-indigo-500 border-zinc-300 dark:border-zinc-700 bg-transparent" 
+                        />
+                        <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">{t('semester')} {i + 1}</span>
                       </label>
                     ))}
                   </div>

@@ -114,50 +114,89 @@ export function ProductivitySidebar({ activeGroupId, setActiveGroupId }: Product
                   <span className="truncate">{group.name}</span>
                 </div>
                 
-                <div className="relative">
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowOptionsId(showOptionsId === group.id ? null : group.id);
-                    }}
-                    className={`p-1 rounded-md transition-colors ${showOptionsId === group.id ? 'bg-zinc-200 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200' : 'text-transparent group-hover/item:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
-                  >
-                    <MoreVertical size={14} />
-                  </button>
-                  
-                  {showOptionsId === group.id && (
-                    <>
-                      <div 
-                        className="fixed inset-0 z-10" 
-                        onClick={(e) => { e.stopPropagation(); setShowOptionsId(null); }}
-                      />
-                      <div className={`absolute z-20 ${isAr ? 'right-full mr-1' : 'left-full ml-1'} top-0 w-32 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg py-1`}>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleEdit(group); }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors"
-                        >
-                          <Edit2 size={14} /> {isAr ? 'تعديل' : 'Edit'}
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteGroup(group.id);
-                            if (activeGroupId === group.id) setActiveGroupId('all');
-                            setShowOptionsId(null);
-                          }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
-                        >
-                          <Trash2 size={14} /> {isAr ? 'حذف' : 'Delete'}
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowOptionsId(group.id);
+                  }}
+                  className={`p-1 rounded-md transition-colors ${showOptionsId === group.id ? 'bg-zinc-200 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200' : 'text-transparent group-hover/item:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
+                  title={isAr ? 'خيارات المجموعة' : 'Group Options'}
+                >
+                  <MoreVertical size={14} />
+                </button>
               </div>
             )}
           </div>
         ))}
       </div>
+
+      {/* Centered Modal for Group Options */}
+      {(() => {
+        const selectedOptionsGroup = groups.find(g => g.id === showOptionsId);
+        if (!selectedOptionsGroup) return null;
+        return (
+          <div 
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+            onClick={() => setShowOptionsId(null)}
+          >
+            <div 
+              className="bg-white dark:bg-zinc-900 rounded-3xl p-5 max-w-xs w-full shadow-2xl border border-zinc-200 dark:border-zinc-800 space-y-4 animate-in zoom-in-95 duration-150"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                    <Folder size={18} />
+                  </div>
+                  <h3 className="font-bold text-sm text-zinc-900 dark:text-white truncate">
+                    {selectedOptionsGroup.name}
+                  </h3>
+                </div>
+                <button 
+                  onClick={() => setShowOptionsId(null)}
+                  className="p-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-600 transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  onClick={() => {
+                    const grp = selectedOptionsGroup;
+                    setShowOptionsId(null);
+                    handleEdit(grp);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all text-left rtl:text-right"
+                >
+                  <Edit2 size={16} />
+                  <span>{isAr ? 'تعديل اسم المجموعة' : 'Rename Group'}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const grpId = selectedOptionsGroup.id;
+                    setShowOptionsId(null);
+                    deleteGroup(grpId);
+                    if (activeGroupId === grpId) setActiveGroupId('all');
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold text-rose-600 dark:text-rose-400 bg-rose-50/70 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-all text-left rtl:text-right"
+                >
+                  <Trash2 size={16} />
+                  <span>{isAr ? 'حذف المجموعة' : 'Delete Group'}</span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => setShowOptionsId(null)}
+                className="w-full py-2.5 rounded-xl text-xs font-bold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                {isAr ? 'إلغاء' : 'Cancel'}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
         <div className="flex items-center gap-2">

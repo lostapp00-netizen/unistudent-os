@@ -43,20 +43,30 @@ export function ProductivityFilter({ filter, setFilter }: ProductivityFilterProp
     <div ref={popoverRef} className="relative z-20">
       <button 
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors border ${
+        className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold transition-all border shadow-xs ${
           hasActiveFilter 
-             ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-300' 
-             : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300'
+             ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/40 dark:border-indigo-800 dark:text-indigo-300' 
+             : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'
         }`}
       >
-        <Filter size={16} /> {isAr ? 'تصفية' : 'Filter'}
+        <Filter size={16} /> <span>{isAr ? 'تصفية' : 'Filter'}</span>
       </button>
       
       {isOpen && (
-        <div className="absolute top-full mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl p-4 z-50 left-1/2 -translate-x-1/2">
-          <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">
-            {isAr ? 'الفترة الزمنية' : 'Time Period'}
-          </h4>
+        <div className="absolute top-full mt-2 w-72 max-w-[calc(100vw-2rem)] right-0 rtl:right-auto rtl:left-0 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl p-4 z-50">
+          <div className="flex justify-between items-center mb-3 pb-2 border-b border-zinc-100 dark:border-zinc-800">
+            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider">
+              {isAr ? 'الفترة الزمنية' : 'Time Period'}
+            </h4>
+            {hasActiveFilter && (
+              <button 
+                onClick={() => setFilter({ type: 'all', from: '', to: '' })}
+                className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+              >
+                {isAr ? 'الكل' : 'Reset'}
+              </button>
+            )}
+          </div>
           
           <div className="space-y-1 mb-4">
             <label className="flex items-center gap-2 text-sm cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 p-2 rounded-lg transition-colors">

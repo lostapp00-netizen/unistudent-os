@@ -18,6 +18,7 @@ import {
 import { useAppStore } from '../../store/useAppStore';
 import { db } from '../../lib/db';
 import { FeedbackSuggestion } from '../../types';
+import { formatDateTime } from '../../lib/utils';
 
 export function UserFeedbackSection() {
   const { t, i18n } = useTranslation();
@@ -407,7 +408,7 @@ export function UserFeedbackSection() {
                 )}
 
                 <div className="flex items-center justify-between text-[10px] text-zinc-400 pt-2 border-t border-zinc-200/50 dark:border-zinc-700/40">
-                  <span>{new Date(item.createdAt).toLocaleDateString(isAr ? 'ar-EG' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' } as any)}</span>
+                  <span>{formatDateTime(item.createdAt, isAr)}</span>
                   {item.adminNotes && (
                     <span className="font-medium text-indigo-600 dark:text-indigo-400">
                       {isAr ? `ملاحظة الأدمن: ${item.adminNotes}` : `Admin note: ${item.adminNotes}`}

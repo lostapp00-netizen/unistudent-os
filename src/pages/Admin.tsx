@@ -35,13 +35,15 @@ import {
   LayoutDashboard,
   Menu,
   ExternalLink,
-  FileText
+  FileText,
+  Inbox
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { db } from '../lib/db';
 import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWarningRisk } from '../lib/academic';
 import { FeedbackSuggestion, EmailBackupConfig, DatabaseBackup } from '../types';
 import { ConfirmModal } from '../components/ui/CustomModal';
+import { formatDateTime, getAcademicEvaluation } from '../lib/utils';
 
 export function Admin() {
   const { t, i18n } = useTranslation();
@@ -82,10 +84,12 @@ export function Admin() {
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
 
   // --- Suggestions Filter & Modals ---
-  const [feedbackSubTab, setFeedbackSubTab] = useState<'all' | 'reviewed' | 'resolved'>('all');
+  const [feedbackSubTab, setFeedbackSubTab] = useState<'new' | 'reviewed' | 'resolved'>('new');
   const [selectedFeedback, setSelectedFeedback] = useState<FeedbackSuggestion | null>(null);
   const [feedbackSearch, setFeedbackSearch] = useState('');
   const [adminNoteInput, setAdminNoteInput] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteSavedSuccess, setNoteSavedSuccess] = useState(false);
   const [suggestionTypeFilter, setSuggestionTypeFilter] = useState<string>('all');
   const [suggestionStatusFilter, setSuggestionStatusFilter] = useState<string>('all');
   const [feedbackToDelete, setFeedbackToDelete] = useState<string | null>(null);
@@ -266,21 +270,29 @@ export function Admin() {
   const filteredSuggestions = React.useMemo(() => {
     if (!adminData) return [];
     return adminData.feedbacks.filter(fb => {
+      if (feedbackSubTab === 'new' && fb.status !== 'new') return false;
       if (feedbackSubTab === 'reviewed' && fb.status !== 'reviewed') return false;
       if (feedbackSubTab === 'resolved' && fb.status !== 'resolved') return false;
-      if (feedbackSubTab === 'all' && suggestionStatusFilter !== 'all' && fb.status !== suggestionStatusFilter) return false;
       if (suggestionTypeFilter !== 'all' && fb.type !== suggestionTypeFilter) return false;
       if (feedbackSearch.trim()) {
         const q = feedbackSearch.toLowerCase();
-        const matches = fb.title.toLowerCase().includes(q) ||
+        const student = studentsList.find(s => s.id === fb.userId);
+        const studentName = student?.name || fb.userName || '';
+        const studentEmail = student?.email || fb.userEmail || '';
+        const studentUni = student?.university || '';
+        const studentCollege = student?.college || '';
+        const matches = 
+          fb.title.toLowerCase().includes(q) ||
           fb.content.toLowerCase().includes(q) ||
-          fb.userEmail.toLowerCase().includes(q) ||
-          (fb.userName || '').toLowerCase().includes(q);
+          studentEmail.toLowerCase().includes(q) ||
+          studentName.toLowerCase().includes(q) ||
+          studentUni.toLowerCase().includes(q) ||
+          studentCollege.toLowerCase().includes(q);
         if (!matches) return false;
       }
       return true;
     });
-  }, [adminData, feedbackSubTab, suggestionTypeFilter, suggestionStatusFilter, feedbackSearch]);
+  }, [adminData, feedbackSubTab, suggestionTypeFilter, feedbackSearch, studentsList]);
 
   // Export Backup
   const handleExportBackup = async () => {
@@ -858,18 +870,19 @@ export function Admin() {
             <div className="space-y-6">
               {/* Sub-Tabs: الرئيسية / قيد المراجعة / تم الرد عليها */}
               <div className="flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-zinc-900 p-4 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                <div className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800/80 p-1.5 rounded-2xl border border-zinc-200 dark:border-zinc-700/60">
+                <div className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800/80 p-1.5 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 flex-wrap">
                   <button
-                    onClick={() => setFeedbackSubTab('all')}
+                    onClick={() => setFeedbackSubTab('new')}
                     className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
-                      feedbackSubTab === 'all'
+                      feedbackSubTab === 'new'
                         ? 'bg-white dark:bg-zinc-900 text-purple-600 dark:text-purple-400 shadow-sm'
                         : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                     }`}
                   >
-                    <span>{isAr ? 'القسم الرئيسي (كافة الشكاوى)' : 'All Submissions'}</span>
-                    <span className="px-2 py-0.5 rounded-full text-[11px] bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-black">
-                      {adminData?.feedbacks.length || 0}
+                    <Inbox size={15} />
+                    <span>{isAr ? 'الرئيسية (الرسائل الواردة)' : 'Inbox (New)'}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-black">
+                      {pendingFeedbacks}
                     </span>
                   </button>
 
@@ -881,6 +894,7 @@ export function Admin() {
                         : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                     }`}
                   >
+                    <Clock size={15} />
                     <span>{isAr ? 'قيد المراجعة' : 'Under Review'}</span>
                     {reviewedFeedbacks > 0 && (
                       <span className="px-2 py-0.5 rounded-full text-[11px] bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-black">
@@ -897,7 +911,8 @@ export function Admin() {
                         : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                     }`}
                   >
-                    <span>{isAr ? 'تم الرد عليها / تم الحل' : 'Resolved'}</span>
+                    <CheckCircle2 size={15} />
+                    <span>{isAr ? 'تم الرد عليها' : 'Resolved & Replied'}</span>
                     {resolvedFeedbacks > 0 && (
                       <span className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-black">
                         {resolvedFeedbacks}
@@ -914,8 +929,8 @@ export function Admin() {
                       type="text"
                       value={feedbackSearch}
                       onChange={(e) => setFeedbackSearch(e.target.value)}
-                      placeholder={isAr ? 'بحث في الشكاوى أو الطلاب...' : 'Search feedback or student...'}
-                      className="pl-9 rtl:pr-9 rtl:pl-3 pr-3 py-1.5 text-xs bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-purple-500 w-48 sm:w-60 text-zinc-900 dark:text-zinc-100"
+                      placeholder={isAr ? 'بحث في الشكاوى أو الطلاب أو الجامعات...' : 'Search feedback, students...'}
+                      className="pl-9 rtl:pr-9 rtl:pl-3 pr-3 py-1.5 text-xs bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-purple-500 w-48 sm:w-64 text-zinc-900 dark:text-zinc-100"
                     />
                   </div>
 
@@ -924,25 +939,12 @@ export function Admin() {
                     onChange={(e) => setSuggestionTypeFilter(e.target.value)}
                     className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none text-zinc-800 dark:text-zinc-200"
                   >
-                    <option value="all">{isAr ? 'كل الأنواع' : 'All Categories'}</option>
+                    <option value="all">{isAr ? 'كل التصنيفات' : 'All Categories'}</option>
                     <option value="suggestion">{isAr ? 'اقتراح وتطوير' : 'Suggestions'}</option>
                     <option value="complaint">{isAr ? 'شكاوى ومشاكل' : 'Complaints'}</option>
                     <option value="bug">{isAr ? 'أخطاء تقنية' : 'Bug Reports'}</option>
-                    <option value="other">{isAr ? 'أخرى' : 'Other'}</option>
+                    <option value="other">{isAr ? 'أخرى / استفسار' : 'Other'}</option>
                   </select>
-
-                  {feedbackSubTab === 'all' && (
-                    <select
-                      value={suggestionStatusFilter}
-                      onChange={(e) => setSuggestionStatusFilter(e.target.value)}
-                      className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none text-zinc-800 dark:text-zinc-200"
-                    >
-                      <option value="all">{isAr ? 'كل الحالات' : 'All Statuses'}</option>
-                      <option value="new">{isAr ? 'جديد ومستلم' : 'New'}</option>
-                      <option value="reviewed">{isAr ? 'قيد المراجعة' : 'Under Review'}</option>
-                      <option value="resolved">{isAr ? 'تم الحل' : 'Resolved'}</option>
-                    </select>
-                  )}
                 </div>
               </div>
 
@@ -950,32 +952,40 @@ export function Admin() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 {filteredSuggestions.map((fb) => {
                   const student = studentsList.find(s => s.id === fb.userId);
-                  const studentName = student?.name || fb.userName || (isAr ? 'طالب مسجل' : 'Student');
+                  const studentName = student?.name || fb.userName || (isAr ? 'طالب مسجل' : 'Registered Student');
                   const studentEmail = student?.email || fb.userEmail;
                   const studentUni = student?.university || (isAr ? 'جامعة غير محددة' : 'Not specified');
                   const studentCollege = student?.college || '';
                   const studentCgpa = student?.cgpa !== undefined ? student.cgpa : 0;
                   const subjectsCount = student?.subjectsCount || 0;
-                  const creditsCount = student?.registeredCreditHours || 0;
+                  const registeredHours = student?.registeredCreditHours || 0;
+                  const passedHours = student?.passedCreditHours || 0;
+                  const studentEvaluation = getAcademicEvaluation(studentCgpa, isAr);
 
                   return (
                     <div
                       key={fb.id}
-                      onClick={() => setSelectedFeedback(fb)}
+                      onClick={() => {
+                        setSelectedFeedback(fb);
+                        setAdminNoteInput(fb.adminNotes || '');
+                        setNoteSavedSuccess(false);
+                      }}
                       className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md hover:border-purple-300 dark:hover:border-purple-700/60 transition-all cursor-pointer flex flex-col justify-between space-y-4 group relative"
                     >
                       <div className="space-y-3.5">
                         {/* Header Badges */}
                         <div className="flex items-start justify-between gap-2 border-b border-zinc-100 dark:border-zinc-800 pb-3">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className={`px-2.5 py-1 rounded-xl text-[11px] font-black uppercase tracking-wider ${
                               fb.type === 'complaint' 
                                 ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/40' 
                                 : fb.type === 'bug'
                                 ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40'
-                                : 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/40'
+                                : fb.type === 'suggestion'
+                                ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/40'
+                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700'
                             }`}>
-                              {fb.type === 'complaint' ? (isAr ? 'شكوى' : 'Complaint') : fb.type === 'bug' ? (isAr ? 'عطل تقني' : 'Bug') : (isAr ? 'اقتراح' : 'Suggestion')}
+                              {fb.type === 'complaint' ? (isAr ? 'شكوى' : 'Complaint') : fb.type === 'bug' ? (isAr ? 'عطل تقني' : 'Bug') : fb.type === 'suggestion' ? (isAr ? 'اقتراح' : 'Suggestion') : (isAr ? 'أخرى' : 'Other')}
                             </span>
 
                             <span className={`px-2.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1 ${
@@ -983,46 +993,60 @@ export function Admin() {
                                 ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
                                 : fb.status === 'reviewed' 
                                 ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300' 
-                                : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                                : 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
                             }`}>
                               {fb.status === 'resolved' && <CheckCircle2 size={12} />}
                               {fb.status === 'reviewed' && <Clock size={12} />}
-                              <span>{fb.status === 'resolved' ? (isAr ? 'تم الحل والرد' : 'Resolved') : fb.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد' : 'New')}</span>
+                              {fb.status === 'new' && <Inbox size={12} />}
+                              <span>{fb.status === 'resolved' ? (isAr ? 'تم الرد والحل' : 'Resolved') : fb.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد (الوارد)' : 'New')}</span>
                             </span>
                           </div>
 
                           <span className="text-[11px] text-zinc-400 font-medium">
-                            {new Date(fb.createdAt).toLocaleDateString(isAr ? 'ar-EG' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' } as any)}
+                            {formatDateTime(fb.createdAt, isAr)}
                           </span>
                         </div>
 
                         {/* Student Profile Card Header */}
-                        <div className="p-3.5 bg-gradient-to-r from-zinc-50 to-purple-50/40 dark:from-zinc-800/40 dark:to-purple-950/20 rounded-2xl border border-zinc-200/70 dark:border-zinc-700/60 flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-sm">
-                              {studentName.charAt(0)}
+                        <div className="p-4 bg-gradient-to-r from-zinc-50 to-purple-50/40 dark:from-zinc-800/40 dark:to-purple-950/20 rounded-2xl border border-zinc-200/70 dark:border-zinc-700/60 space-y-2.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-sm">
+                                {studentName.charAt(0)}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-bold text-sm text-zinc-900 dark:text-white truncate">{studentName}</p>
+                                <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{studentEmail}</p>
+                                <p className="text-[11px] text-zinc-400 truncate">{studentUni} {studentCollege && `• ${studentCollege}`}</p>
+                              </div>
                             </div>
-                            <div className="min-w-0">
-                              <p className="font-bold text-sm text-zinc-900 dark:text-white truncate">{studentName}</p>
-                              <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{studentEmail}</p>
-                              <p className="text-[11px] text-zinc-400 truncate">{studentUni} {studentCollege && `• ${studentCollege}`}</p>
+
+                            <div className="text-right rtl:text-left shrink-0">
+                              <span className={`inline-block px-2.5 py-1 rounded-xl text-xs font-black border ${
+                                studentCgpa >= 3.5 
+                                  ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800' 
+                                  : studentCgpa >= 2.0 
+                                  ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800' 
+                                  : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                              }`}>
+                                {studentCgpa.toFixed(2)} CGPA
+                              </span>
+                              <p className="text-[10px] font-bold text-purple-600 dark:text-purple-400 mt-0.5">
+                                {studentEvaluation}
+                              </p>
                             </div>
                           </div>
 
-                          {/* Student Academic Mini Badges */}
-                          <div className="flex flex-col items-end gap-1 shrink-0">
-                            <span className={`px-2.5 py-1 rounded-xl text-xs font-black border ${
-                              studentCgpa >= 3.5 
-                                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800' 
-                                : studentCgpa >= 2.0 
-                                ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800' 
-                                : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
-                            }`}>
-                              {studentCgpa.toFixed(2)} CGPA
-                            </span>
-                            <span className="text-[10px] font-bold text-zinc-500">
-                              {subjectsCount} {isAr ? 'مواد' : 'subjects'} • {creditsCount} {isAr ? 'ساعات' : 'hrs'}
-                            </span>
+                          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-200/60 dark:border-zinc-700/50 text-[11px] text-zinc-600 dark:text-zinc-300">
+                            <div>
+                              <span className="text-zinc-400">{isAr ? 'عدد الساعات: ' : 'Credit Hours: '}</span>
+                              <span className="font-bold">{registeredHours} {isAr ? 'ساعة' : 'hrs'}</span>
+                              {passedHours > 0 && <span className="text-[10px] text-zinc-400"> ({passedHours} {isAr ? 'مجتازة' : 'passed'})</span>}
+                            </div>
+                            <div>
+                              <span className="text-zinc-400">{isAr ? 'عدد المواد: ' : 'Subjects: '}</span>
+                              <span className="font-bold">{subjectsCount} {isAr ? 'مواد مسجلة' : 'courses'}</span>
+                            </div>
                           </div>
                         </div>
 
@@ -1036,29 +1060,52 @@ export function Admin() {
                           </p>
                         </div>
 
-                        {/* Attachments Indicator */}
-                        {fb.attachments && fb.attachments.length > 0 && (
-                          <div className="flex items-center gap-1.5 text-xs text-purple-600 dark:text-purple-400 font-bold">
-                            <Paperclip size={13} />
-                            <span>{fb.attachments.length} {isAr ? 'مرفقات مرفوعة' : 'attachments'}</span>
-                          </div>
-                        )}
+                        {/* Attachments & Admin Note Indicators */}
+                        <div className="flex items-center gap-3 flex-wrap text-xs">
+                          {fb.attachments && fb.attachments.length > 0 && (
+                            <div className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400 font-bold">
+                              <Paperclip size={13} />
+                              <span>{fb.attachments.length} {isAr ? 'مرفقات مرفوعة' : 'attachments'}</span>
+                            </div>
+                          )}
+                          {fb.adminNotes && (
+                            <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold text-[11px]">
+                              <CheckCircle2 size={13} />
+                              <span>{isAr ? 'تم تدوين رد/ملاحظة أدمن' : 'Admin replied'}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Action Bar */}
                       <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => setSelectedFeedback(fb)}
-                            className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/50 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-xs font-bold rounded-xl border border-purple-200 dark:border-purple-800/60 transition-all flex items-center gap-1.5 shadow-2xs"
-                          >
-                            <Eye size={13} />
-                            <span>{isAr ? 'عرض التفاصيل والمواد' : 'View Details & Courses'}</span>
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => {
+                            setSelectedFeedback(fb);
+                            setAdminNoteInput(fb.adminNotes || '');
+                            setNoteSavedSuccess(false);
+                          }}
+                          className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/50 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-xs font-bold rounded-xl border border-purple-200 dark:border-purple-800/60 transition-all flex items-center gap-1.5 shadow-2xs"
+                        >
+                          <Eye size={13} />
+                          <span>{isAr ? 'عرض التفاصيل والمواد' : 'View Details & Courses'}</span>
+                        </button>
 
-                        {/* Status Switchers */}
-                        <div className="flex items-center gap-1.5">
+                        {/* Status Switcher Buttons */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {fb.status !== 'new' && (
+                            <button
+                              onClick={async () => {
+                                await db.updateFeedback(fb.id, { status: 'new' });
+                                await fetchData();
+                              }}
+                              className="px-2.5 py-1.5 bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 text-purple-700 dark:text-purple-300 text-[11px] font-bold rounded-xl border border-purple-200 dark:border-purple-800/40 transition-all"
+                              title={isAr ? 'إرجاع للرئيسية (الوارد)' : 'Move to Inbox'}
+                            >
+                              {isAr ? 'إرجاع للرئيسية' : 'To Inbox'}
+                            </button>
+                          )}
+
                           {fb.status !== 'reviewed' && (
                             <button
                               onClick={async () => {
@@ -1066,8 +1113,9 @@ export function Admin() {
                                 await fetchData();
                               }}
                               className="px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 text-blue-700 dark:text-blue-300 text-[11px] font-bold rounded-xl border border-blue-200 dark:border-blue-800/40 transition-all"
+                              title={isAr ? 'نقل لقيد المراجعة' : 'Move to Under Review'}
                             >
-                              {isAr ? 'نقل لقيد المراجعة' : 'To Review'}
+                              {isAr ? 'قيد المراجعة' : 'To Review'}
                             </button>
                           )}
 
@@ -1078,8 +1126,9 @@ export function Admin() {
                                 await fetchData();
                               }}
                               className="px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold rounded-xl border border-emerald-200 dark:border-emerald-800/40 transition-all"
+                              title={isAr ? 'تم الرد والحل' : 'Mark as Resolved'}
                             >
-                              {isAr ? 'تم الحل والرد' : 'Resolve'}
+                              {isAr ? 'تم الرد' : 'Resolve'}
                             </button>
                           )}
 
@@ -1389,45 +1438,84 @@ export function Admin() {
       {/* --- DETAILED FEEDBACK & STUDENT COURSES MODAL --- */}
       {selectedFeedback && (() => {
         const student = studentsList.find(s => s.id === selectedFeedback.userId);
-        const studentName = student?.name || selectedFeedback.userName || (isAr ? 'طالب مسجل' : 'Student');
+        const studentName = student?.name || selectedFeedback.userName || (isAr ? 'طالب مسجل' : 'Registered Student');
         const studentEmail = student?.email || selectedFeedback.userEmail;
         const studentUni = student?.university || (isAr ? 'غير محددة' : 'Not specified');
         const studentCollege = student?.college || '';
         const studentCgpa = student?.cgpa !== undefined ? student.cgpa : 0;
         const studentSubjects: any[] = student?.raw?.subjects || [];
         const gradingScale = student?.raw?.settings?.grading_scale || settings.gradingScale || [];
+        const studentEvaluation = getAcademicEvaluation(studentCgpa, isAr);
+        const registeredHours = student?.registeredCreditHours || 0;
+        const passedHours = student?.passedCreditHours || 0;
+
+        const handleSaveAdminNote = async () => {
+          try {
+            setSavingNote(true);
+            await db.updateFeedback(selectedFeedback.id, { adminNotes: adminNoteInput });
+            setSelectedFeedback((prev: any) => prev ? { ...prev, adminNotes: adminNoteInput } : null);
+            await fetchData();
+            setNoteSavedSuccess(true);
+            setTimeout(() => setNoteSavedSuccess(false), 2500);
+          } catch (e) {
+            console.error('Failed to save note:', e);
+          } finally {
+            setSavingNote(false);
+          }
+        };
+
+        const handleUpdateType = async (newType: FeedbackSuggestion['type']) => {
+          await db.updateFeedback(selectedFeedback.id, { type: newType });
+          setSelectedFeedback((prev: any) => prev ? { ...prev, type: newType } : null);
+          await fetchData();
+        };
 
         return (
           <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-3xl w-full max-h-[92vh] overflow-y-auto border border-zinc-200 dark:border-zinc-800 shadow-2xl p-5 sm:p-7 space-y-6">
+            <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-4xl w-full max-h-[92vh] overflow-y-auto border border-zinc-200 dark:border-zinc-800 shadow-2xl p-5 sm:p-7 space-y-6">
               {/* Modal Header */}
               <div className="flex items-start justify-between gap-3 pb-4 border-b border-zinc-100 dark:border-zinc-800">
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase ${
-                      selectedFeedback.type === 'complaint'
-                        ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
-                        : selectedFeedback.type === 'bug'
-                        ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
-                        : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
-                    }`}>
-                      {selectedFeedback.type === 'complaint' ? (isAr ? 'شكوى رسمية' : 'Complaint') : selectedFeedback.type === 'bug' ? (isAr ? 'عطل تقني' : 'Bug') : (isAr ? 'اقتراح تطويري' : 'Suggestion')}
-                    </span>
+                    {/* Category Selector */}
+                    <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl">
+                      <span className="text-[10px] font-bold text-zinc-400 px-1.5">{isAr ? 'التصنيف:' : 'Type:'}</span>
+                      {(['complaint', 'suggestion', 'bug', 'other'] as const).map((tType) => (
+                        <button
+                          key={tType}
+                          onClick={() => handleUpdateType(tType)}
+                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all ${
+                            selectedFeedback.type === tType
+                              ? (tType === 'complaint' 
+                                  ? 'bg-rose-600 text-white shadow-xs' 
+                                  : tType === 'bug' 
+                                  ? 'bg-amber-600 text-white shadow-xs' 
+                                  : tType === 'suggestion' 
+                                  ? 'bg-indigo-600 text-white shadow-xs' 
+                                  : 'bg-zinc-700 text-white shadow-xs')
+                              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                          }`}
+                        >
+                          {tType === 'complaint' ? (isAr ? 'شكوى' : 'Complaint') : tType === 'bug' ? (isAr ? 'عطل تقني' : 'Bug') : tType === 'suggestion' ? (isAr ? 'اقتراح' : 'Suggestion') : (isAr ? 'أخرى' : 'Other')}
+                        </button>
+                      ))}
+                    </div>
 
                     <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase flex items-center gap-1 ${
                       selectedFeedback.status === 'resolved'
                         ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
                         : selectedFeedback.status === 'reviewed'
                         ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
-                        : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                        : 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
                     }`}>
                       {selectedFeedback.status === 'resolved' && <CheckCircle2 size={12} />}
                       {selectedFeedback.status === 'reviewed' && <Clock size={12} />}
-                      <span>{selectedFeedback.status === 'resolved' ? (isAr ? 'تم الحل والرد' : 'Resolved') : selectedFeedback.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد' : 'New')}</span>
+                      {selectedFeedback.status === 'new' && <Inbox size={12} />}
+                      <span>{selectedFeedback.status === 'resolved' ? (isAr ? 'تم الحل والرد' : 'Resolved') : selectedFeedback.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد (الوارد)' : 'New')}</span>
                     </span>
 
                     <span className="text-xs text-zinc-400">
-                      {new Date(selectedFeedback.createdAt).toLocaleString(isAr ? 'ar-EG' : 'en-US')}
+                      {formatDateTime(selectedFeedback.createdAt, isAr)}
                     </span>
                   </div>
 
@@ -1447,21 +1535,31 @@ export function Admin() {
               {/* Student Overview Profile */}
               <div className="p-4 bg-gradient-to-br from-purple-500/10 via-zinc-50 dark:via-zinc-800/50 to-purple-500/5 rounded-3xl border border-purple-200/60 dark:border-purple-900/40 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className="w-12 h-12 rounded-2xl bg-purple-600 text-white font-black text-lg flex items-center justify-center shadow-md">
                       {studentName.charAt(0)}
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <h4 className="font-bold text-base text-zinc-900 dark:text-white">{studentName}</h4>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400">{studentEmail}</p>
                       <p className="text-xs text-zinc-400">{studentUni} {studentCollege && `• ${studentCollege}`}</p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <div className="px-3.5 py-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
-                      <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'المعدل التراكمي CGPA' : 'CGPA'}</span>
+                      <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'المعدل التراكمي' : 'CGPA'}</span>
                       <span className="text-base font-black text-purple-600 dark:text-purple-400">{studentCgpa.toFixed(2)}</span>
+                    </div>
+
+                    <div className="px-3.5 py-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
+                      <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'التقدير العام' : 'Evaluation'}</span>
+                      <span className="text-xs font-black text-zinc-800 dark:text-zinc-200">{studentEvaluation}</span>
+                    </div>
+
+                    <div className="px-3.5 py-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
+                      <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'الساعات المسجلة' : 'Credit Hours'}</span>
+                      <span className="text-xs font-black text-zinc-800 dark:text-zinc-200">{registeredHours} ({passedHours} {isAr ? 'مجتازة' : 'passed'})</span>
                     </div>
 
                     <div className="px-3.5 py-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
@@ -1476,7 +1574,7 @@ export function Admin() {
               <div className="space-y-3">
                 <h4 className="font-bold text-sm text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
                   <MessageSquare size={16} className="text-purple-500" />
-                  <span>{isAr ? 'نص الشكوى أو المقترح بالكامل:' : 'Full Message Details:'}</span>
+                  <span>{isAr ? 'شرح وتفاصيل الرسالة بالكامل:' : 'Full Message Details & Description:'}</span>
                 </h4>
                 <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 text-xs sm:text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed">
                   {selectedFeedback.content}
@@ -1539,14 +1637,14 @@ export function Admin() {
                 <h4 className="font-bold text-sm text-zinc-800 dark:text-zinc-200 flex items-center justify-between">
                   <span className="flex items-center gap-2">
                     <BookOpen size={16} className="text-purple-500" />
-                    <span>{isAr ? 'المواد الحالية وتفاصيل تقسيم الدرجات للطالب:' : 'Current Student Courses & Grading Breakdown:'}</span>
+                    <span>{isAr ? 'مواد الطالب وتفاصيل تقسيم الدرجات في كل مادة:' : 'Student Courses & Grading Breakdown:'}</span>
                   </span>
                   <span className="text-xs text-zinc-400 font-medium">
                     {studentSubjects.length} {isAr ? 'مادة مسجلة' : 'subjects'}
                   </span>
                 </h4>
 
-                <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
                   {studentSubjects.map((sub: any) => {
                     const gr = calculateSubjectGrade(sub, gradingScale);
                     return (
@@ -1558,7 +1656,7 @@ export function Admin() {
                           <div>
                             <p className="font-bold text-sm text-zinc-900 dark:text-white">{sub.name}</p>
                             <p className="text-[11px] text-zinc-400">
-                              {sub.code} • {sub.credit_hours || sub.creditHours} {isAr ? 'ساعات' : 'credits'} • {sub.total_marks || sub.totalMarks} {isAr ? 'درجة إجمالية' : 'total marks'}
+                              {sub.code} • {sub.credit_hours || sub.creditHours} {isAr ? 'ساعات معتمدة' : 'credits'} • {sub.total_marks || sub.totalMarks} {isAr ? 'درجة إجمالية' : 'total marks'}
                             </p>
                           </div>
 
@@ -1587,7 +1685,7 @@ export function Admin() {
                                 <span className={`text-[9px] px-1.5 py-0.2 rounded-md font-bold ${
                                   d.status === 'final' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
                                 }`}>
-                                  {d.status === 'final' ? (isAr ? 'نهائي' : 'Final') : (isAr ? 'حالي' : 'Current')}
+                                  {d.status === 'final' ? (isAr ? 'نهائي' : 'Final') : (isAr ? 'أعمال سنة/حالي' : 'Current')}
                                 </span>
                               </div>
                             ))}
@@ -1605,10 +1703,10 @@ export function Admin() {
                 </div>
               </div>
 
-              {/* Status Classification & Admin Notes */}
+              {/* Admin Note / Response Box & Status Updates */}
               <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300">{isAr ? 'تصنيف حالة الطلب:' : 'Update Status:'}</span>
+                  <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300">{isAr ? 'تغيير حالة الطلب والتنقل بين الأقسام:' : 'Update Ticket Status:'}</span>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={async () => {
@@ -1618,8 +1716,8 @@ export function Admin() {
                       }}
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                         selectedFeedback.status === 'new'
-                          ? 'bg-amber-500 text-white shadow-xs'
-                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-amber-100'
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-purple-100'
                       }`}
                     >
                       {isAr ? 'جديد (الرئيسية)' : 'Set New'}
@@ -1653,6 +1751,34 @@ export function Admin() {
                       }`}
                     >
                       {isAr ? 'تم الرد والحل' : 'Mark Resolved'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Admin Note Input */}
+                <div className="space-y-2 pt-2 border-t border-zinc-200/60 dark:border-zinc-700/40">
+                  <label className="text-xs font-bold text-zinc-600 dark:text-zinc-300 flex items-center justify-between">
+                    <span>{isAr ? 'ملاحظة الإدارة أو نص الرد الداخلي:' : 'Admin Notes & Internal Reply:'}</span>
+                    {noteSavedSuccess && (
+                      <span className="text-emerald-600 text-[11px] font-bold flex items-center gap-1">
+                        <CheckCircle2 size={13} /> {isAr ? 'تم الحفظ بنجاح!' : 'Saved successfully!'}
+                      </span>
+                    )}
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={adminNoteInput}
+                      onChange={(e) => setAdminNoteInput(e.target.value)}
+                      placeholder={isAr ? 'اكتب ملاحظة أو رداً هنا...' : 'Type admin notes or reply...'}
+                      className="flex-1 px-3 py-2 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-purple-500 text-zinc-800 dark:text-zinc-200"
+                    />
+                    <button
+                      onClick={handleSaveAdminNote}
+                      disabled={savingNote}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50"
+                    >
+                      {savingNote ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ الملاحظة' : 'Save Note')}
                     </button>
                   </div>
                 </div>
