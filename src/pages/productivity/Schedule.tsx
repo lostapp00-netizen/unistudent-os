@@ -10,16 +10,21 @@ import { EntityLinker } from '../../components/ui/EntityLinker';
 import { LocalAttachmentUploader } from '../../components/ui/LocalAttachmentUploader';
 import { AttachmentBadge } from '../../components/ui/AttachmentBadge';
 import { ConfirmModal } from '../../components/ui/CustomModal';
+import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../../components/ui/UnifiedSemesterFilter';
 
 export function Schedule() {
   const { t, i18n } = useTranslation();
   const { scheduleItems, addScheduleItem, updateScheduleItem, deleteScheduleItem, subjects, settings, files, notes, tasks } = useAppStore();
-  const [filterSemester, setFilterSemester] = useState<'current' | 'all'>('current');
+  
+  const currentSemester = settings.semesters.find(s => s.isCurrent);
+  const [filterYears, setFilterYears] = useState<number[]>(currentSemester ? [currentSemester.yearIndex] : []);
+  const [filterSemesters, setFilterSemesters] = useState<number[]>(currentSemester ? [currentSemester.semesterIndex] : []);
   
   const [itemToDelete, setItemToDelete] = useState<ScheduleItem | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
-  const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
+  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('day');
+  const [selectedDayOfWeek, setSelectedDayOfWeek] = useState<number>(new Date().getDay());
   const [currentDate, setCurrentDate] = useState(new Date());
 
   const [newItem, setNewItem] = useState<Partial<ScheduleItem>>({
@@ -49,14 +54,15 @@ export function Schedule() {
   
   const endDate = new Date(monthEnd);
 
-  const currentSemester = settings.semesters.find(s => s.isCurrent);
   const filteredScheduleItems = scheduleItems.filter(item => {
-    if (filterSemester === 'all') return true;
-    if (!currentSemester) return true;
+    if (filterYears.length === 0 && filterSemesters.length === 0) return true;
     const subject = subjects.find(s => s.id === item.subjectId);
     if (!subject) return true;
-    return subject.yearIndex === currentSemester.yearIndex && subject.semesterIndex === currentSemester.semesterIndex;
+    const yearMatch = filterYears.length === 0 || filterYears.includes(subject.yearIndex);
+    const semMatch = filterSemesters.length === 0 || filterSemesters.includes(subject.semesterIndex);
+    return yearMatch && semMatch;
   });
+
   if (endDate.getDay() !== 6) {
     endDate.setDate(endDate.getDate() + (6 - endDate.getDay()));
   }
@@ -117,35 +123,259 @@ export function Schedule() {
 
   return (
     <div className="flex flex-col min-h-full gap-6 pb-8">
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold">{settings.language === 'ar' ? 'جدولي' : 'My Schedule'}</h1>
-          <p className="text-zinc-500 mt-1">{settings.language === 'ar' ? 'جدول محاضراتك الأسبوعي' : 'Your weekly timetable'}</p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white">{settings.language === 'ar' ? 'جدولي' : 'My Schedule'}</h1>
+          <div className="mt-1.5 flex items-center gap-2">
+            <UnifiedFilterBadge filterYears={filterYears} filterSemesters={filterSemesters} />
+            <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-xl">
+              {filteredScheduleItems.length} {settings.language === 'ar' ? 'محاضرة/حصة' : 'classes'}
+            </span>
+          </div>
         </div>
         
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl">
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+          <UnifiedSemesterFilter
+            filterYears={filterYears}
+            filterSemesters={filterSemesters}
+            setFilterYears={setFilterYears}
+            setFilterSemesters={setFilterSemesters}
+          />
+          <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-2xl border border-zinc-200/60 dark:border-zinc-700/60">
+            <button 
+              onClick={() => setViewMode('day')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${viewMode === 'day' ? 'bg-white dark:bg-zinc-700 shadow-xs text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+            >
+              <Clock size={15} /> {settings.language === 'ar' ? 'اليوم' : 'Day'}
+            </button>
             <button 
               onClick={() => setViewMode('week')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${viewMode === 'week' ? 'bg-white dark:bg-zinc-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${viewMode === 'week' ? 'bg-white dark:bg-zinc-700 shadow-xs text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
             >
-              <LayoutGrid size={16} /> {settings.language === 'ar' ? 'أسبوع' : 'Week'}
+              <LayoutGrid size={15} /> {settings.language === 'ar' ? 'أسبوع' : 'Week'}
             </button>
             <button 
               onClick={() => setViewMode('month')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${viewMode === 'month' ? 'bg-white dark:bg-zinc-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${viewMode === 'month' ? 'bg-white dark:bg-zinc-700 shadow-xs text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
             >
-              <CalendarIcon size={16} /> {settings.language === 'ar' ? 'شهر' : 'Month'}
+              <CalendarIcon size={15} /> {settings.language === 'ar' ? 'شهر' : 'Month'}
             </button>
           </div>
           <button 
-            onClick={() => openAdd(0)}
-            className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+            onClick={() => openAdd(viewMode === 'day' ? selectedDayOfWeek : 0)}
+            className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all shadow-xs cursor-pointer"
           >
             <Plus className="w-4 h-4" /> {t('add_schedule_item')}
           </button>
         </div>
       </header>
+
+      {viewMode === 'day' && (
+        <div className="flex-1 flex flex-col gap-5">
+          {/* Day Navigation & Selector Bar */}
+          <div className="bg-white dark:bg-zinc-900 p-3 sm:p-4 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            {/* Days Horizontal Tabs */}
+            <div className="grid grid-cols-7 gap-1 sm:gap-2 flex-1">
+              {days.map((d, idx) => {
+                const isSelected = selectedDayOfWeek === idx;
+                const isRealToday = new Date().getDay() === idx;
+                const countForDay = filteredScheduleItems.filter(s => s.dayOfWeek === idx).length;
+
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setSelectedDayOfWeek(idx)}
+                    className={`py-2 px-1 rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-zinc-50 dark:bg-zinc-800/60 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200/50 dark:border-zinc-700/50'
+                    }`}
+                  >
+                    <span className="text-xs sm:text-sm font-bold truncate max-w-full">{d.slice(0, settings.language === 'ar' ? 7 : 3)}</span>
+                    <span className={`text-[10px] font-medium mt-0.5 ${isSelected ? 'text-indigo-100' : 'text-zinc-400'}`}>
+                      {countForDay} {settings.language === 'ar' ? 'حصص' : 'cls'}
+                    </span>
+                    {isRealToday && (
+                      <span className={`text-[9px] font-black mt-0.5 px-1 rounded ${isSelected ? 'bg-white/20 text-white' : 'bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400'}`}>
+                        {settings.language === 'ar' ? 'اليوم' : 'Today'}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between sm:justify-end gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-100 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setSelectedDayOfWeek((prev) => (prev === 0 ? 6 : prev - 1))}
+                className="p-2 text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl transition-all shadow-2xs cursor-pointer"
+                title={settings.language === 'ar' ? 'اليوم السابق' : 'Previous Day'}
+              >
+                <ChevronRight size={16} className={settings.language === 'ar' ? '' : 'rotate-180'} />
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setSelectedDayOfWeek(new Date().getDay())}
+                className="px-3 py-1.5 text-xs font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 rounded-xl transition-all cursor-pointer"
+              >
+                {settings.language === 'ar' ? 'اليوم الحالي' : 'Today'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedDayOfWeek((prev) => (prev === 6 ? 0 : prev + 1))}
+                className="p-2 text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl transition-all shadow-2xs cursor-pointer"
+                title={settings.language === 'ar' ? 'اليوم التالي' : 'Next Day'}
+              >
+                <ChevronLeft size={16} className={settings.language === 'ar' ? '' : 'rotate-180'} />
+              </button>
+            </div>
+          </div>
+
+          {/* Classes for Selected Day */}
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 flex-1 flex flex-col space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-2xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-sm">
+                  {selectedDayOfWeek + 1}
+                </span>
+                <div>
+                  <h2 className="font-extrabold text-lg sm:text-xl text-zinc-900 dark:text-white">
+                    {days[selectedDayOfWeek]}
+                  </h2>
+                  <p className="text-xs text-zinc-400 font-medium">
+                    {filteredScheduleItems.filter(s => s.dayOfWeek === selectedDayOfWeek).length} {settings.language === 'ar' ? 'محاضرات وحصص مقررة' : 'scheduled classes'}
+                  </p>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => openAdd(selectedDayOfWeek)} 
+                className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <Plus size={14} />
+                <span>{t('add_schedule_item')}</span>
+              </button>
+            </div>
+
+            {/* List of items */}
+            <div className="space-y-3">
+              {filteredScheduleItems
+                .filter(s => s.dayOfWeek === selectedDayOfWeek)
+                .sort((a, b) => a.startTime.localeCompare(b.startTime))
+                .map(item => {
+                  const subject = subjects.find(s => s.id === item.subjectId);
+                  const pColor = item.priority ? priorityBorders[item.priority] : priorityBorders.medium;
+                  return (
+                    <div 
+                      key={item.id} 
+                      className={`bg-zinc-50 dark:bg-zinc-800/40 p-4 sm:p-5 rounded-2xl border-l-4 rtl:border-l-0 rtl:border-r-4 ${pColor} border-y border-zinc-200 dark:border-zinc-700/50 border-r rtl:border-r-0 rtl:border-l border-zinc-200 dark:border-zinc-700/50 relative group transition-all hover:border-indigo-200 dark:hover:border-indigo-800/60`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-1.5 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="flex items-center gap-1 text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-lg">
+                              <Clock size={12} /> {item.startTime} - {item.endTime}
+                            </span>
+                            <span className="px-2.5 py-1 bg-zinc-200/60 dark:bg-zinc-700/60 text-zinc-700 dark:text-zinc-300 rounded-lg text-xs font-bold uppercase">
+                              {t(item.type)}
+                            </span>
+                            {item.location && (
+                              <span className="text-xs text-zinc-500 font-medium">📍 {item.location}</span>
+                            )}
+                          </div>
+
+                          <h3 className="font-bold text-base sm:text-lg text-zinc-900 dark:text-white">
+                            {subject?.name || (settings.language === 'ar' ? 'مادة غير محددة' : 'Course')}
+                          </h3>
+
+                          {item.doctorName && (
+                            <p className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+                              <User size={13} /> {item.doctorName}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-center">
+                          <button 
+                            onClick={() => openEdit(item)} 
+                            className="p-2 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 rounded-xl shadow-2xs transition-colors cursor-pointer"
+                            title={settings.language === 'ar' ? 'تعديل' : 'Edit'}
+                          >
+                            <Edit2 size={14}/>
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => setItemToDelete(item)} 
+                            className="p-2 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 rounded-xl shadow-2xs transition-colors cursor-pointer"
+                            title={settings.language === 'ar' ? 'حذف' : 'Delete'}
+                          >
+                            <Trash2 size={14}/>
+                          </button>
+                        </div>
+                      </div>
+
+                      {(item.linkedFileIds?.length || item.linkedNoteIds?.length || item.linkedTaskIds?.length || item.attachments?.length) ? (
+                        <div className="mt-3 pt-3 border-t border-zinc-200/60 dark:border-zinc-700/40 flex flex-wrap gap-1.5">
+                          {item.linkedFileIds?.map(fid => {
+                            const file = files.find(f => f.id === fid);
+                            return file ? (
+                              <span key={fid} className="flex items-center gap-1 text-[10px] font-bold bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-2.5 py-1 rounded-md">
+                                <FileText size={11} /> {file.name}
+                              </span>
+                            ) : null;
+                          })}
+                          {item.linkedNoteIds?.map(nid => {
+                            const note = notes.find(n => n.id === nid);
+                            return note ? (
+                              <span key={nid} className="flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 px-2.5 py-1 rounded-md">
+                                <StickyNote size={11} /> {note.title}
+                              </span>
+                            ) : null;
+                          })}
+                          {item.linkedTaskIds?.map(tid => {
+                            const task = tasks.find(t => t.id === tid);
+                            return task ? (
+                              <span key={tid} className="flex items-center gap-1 text-[10px] font-bold bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 px-2.5 py-1 rounded-md">
+                                <CheckSquare size={11} /> {task.title}
+                              </span>
+                            ) : null;
+                          })}
+                          {item.attachments && item.attachments.length > 0 && (
+                            <div className="w-full flex flex-wrap gap-1.5 mt-1">
+                              {item.attachments.map(att => (
+                                <AttachmentBadge key={att.id} attachment={att} />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+
+              {filteredScheduleItems.filter(s => s.dayOfWeek === selectedDayOfWeek).length === 0 && (
+                <div className="py-16 text-center text-zinc-400 flex flex-col items-center justify-center bg-zinc-50/50 dark:bg-zinc-800/20 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800">
+                  <Clock size={40} className="mb-2 opacity-30 text-indigo-500" />
+                  <p className="font-bold text-sm text-zinc-600 dark:text-zinc-400">
+                    {settings.language === 'ar' ? `لا توجد محاضرات مجدولة ليوم ${days[selectedDayOfWeek]}.` : `No classes scheduled for ${days[selectedDayOfWeek]}.`}
+                  </p>
+                  <button 
+                    onClick={() => openAdd(selectedDayOfWeek)} 
+                    className="mt-3 flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                  >
+                    <Plus size={14} />
+                    <span>{settings.language === 'ar' ? 'إضافة حصة/محاضرة لهذا اليوم' : 'Add class for this day'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {viewMode === 'week' ? (
         <div className="flex-1 bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden overflow-y-auto">

@@ -33,7 +33,8 @@ export function Dashboard() {
 
   const pendingTasks = tasks.filter(t => !t.isCompleted);
   
-  const totalFileSize = files.reduce((acc, f) => acc + f.size, 0);
+  const driveFilesOnly = files.filter(f => f.type !== 'folder');
+  const totalFileSize = driveFilesOnly.reduce((acc, f) => acc + (Number(f.size) || 0), 0);
   const totalFileSizeMB = (totalFileSize / (1024 * 1024)).toFixed(1);
 
   const threshold = getWarningThreshold(settings);
@@ -184,7 +185,7 @@ export function Dashboard() {
               {settings.language === 'ar' ? 'مستخدم محلياً' : 'Local Usage'}
             </p>
             <div className="text-xs font-medium bg-white/50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 py-1.5 px-3 rounded-full inline-block mx-auto">
-              {files.length} {settings.language === 'ar' ? 'عناصر' : 'items'}
+              {driveFilesOnly.length} {settings.language === 'ar' ? 'ملفات' : 'files'}
             </div>
           </div>
         </div>

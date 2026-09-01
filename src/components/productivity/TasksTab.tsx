@@ -9,8 +9,8 @@ import { EntityLinker } from '../ui/EntityLinker';
 import { LocalAttachmentUploader } from '../ui/LocalAttachmentUploader';
 import { AttachmentBadge } from '../ui/AttachmentBadge';
 import { ProductivityGroupTabs } from './ProductivityGroupTabs';
-import { ProductivityFilter, ProductivityFilterState } from './ProductivityFilter';
-import { isDateMatchingFilter } from '../../lib/dateFilters';
+import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../ui/UnifiedSemesterFilter';
+import { isItemMatchingSemesterFilter } from '../../lib/dateFilters';
 import { ConfirmModal } from '../ui/CustomModal';
 
 export function TasksTab() {
@@ -18,21 +18,11 @@ export function TasksTab() {
   const { t } = useTranslation();
   const { tasks, notes, files, subjects, groups, addGroup, addTask, updateTask, deleteTask, addFile, settings } = useAppStore();
   
-  const [taskToDelete, setTaskToDelete] = useState<any | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [priority, setPriority] = useState<Priority>('medium');
-  const [linkedNoteIds, setLinkedNoteIds] = useState<string[]>([]);
-  const [linkedFileIds, setLinkedFileIds] = useState<string[]>([]);
-  const [linkedSubjectIds, setLinkedSubjectIds] = useState<string[]>([]);
-  const [attachments, setAttachments] = useState<EntityAttachment[]>([]);
-  const [groupId, setGroupId] = useState<string>('');
-
-  
-  const [dateFilter, setDateFilter] = useState<ProductivityFilterState>({ type: "all", from: "", to: "" });
+  const currentSemester = settings.semesters.find(s => s.isCurrent);
+  const [filterYears, setFilterYears] = useState<number[]>(currentSemester ? [currentSemester.yearIndex] : []);
+  const [filterSemesters, setFilterSemesters] = useState<number[]>(currentSemester ? [currentSemester.semesterIndex] : []);
   const [activeGroupId, setActiveGroupId] = useState<string>('all');
+
   
   const resetForm = () => {
     setShowAddForm(false);
@@ -102,10 +92,10 @@ export function TasksTab() {
 
   
   
-  const currentSemester = settings.semesters.find(s => s.isCurrent);
-  
   const filteredTasks = tasks.filter(task => {
-    if (!isDateMatchingFilter(task.date, dateFilter, currentSemester)) return false;
+    if (!isItemMatchingSemesterFilter(task.date, task.linkedSubjectIds, filterYears, filterSemesters, settings.semesters, subjects)) {
+      return false;
+    }
     
     if (activeGroupId === 'none') {
       if (task.groupId) return false;
@@ -115,7 +105,6 @@ export function TasksTab() {
     
     return true;
   });
-
 
   return (
     <div className="flex flex-col min-h-full gap-6 pb-8">
@@ -162,7 +151,7 @@ export function TasksTab() {
                     ))}
                   </select>
                 </div>
-</div>
+              </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5">{t('description')}</label>
                 <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('description')} className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow resize-none" />
@@ -187,10 +176,10 @@ export function TasksTab() {
             </div>
 
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800">
-              <button onClick={resetForm} className="px-6 py-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors font-medium text-zinc-700 dark:text-zinc-300">
+              <button onClick={resetForm} className="px-6 py-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer">
                 {t('cancel')}
               </button>
-              <button onClick={handleAddOrUpdate} disabled={!title.trim()} className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white transition-colors font-medium flex items-center gap-2">
+              <button onClick={handleAddOrUpdate} disabled={!title.trim()} className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white transition-colors font-medium flex items-center gap-2 cursor-pointer shadow-xs">
                 {editingId ? t('save') : t('add_task')}
               </button>
             </div>
@@ -198,14 +187,29 @@ export function TasksTab() {
         </div>
       )}
 
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">{t('tasks')}</h2>
-        <div className="flex items-center gap-3">
-          <ProductivityFilter filter={dateFilter} setFilter={setDateFilter} />
-          <button onClick={handleOpenAddForm} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl transition-colors font-medium shadow-sm">
-          <Plus size={20} />
-          {t('add_task')}
-        </button>
+      {/* Header with Unified Filter */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white">{t('tasks')}</h2>
+          <div className="mt-1.5 flex items-center gap-2">
+            <UnifiedFilterBadge filterYears={filterYears} filterSemesters={filterSemesters} />
+            <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-xl">
+              {filteredTasks.length} {settings.language === 'ar' ? 'مهمة' : 'tasks'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <UnifiedSemesterFilter
+            filterYears={filterYears}
+            filterSemesters={filterSemesters}
+            setFilterYears={setFilterYears}
+            setFilterSemesters={setFilterSemesters}
+          />
+          <button onClick={handleOpenAddForm} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-2xl transition-all font-bold shadow-xs cursor-pointer text-xs sm:text-sm">
+            <Plus size={18} />
+            <span>{t('add_task')}</span>
+          </button>
         </div>
       </div>
       
@@ -274,6 +278,18 @@ export function TasksTab() {
             </div>
           </div>
         ))}
+
+        {filteredTasks.length === 0 && (
+          <div className="py-16 text-center text-zinc-400 bg-white dark:bg-zinc-900 rounded-3xl border border-dashed border-zinc-200 dark:border-zinc-800 flex flex-col items-center justify-center p-6">
+            <CheckSquare size={48} className="mb-3 opacity-30 text-indigo-500" />
+            <p className="font-bold text-sm text-zinc-600 dark:text-zinc-400">
+              {settings.language === 'ar' ? 'لا توجد مهام مطابقة للفترة أو المجموعة المحددة.' : 'No tasks found for this period or group.'}
+            </p>
+            <p className="text-xs text-zinc-400 mt-1">
+              {settings.language === 'ar' ? 'يمكنك إضافة مهمة جديدة أو تغيير الفلتر.' : 'You can add a new task or change the filter.'}
+            </p>
+          </div>
+        )}
       </div>
       </div>
 

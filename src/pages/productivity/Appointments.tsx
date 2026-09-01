@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ProductivityGroupTabs } from '../../components/productivity/ProductivityGroupTabs';
-import { ProductivityFilter, ProductivityFilterState } from '../../components/productivity/ProductivityFilter';
-import { isDateMatchingFilter } from '../../lib/dateFilters';
+import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../../components/ui/UnifiedSemesterFilter';
+import { isItemMatchingSemesterFilter } from '../../lib/dateFilters';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore } from '../../store/useAppStore';
 import { Appointment } from '../../types';
@@ -16,13 +16,15 @@ export function Appointments() {
   const { t } = useTranslation();
   const { appointments, addAppointment, updateAppointment, deleteAppointment, subjects, files, settings, groups } = useAppStore();
   
+  const currentSemester = settings.semesters.find(s => s.isCurrent);
+  const [filterYears, setFilterYears] = useState<number[]>(currentSemester ? [currentSemester.yearIndex] : []);
+  const [filterSemesters, setFilterSemesters] = useState<number[]>(currentSemester ? [currentSemester.semesterIndex] : []);
+  
   const [appointmentToDelete, setAppointmentToDelete] = useState<Appointment | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [dateFilter, setDateFilter] = useState<ProductivityFilterState>({ type: "all", from: "", to: "" });
   const [activeGroupId, setActiveGroupId] = useState<string>("all");
 
-  
   const [form, setForm] = useState<Partial<Appointment>>({
     title: '',
     description: '',
@@ -74,12 +76,10 @@ export function Appointments() {
     setShowAddModal(true);
   };
 
-  
-  
-  const currentSemester = settings.semesters.find(s => s.isCurrent);
-  
   const filteredAppointments = appointments.filter(appointment => {
-    if (!isDateMatchingFilter(appointment.date, dateFilter, currentSemester)) return false;
+    if (!isItemMatchingSemesterFilter(appointment.date, appointment.linkedSubjectIds, filterYears, filterSemesters, settings.semesters, subjects)) {
+      return false;
+    }
     
     if (activeGroupId === 'none') {
       if (appointment.groupId) return false;
@@ -90,25 +90,34 @@ export function Appointments() {
     return true;
   });
 
-
   return (
     <div className="flex flex-col min-h-full gap-6 pb-8">
       <ProductivityGroupTabs activeGroupId={activeGroupId} setActiveGroupId={setActiveGroupId} />
       <div className="flex-1 flex flex-col gap-6">
-      <header className="flex justify-between items-end">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold">{settings.language === 'ar' ? 'مواعيدي' : 'My Appointments'}</h1>
-          <p className="text-zinc-500 mt-1">{settings.language === 'ar' ? 'إدارة مواعيدك الشخصية والدراسية' : 'Manage your personal and academic appointments'}</p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white">{settings.language === 'ar' ? 'مواعيدي' : 'My Appointments'}</h1>
+          <div className="mt-1.5 flex items-center gap-2">
+            <UnifiedFilterBadge filterYears={filterYears} filterSemesters={filterSemesters} />
+            <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-xl">
+              {filteredAppointments.length} {settings.language === 'ar' ? 'موعد' : 'appointments'}
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <ProductivityFilter filter={dateFilter} setFilter={setDateFilter} />
+        <div className="flex flex-wrap items-center gap-2.5">
+          <UnifiedSemesterFilter
+            filterYears={filterYears}
+            filterSemesters={filterSemesters}
+            setFilterYears={setFilterYears}
+            setFilterSemesters={setFilterSemesters}
+          />
           <button 
-          onClick={openAdd}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl transition-colors font-medium shadow-sm"
-        >
-          <Plus size={20} />
-          {settings.language === 'ar' ? 'إضافة موعد' : 'Add Appointment'}
-        </button>
+            onClick={openAdd}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-2xl transition-all text-xs sm:text-sm font-bold shadow-xs cursor-pointer"
+          >
+            <Plus size={18} />
+            <span>{settings.language === 'ar' ? 'إضافة موعد' : 'Add Appointment'}</span>
+          </button>
         </div>
       </header>
 
@@ -180,9 +189,15 @@ export function Appointments() {
             )}
           </div>
         ))}
-        {appointments.length === 0 && (
-          <div className="col-span-full py-12 text-center text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-3xl">
-            {settings.language === 'ar' ? 'لا توجد مواعيد مضافة حتى الآن.' : 'No appointments added yet.'}
+        {filteredAppointments.length === 0 && (
+          <div className="col-span-full py-16 text-center text-zinc-400 bg-white dark:bg-zinc-900 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 flex flex-col items-center justify-center">
+            <CalendarIcon size={48} className="mb-3 opacity-30 text-indigo-500" />
+            <p className="font-bold text-sm text-zinc-600 dark:text-zinc-400">
+              {settings.language === 'ar' ? 'لا توجد مواعيد مطابقة للفترة أو المجموعة المحددة.' : 'No appointments found for this period or group.'}
+            </p>
+            <p className="text-xs text-zinc-400 mt-1">
+              {settings.language === 'ar' ? 'يمكنك إضافة موعد جديد أو تغيير الفلتر.' : 'You can add a new appointment or change the filter.'}
+            </p>
           </div>
         )}
       </div>
