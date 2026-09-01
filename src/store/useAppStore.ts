@@ -16,7 +16,7 @@ const getInitialLang = (): 'ar' | 'en' => {
     const saved = localStorage.getItem('unistudent_lang');
     if (saved === 'ar' || saved === 'en') return saved;
   } catch {}
-  return 'ar';
+  return 'en';
 };
 
 export const defaultGraduationScale: GraduationGradeRule[] = [

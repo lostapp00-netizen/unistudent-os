@@ -204,11 +204,19 @@ const resources = {
   }
 };
 
+const savedLang = (() => {
+  try {
+    const saved = localStorage.getItem('unistudent_lang');
+    if (saved === 'ar' || saved === 'en') return saved;
+  } catch {}
+  return 'en';
+})();
+
 i18n
   .use(initReactI18next)
   .init({
     resources,
-    lng: "ar", // Default language
+    lng: savedLang, // Default language is English
     fallbackLng: "en",
     interpolation: {
       escapeValue: false 

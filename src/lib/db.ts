@@ -1047,7 +1047,7 @@ function mapSettingsFromDB(row: any): UserSettings {
     totalYears: row.total_years || 4,
     semestersPerYear: row.semesters_per_year || 2,
     theme: row.theme || 'light',
-    language: row.language || 'ar',
+    language: row.language || 'en',
     gradingScale: row.grading_scale || [],
     semesters: row.semesters || [],
     initialCumulativeGpa: row.initial_cumulative_gpa !== undefined ? row.initial_cumulative_gpa : (localExtra.initialCumulativeGpa ?? null),
