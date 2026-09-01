@@ -138,8 +138,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Groups Initialization
       let finalGroups = groups || [];
+      const isNewUser = !settingsData && (!groups || groups.length === 0);
       const isGroupsInitialized = localStorage.getItem(`unistudent_groups_initialized_${userId}`);
-      if (!isGroupsInitialized && finalGroups.length === 0) {
+      if (isNewUser && !isGroupsInitialized) {
         const defaultGroups: Group[] = [
           { id: uuidv4(), name: 'Study', color: 'indigo' },
           { id: uuidv4(), name: 'Work', color: 'emerald' },
@@ -149,6 +150,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         for (const g of defaultGroups) {
           db.addGroup(userId, g).catch(console.error);
         }
+        localStorage.setItem(`unistudent_groups_initialized_${userId}`, 'true');
+      } else {
         localStorage.setItem(`unistudent_groups_initialized_${userId}`, 'true');
       }
 
@@ -474,38 +477,48 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // Groups
-  addGroup: (group) => {
+  addGroup: async (group) => {
     const { userId } = get();
     if (!userId) return;
     localStorage.setItem(`unistudent_groups_initialized_${userId}`, 'true');
     set((state) => ({ groups: [...state.groups, group] }));
-    db.addGroup(userId, group);
+    try {
+      await db.addGroup(userId, group);
+    } catch (e) {
+      console.error('Failed to add group:', e);
+    }
   },
-  updateGroup: (id, updatedFields) => {
+  updateGroup: async (id, updatedFields) => {
     const { userId, groups } = get();
     if (!userId) return;
     set({ groups: groups.map(g => g.id === id ? { ...g, ...updatedFields } : g) });
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-    if (isUuid) {
-      db.updateGroup(userId, id, updatedFields).catch(console.error);
+    try {
+      await db.updateGroup(userId, id, updatedFields);
+    } catch (e) {
+      console.error('Failed to update group:', e);
     }
   },
   deleteGroup: async (id) => {
-    const { userId, groups } = get();
+    const { userId, groups, tasks, notes, appointments, scheduleItems } = get();
     if (!userId) return;
     localStorage.setItem(`unistudent_groups_initialized_${userId}`, 'true');
     const previousGroups = groups;
-    set({ groups: groups.filter(g => g.id !== id) });
     
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-    if (isUuid) {
-      try {
-        await db.deleteGroup(userId, id);
-      } catch (e) {
-        console.error('Failed to delete group in DB:', e);
-        set({ groups: previousGroups });
-        alert('حدث خطأ أثناء حذف المجموعة. يرجى المحاولة لاحقاً.');
-      }
+    // Update local state and unbind from entities
+    set({
+      groups: groups.filter(g => g.id !== id),
+      tasks: tasks.map(t => t.groupId === id ? { ...t, groupId: undefined } : t),
+      notes: notes.map(n => n.groupId === id ? { ...n, groupId: undefined } : n),
+      appointments: appointments.map(a => a.groupId === id ? { ...a, groupId: undefined } : a),
+      scheduleItems: scheduleItems.map(s => s.groupId === id ? { ...s, groupId: undefined } : s)
+    });
+    
+    try {
+      await db.deleteGroup(userId, id);
+    } catch (e) {
+      console.error('Failed to delete group in DB:', e);
+      set({ groups: previousGroups });
+      alert('حدث خطأ أثناء حذف المجموعة. يرجى المحاولة لاحقاً.');
     }
   }
 }));
