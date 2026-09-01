@@ -33,7 +33,8 @@ export function Dashboard() {
 
   const pendingTasks = tasks.filter(t => !t.isCompleted);
   
-  const totalFileSize = files.reduce((acc, f) => acc + f.size, 0);
+  const driveFilesOnly = files.filter(f => f.type !== 'folder');
+  const totalFileSize = driveFilesOnly.reduce((acc, f) => acc + (Number(f.size) || 0), 0);
   const totalFileSizeMB = (totalFileSize / (1024 * 1024)).toFixed(1);
 
   const threshold = getWarningThreshold(settings);
@@ -84,10 +85,10 @@ export function Dashboard() {
             return (
               <div
                 onClick={() => navigate('/academic')}
-                className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-3 px-4 rounded-2xl shadow-sm cursor-pointer hover:opacity-95 transition-opacity text-center min-w-[110px]"
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-3 px-4 rounded-2xl shadow-md shadow-blue-500/20 cursor-pointer hover:opacity-95 transition-opacity text-center min-w-[110px]"
                 title={isAr ? 'تقدير التخرج التراكمي' : 'Graduation Estimate'}
               >
-                <p className="text-[10px] text-purple-200 uppercase font-bold tracking-wider">{isAr ? 'تقدير التخرج' : 'Graduation'}</p>
+                <p className="text-[10px] text-blue-200 uppercase font-bold tracking-wider">{isAr ? 'تقدير التخرج' : 'Graduation'}</p>
                 <p className="text-xs sm:text-sm font-black truncate">{isAr ? est.nameAr : (est.nameEn || est.nameAr)}</p>
               </div>
             );
@@ -184,7 +185,7 @@ export function Dashboard() {
               {settings.language === 'ar' ? 'مستخدم محلياً' : 'Local Usage'}
             </p>
             <div className="text-xs font-medium bg-white/50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 py-1.5 px-3 rounded-full inline-block mx-auto">
-              {files.length} {settings.language === 'ar' ? 'عناصر' : 'items'}
+              {driveFilesOnly.length} {settings.language === 'ar' ? 'ملفات' : 'files'}
             </div>
           </div>
         </div>

@@ -152,7 +152,7 @@ export function Admin() {
       const userNotes = adminData.rawNotes.filter(n => n.user_id === uid);
       const userAppointments = adminData.rawAppointments.filter(a => a.user_id === uid);
       const userSchedule = adminData.rawSchedule.filter(sc => sc.user_id === uid);
-      const userFiles = adminData.rawFiles.filter(f => f.user_id === uid);
+      const userFiles = adminData.rawFiles.filter(f => f.user_id === uid && f.type !== 'folder');
       const userFeedbacks = adminData.feedbacks.filter(fb => fb.userId === uid);
 
       const savedEmail = localStorage.getItem(`unistudent_user_email_${uid}`) || '';
@@ -267,7 +267,17 @@ export function Admin() {
   const honorStudents = studentsList.filter(s => s.cgpa >= 3.5).length;
   const warningStudents = studentsList.filter(s => s.warningCount > 0).length;
   const avgCgpa = totalStudents > 0 ? (studentsList.reduce((acc, s) => acc + s.cgpa, 0) / totalStudents).toFixed(2) : '0.00';
-  const totalStorageMB = (studentsList.reduce((acc, s) => acc + s.totalStorageBytes, 0) / (1024 * 1024)).toFixed(1);
+  const totalPlatformStorageBytes = studentsList.reduce((acc, s) => acc + s.totalStorageBytes, 0);
+  
+  const formatAdminStorage = (bytes: number) => {
+    if (!bytes || bytes === 0) return '0.0 MB';
+    if (bytes < 1024 * 1024) {
+      const kb = (bytes / 1024).toFixed(1);
+      return `${kb} KB`;
+    }
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
   const pendingFeedbacks = adminData?.feedbacks.filter(f => f.status === 'new').length || 0;
   const reviewedFeedbacks = adminData?.feedbacks.filter(f => f.status === 'reviewed').length || 0;
   const resolvedFeedbacks = adminData?.feedbacks.filter(f => f.status === 'resolved').length || 0;
@@ -649,8 +659,8 @@ export function Admin() {
                 <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center justify-between">
                   <div>
                     <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">{isAr ? 'استهلاك التخزين السحابي' : 'Storage Used'}</p>
-                    <h3 className="text-3xl font-black text-amber-600 dark:text-amber-400 mt-1">{totalStorageMB} <span className="text-xs font-medium text-zinc-400">MB</span></h3>
-                    <p className="text-[11px] text-zinc-500 mt-1">{adminData?.rawFiles.length || 0} {isAr ? 'ملفات ومرفقات درايف' : 'drive files'}</p>
+                    <h3 className="text-3xl font-black text-amber-600 dark:text-amber-400 mt-1">{formatAdminStorage(totalPlatformStorageBytes)}</h3>
+                    <p className="text-[11px] text-zinc-500 mt-1">{adminData?.rawFiles.filter(f => f.type !== 'folder').length || 0} {isAr ? 'ملفات درايف' : 'drive files'}</p>
                   </div>
                   <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
                     <HardDrive size={28} />
@@ -860,7 +870,7 @@ export function Admin() {
                           </td>
 
                           <td className="py-4 px-6 text-center text-zinc-500 font-medium">
-                            {(st.totalStorageBytes / (1024 * 1024)).toFixed(1)} MB
+                            {formatAdminStorage(st.totalStorageBytes)}
                           </td>
 
                           <td className="py-4 px-6 text-center">

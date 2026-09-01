@@ -70,6 +70,8 @@ export type Note = {
   linkedTaskIds?: string[];
   linkedFileIds?: string[];
   linkedSubjectIds?: string[];
+  linkedAppointmentIds?: string[];
+  linkedScheduleItemIds?: string[];
   groupId?: string;
   attachments?: EntityAttachment[];
 };
@@ -85,6 +87,8 @@ export type Task = {
   linkedNoteIds?: string[];
   linkedFileIds?: string[];
   linkedSubjectIds?: string[];
+  linkedAppointmentIds?: string[];
+  linkedScheduleItemIds?: string[];
   groupId?: string;
   attachments?: EntityAttachment[];
 };
@@ -134,6 +138,8 @@ export type Appointment = {
   linkedTaskIds?: string[];
   linkedFileIds?: string[];
   linkedSubjectIds?: string[];
+  linkedAppointmentIds?: string[];
+  linkedScheduleItemIds?: string[];
   groupId?: string;
   attachments?: EntityAttachment[];
   type?: string;
@@ -157,6 +163,8 @@ export type ScheduleItem = {
   linkedNoteIds?: string[];
   linkedTaskIds?: string[];
   linkedFileIds?: string[];
+  linkedAppointmentIds?: string[];
+  linkedScheduleItemIds?: string[];
   groupId?: string;
   attachments?: EntityAttachment[];
 };
