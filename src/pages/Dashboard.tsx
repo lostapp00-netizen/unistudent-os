@@ -85,10 +85,10 @@ export function Dashboard() {
             return (
               <div
                 onClick={() => navigate('/academic')}
-                className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-3 px-4 rounded-2xl shadow-sm cursor-pointer hover:opacity-95 transition-opacity text-center min-w-[110px]"
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-3 px-4 rounded-2xl shadow-md shadow-blue-500/20 cursor-pointer hover:opacity-95 transition-opacity text-center min-w-[110px]"
                 title={isAr ? 'تقدير التخرج التراكمي' : 'Graduation Estimate'}
               >
-                <p className="text-[10px] text-purple-200 uppercase font-bold tracking-wider">{isAr ? 'تقدير التخرج' : 'Graduation'}</p>
+                <p className="text-[10px] text-blue-200 uppercase font-bold tracking-wider">{isAr ? 'تقدير التخرج' : 'Graduation'}</p>
                 <p className="text-xs sm:text-sm font-black truncate">{isAr ? est.nameAr : (est.nameEn || est.nameAr)}</p>
               </div>
             );

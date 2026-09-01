@@ -59,7 +59,7 @@ function FolderTreeItem({
       <div
         className={`flex items-center justify-between p-2.5 rounded-2xl border transition-all cursor-pointer ${
           isSelected
-            ? 'border-purple-600 bg-purple-50/80 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 font-bold shadow-xs'
+            ? 'border-blue-600 bg-blue-50/80 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-bold shadow-xs'
             : 'border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 text-zinc-800 dark:text-zinc-200'
         }`}
         style={{
@@ -86,9 +86,9 @@ function FolderTreeItem({
           )}
 
           {isExpanded ? (
-            <FolderOpen size={16} className="text-purple-500 shrink-0" />
+            <FolderOpen size={16} className="text-blue-500 shrink-0" />
           ) : (
-            <Folder size={16} className="text-purple-500 shrink-0" />
+            <Folder size={16} className="text-blue-500 shrink-0" />
           )}
 
           <span className="text-xs truncate font-medium">{folder.name}</span>
@@ -99,12 +99,12 @@ function FolderTreeItem({
           )}
         </div>
 
-        {isSelected && <Check size={16} className="text-purple-600 shrink-0 mr-1 rtl:mr-0 rtl:ml-1" />}
+        {isSelected && <Check size={16} className="text-blue-600 shrink-0 mr-1 rtl:mr-0 rtl:ml-1" />}
       </div>
 
       {/* Render subfolders if expanded */}
       {hasChildren && isExpanded && (
-        <div className="space-y-1 relative border-s-2 border-purple-200/60 dark:border-purple-900/40 ms-4 ps-1">
+        <div className="space-y-1 relative border-s-2 border-blue-200/60 dark:border-blue-900/40 ms-4 ps-1">
           {children.map(child => (
             <FolderTreeItem
               key={child.id}
@@ -355,7 +355,7 @@ export function DriveTab() {
             onClick={() => setCurrentFolderId(null)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
               currentFolderId === null
-                ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800/50 shadow-2xs'
+                ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50 shadow-2xs'
                 : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
             }`}
           >
@@ -370,7 +370,7 @@ export function DriveTab() {
                 onClick={() => setCurrentFolderId(crumb.id)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                   idx === breadcrumbs.length - 1
-                    ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800/50 shadow-2xs'
+                    ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50 shadow-2xs'
                     : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
                 }`}
               >
@@ -384,15 +384,15 @@ export function DriveTab() {
         <div className="flex items-center gap-2.5 w-full sm:w-auto">
           <button
             onClick={() => setIsFolderModalOpen(true)}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-xs"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-xs cursor-pointer"
           >
-            <FolderPlus size={16} className="text-purple-600 dark:text-purple-400" />
+            <FolderPlus size={16} className="text-blue-600 dark:text-blue-400" />
             <span>{isAr ? 'إنشاء مجلد' : 'Create Folder'}</span>
           </button>
 
           <label className={`flex-1 sm:flex-none flex items-center justify-center gap-2 ${
-            isUploading ? 'bg-zinc-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 cursor-pointer text-white'
-          } px-4 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-xs`}>
+            isUploading ? 'bg-zinc-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 cursor-pointer text-white shadow-md shadow-blue-500/25'
+          } px-4 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer`}>
             {isUploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
             <span>{isUploading ? (isAr ? 'جاري الرفع...' : 'Uploading...') : (isAr ? 'رفع ملف' : 'Upload File')}</span>
             <input type="file" className="hidden" disabled={isUploading} onChange={handleFileUpload} />
@@ -419,13 +419,13 @@ export function DriveTab() {
                 <div className="flex items-center gap-3.5 min-w-0">
                   <div className={`p-3 rounded-2xl ${
                     file.type === 'folder' 
-                      ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200/60 dark:border-purple-800/40' 
+                      ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/40' 
                       : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700/60'
                   }`}>
                     {file.type === 'folder' ? <Folder size={22} /> : <FileText size={22} />}
                   </div>
                   <div className="min-w-0">
-                    <p className="font-bold text-sm text-zinc-900 dark:text-white truncate group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                    <p className="font-bold text-sm text-zinc-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                       {file.name}
                     </p>
                     <p className="text-xs text-zinc-400 mt-0.5">
@@ -439,7 +439,7 @@ export function DriveTab() {
                   {/* Transfer / Move Button */}
                   <button
                     onClick={() => openMoveModal(file)}
-                    className="p-2 text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-purple-50 dark:hover:bg-purple-950/40 hover:text-purple-600 dark:hover:text-purple-400 border border-zinc-200 dark:border-zinc-700/60 rounded-xl transition-all shadow-2xs"
+                    className="p-2 text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 dark:hover:text-blue-400 border border-zinc-200 dark:border-zinc-700/60 rounded-xl transition-all shadow-2xs cursor-pointer"
                     title={isAr ? 'نقل إلى مجلد آخر' : 'Move to another folder'}
                   >
                     <Move size={15} />
@@ -449,7 +449,7 @@ export function DriveTab() {
                   {file.type === 'file' && (
                     <button
                       onClick={() => handleItemClick(file)}
-                      className="p-2 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all rounded-xl shadow-2xs"
+                      className="p-2 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-all rounded-xl shadow-2xs cursor-pointer"
                       title={isAr ? 'معاينة في المتصفح' : 'Preview'}
                     >
                       <Eye size={15} />
@@ -471,7 +471,7 @@ export function DriveTab() {
                   {/* Delete Button */}
                   <button
                     onClick={() => setFileToDelete(file)}
-                    className="p-2 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all rounded-xl shadow-2xs"
+                    className="p-2 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all rounded-xl shadow-2xs cursor-pointer"
                     title={isAr ? 'حذف' : 'Delete'}
                   >
                     <Trash2 size={15} />
@@ -489,14 +489,14 @@ export function DriveTab() {
           <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-lg w-full shadow-2xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-5 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
               <div className="flex items-center gap-2 min-w-0">
-                <FolderInput className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0" />
+                <FolderInput className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0" />
                 <h3 className="font-bold text-base text-zinc-900 dark:text-white truncate">
-                  {isAr ? 'نقل العنصر:' : 'Move Item:'} <span className="text-purple-600">{fileToMove.name}</span>
+                  {isAr ? 'نقل العنصر:' : 'Move Item:'} <span className="text-blue-600">{fileToMove.name}</span>
                 </h3>
               </div>
               <button 
                 onClick={() => setFileToMove(null)} 
-                className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg"
+                className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -515,16 +515,16 @@ export function DriveTab() {
                   onClick={() => setSelectedDestinationFolderId(null)}
                   className={`p-2.5 rounded-2xl border flex items-center justify-between cursor-pointer transition-all ${
                     selectedDestinationFolderId === null
-                      ? 'border-purple-600 bg-purple-50/80 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 font-bold shadow-xs'
+                      ? 'border-blue-600 bg-blue-50/80 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-bold shadow-xs'
                       : 'border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 text-zinc-800 dark:text-zinc-200'
                   }`}
                 >
                   <div className="flex items-center gap-2 text-xs">
                     <span className="w-6 shrink-0" />
-                    <Home size={16} className="text-purple-600" />
+                    <Home size={16} className="text-blue-600" />
                     <span>{isAr ? 'الدرايف الرئيسي (المستوى الأول)' : 'Root Drive (Top Level)'}</span>
                   </div>
-                  {selectedDestinationFolderId === null && <Check size={16} className="text-purple-600 shrink-0" />}
+                  {selectedDestinationFolderId === null && <Check size={16} className="text-blue-600 shrink-0" />}
                 </div>
 
                 {/* Recursive Expandable Subfolders Tree */}
@@ -553,7 +553,7 @@ export function DriveTab() {
             <div className="flex items-center justify-between gap-2.5 pt-3 border-t border-zinc-100 dark:border-zinc-800">
               <div className="text-[11px] text-zinc-400 truncate">
                 {isAr ? 'الوجهة المحددة: ' : 'Selected: '}
-                <span className="font-bold text-purple-600 dark:text-purple-400">
+                <span className="font-bold text-blue-600 dark:text-blue-400">
                   {selectedDestinationFolderId === null 
                     ? (isAr ? 'الدرايف الرئيسي' : 'Root Drive')
                     : (files.find(f => f.id === selectedDestinationFolderId)?.name || '')}
@@ -563,13 +563,13 @@ export function DriveTab() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setFileToMove(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 transition-colors"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer"
                 >
                   {isAr ? 'إلغاء' : 'Cancel'}
                 </button>
                 <button
                   onClick={handleConfirmMove}
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white transition-colors shadow-xs"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white transition-all shadow-md shadow-blue-500/25 cursor-pointer"
                 >
                   {isAr ? 'نقل إلى هنا' : 'Move Here'}
                 </button>
