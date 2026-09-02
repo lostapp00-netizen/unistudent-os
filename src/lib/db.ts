@@ -819,7 +819,201 @@ export const db = {
       if (udb) {
         const updatedDb = applyAction(udb);
         await this.updateUniversityDatabase(udb.id, updatedDb);
+        // Sync to all students who imported this database
+        await this.syncUniversityDatabaseChangesToStudents(udb.id, { type: 'full_sync', updatedDb });
       }
+    }
+  },
+
+  // --- Standalone Universities Registry ---
+  getRegisteredUniversities(): { key: string; nameAr: string; nameEn: string; createdAt: string }[] {
+    try {
+      const saved = localStorage.getItem('unistudent_registered_universities');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  registerUniversity(nameAr: string, nameEn?: string): void {
+    try {
+      const current = this.getRegisteredUniversities();
+      const trimmedAr = (nameAr || '').trim();
+      const trimmedEn = (nameEn || '').trim() || trimmedAr;
+      const key = trimmedAr || trimmedEn;
+      if (!key) return;
+      if (!current.some(u => u.key === key || u.nameAr === trimmedAr || u.nameEn === trimmedEn)) {
+        current.push({
+          key,
+          nameAr: trimmedAr,
+          nameEn: trimmedEn,
+          createdAt: new Date().toISOString()
+        });
+        localStorage.setItem('unistudent_registered_universities', JSON.stringify(current));
+      }
+    } catch {}
+  },
+
+  deleteRegisteredUniversity(key: string): void {
+    try {
+      const current = this.getRegisteredUniversities();
+      const filtered = current.filter(u => u.key !== key && u.nameAr !== key && u.nameEn !== key);
+      localStorage.setItem('unistudent_registered_universities', JSON.stringify(filtered));
+    } catch {}
+  },
+
+  updateRegisteredUniversity(oldKey: string, nameAr: string, nameEn: string): void {
+    try {
+      const current = this.getRegisteredUniversities();
+      const updated = current.map(u => {
+        if (u.key === oldKey || u.nameAr === oldKey || u.nameEn === oldKey) {
+          return {
+            ...u,
+            key: nameAr.trim() || nameEn.trim(),
+            nameAr: nameAr.trim(),
+            nameEn: nameEn.trim()
+          };
+        }
+        return u;
+      });
+      localStorage.setItem('unistudent_registered_universities', JSON.stringify(updated));
+    } catch {}
+  },
+
+  // --- Student Database Changes Synchronization ---
+  async syncUniversityDatabaseChangesToStudents(
+    universityDbId: string,
+    action: {
+      type: 'add_subject' | 'update_subject' | 'delete_subject' | 'update_grading_scale' | 'full_sync';
+      subject?: Subject;
+      subjectId?: string;
+      gradingScale?: GradeRule[];
+      updatedDb?: UniversityDatabase;
+    }
+  ): Promise<void> {
+    try {
+      const udb = action.updatedDb || (await this.getUniversityDatabase(universityDbId));
+      if (!udb) return;
+
+      // Find all students in Supabase settings or localStorage
+      const studentUserIds: string[] = [];
+      try {
+        const { data: dbSettings } = await supabase.from('settings').select('*');
+        if (dbSettings) {
+          dbSettings.forEach(s => {
+            if (
+              s.university_database_id === universityDbId ||
+              (s.university === udb.universityNameAr && s.college === udb.collegeNameAr) ||
+              (s.university === udb.universityNameEn && s.college === udb.collegeNameEn)
+            ) {
+              if (s.user_id && !studentUserIds.includes(s.user_id)) {
+                studentUserIds.push(s.user_id);
+              }
+            }
+          });
+        }
+      } catch {}
+
+      // Also check localStorage
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('unistudent_settings_')) {
+          const uid = key.replace('unistudent_settings_', '');
+          try {
+            const st = JSON.parse(localStorage.getItem(key) || '{}');
+            if (
+              st.universityDatabaseId === universityDbId ||
+              (st.university === udb.universityNameAr && st.college === udb.collegeNameAr) ||
+              (st.university === udb.universityNameEn && st.college === udb.collegeNameEn)
+            ) {
+              if (!studentUserIds.includes(uid)) studentUserIds.push(uid);
+            }
+          } catch {}
+        }
+      }
+
+      // Process each enrolled student
+      for (const uid of studentUserIds) {
+        try {
+          if (action.type === 'update_subject' && action.subject) {
+            const upd = action.subject;
+            const userSubjs = await this.getSubjects(uid);
+            const target = userSubjs.find(s => s.id === upd.id || s.name.trim().toLowerCase() === upd.name.trim().toLowerCase());
+            if (target) {
+              await this.updateSubject(uid, target.id, {
+                name: upd.name,
+                code: upd.code,
+                creditHours: upd.creditHours,
+                totalMarks: upd.totalMarks,
+                yearIndex: upd.yearIndex,
+                semesterIndex: upd.semesterIndex,
+                distributions: upd.distributions
+              });
+            }
+          } else if (action.type === 'add_subject' && action.subject) {
+            const newS = action.subject;
+            const userSubjs = await this.getSubjects(uid);
+            const exists = userSubjs.some(s => s.id === newS.id || s.name.trim().toLowerCase() === newS.name.trim().toLowerCase());
+            if (!exists) {
+              const createdSubj: Subject = {
+                ...newS,
+                id: (await import('uuid')).v4(),
+                status: 'current',
+                includeInGpa: true,
+                distributions: (newS.distributions || []).map(d => ({ ...d, id: (Math.random() + 1).toString(36).substring(7), achievedMarks: null, status: 'current' }))
+              };
+              await this.addSubject(uid, createdSubj);
+            }
+          } else if (action.type === 'delete_subject' && (action.subjectId || action.subject?.id)) {
+            const targetId = action.subjectId || action.subject?.id;
+            const subName = action.subject?.name;
+            const userSubjs = await this.getSubjects(uid);
+            const target = userSubjs.find(s => s.id === targetId || (subName && s.name.trim().toLowerCase() === subName.trim().toLowerCase()));
+            if (target) {
+              await this.deleteSubject(uid, target.id);
+            }
+          } else if (action.type === 'update_grading_scale' && action.gradingScale) {
+            await this.upsertSettings(uid, { gradingScale: action.gradingScale });
+          } else if (action.type === 'full_sync') {
+            const userSubjs = await this.getSubjects(uid);
+            const templateSubjs = udb.subjects || [];
+            
+            // Sync/update existing subjects
+            for (const tSub of templateSubjs) {
+              const matched = userSubjs.find(s => s.id === tSub.id || s.name.trim().toLowerCase() === tSub.name.trim().toLowerCase());
+              if (matched) {
+                if (
+                  matched.yearIndex !== tSub.yearIndex ||
+                  matched.semesterIndex !== tSub.semesterIndex ||
+                  matched.creditHours !== tSub.creditHours ||
+                  matched.totalMarks !== tSub.totalMarks
+                ) {
+                  await this.updateSubject(uid, matched.id, {
+                    yearIndex: tSub.yearIndex,
+                    semesterIndex: tSub.semesterIndex,
+                    creditHours: tSub.creditHours,
+                    totalMarks: tSub.totalMarks,
+                    code: tSub.code || matched.code
+                  });
+                }
+              } else {
+                const createdSubj: Subject = {
+                  ...tSub,
+                  id: (await import('uuid')).v4(),
+                  status: 'current',
+                  includeInGpa: true,
+                  distributions: (tSub.distributions || []).map(d => ({ ...d, id: (Math.random() + 1).toString(36).substring(7), achievedMarks: null, status: 'current' }))
+                };
+                await this.addSubject(uid, createdSubj);
+              }
+            }
+          }
+        } catch (stErr) {
+          console.warn(`Sync failed for student ${uid}:`, stErr);
+        }
+      }
+    } catch (e) {
+      console.warn('Error in syncUniversityDatabaseChangesToStudents:', e);
     }
   },
 

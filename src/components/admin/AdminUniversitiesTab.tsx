@@ -221,18 +221,28 @@ export function AdminUniversitiesTab({
   const [movingFile, setMovingFile] = useState<DriveFile | null>(null);
   const [targetMoveFolderId, setTargetMoveFolderId] = useState<string | null>(null);
 
-  // Create University DB Modal State
-  const [createForm, setCreateForm] = useState({
-    universityNameAr: '',
-    universityNameEn: '',
+  // --- Step 1: Create University Modal State ---
+  const [isCreateUniModalOpen, setIsCreateUniModalOpen] = useState(false);
+  const [createUniForm, setCreateUniForm] = useState({
+    nameAr: '',
+    nameEn: '',
+    sourceUserId: ''
+  });
+  const [uniStudentSearchQuery, setUniStudentSearchQuery] = useState('');
+  const [creatingUni, setCreatingUni] = useState(false);
+
+  // --- Step 2: Create College in University Modal State ---
+  const [isCreateCollegeModalOpen, setIsCreateCollegeModalOpen] = useState(false);
+  const [createCollegeForm, setCreateCollegeForm] = useState({
     collegeNameAr: '',
     collegeNameEn: '',
     sourceUserId: '',
     customYears: 4,
     customSemesters: 2
   });
-  const [studentSearchQuery, setStudentSearchQuery] = useState('');
-  const [creating, setCreating] = useState(false);
+  const [collegeStudentSearchQuery, setCollegeStudentSearchQuery] = useState('');
+  const [showAllStudentsForCollege, setShowAllStudentsForCollege] = useState(false);
+  const [creatingCollege, setCreatingCollege] = useState(false);
 
   // Load Data
   const loadUniData = async () => {
@@ -256,12 +266,12 @@ export function AdminUniversitiesTab({
   }, []);
 
   useEffect(() => {
-    const handleOpenModal = () => setIsCreateModalOpen(true);
+    const handleOpenModal = () => setIsCreateUniModalOpen(true);
     window.addEventListener('open-create-uni-modal', handleOpenModal);
     return () => window.removeEventListener('open-create-uni-modal', handleOpenModal);
   }, []);
 
-  // Group databases by unique University Name
+  // Group databases by unique University Name (combining registered standalone universities)
   const groupedUniversities = useMemo(() => {
     const map: Record<string, {
       key: string;
@@ -274,6 +284,25 @@ export function AdminUniversitiesTab({
       pendingUpdatesCount: number;
     }> = {};
 
+    // 1. Include registered standalone universities
+    const registered = db.getRegisteredUniversities();
+    registered.forEach(r => {
+      const key = (r.nameAr || r.nameEn || r.key).trim();
+      if (!map[key]) {
+        map[key] = {
+          key,
+          nameAr: r.nameAr || key,
+          nameEn: r.nameEn || key,
+          colleges: [],
+          totalStudents: 0,
+          totalSubjects: 0,
+          totalDriveFiles: 0,
+          pendingUpdatesCount: 0
+        };
+      }
+    });
+
+    // 2. Group databases
     databases.forEach(dbItem => {
       const key = (dbItem.universityNameAr || dbItem.universityNameEn || 'جامعة أخرى').trim();
       if (!map[key]) {
@@ -342,7 +371,90 @@ export function AdminUniversitiesTab({
     );
   }, [groupedUniversities, globalSearch]);
 
-  // Filtered Students for Create & Switch Source Modal
+  // University Matcher helper (Arabic, English, aliases and abbreviations like BNU, CU, ASU, etc.)
+  const matchesUniversity = (studentUni: string | undefined, targetUniAr: string, targetUniEn: string): boolean => {
+    if (!studentUni) return false;
+    const s = studentUni.trim().toLowerCase();
+    const ar = (targetUniAr || '').trim().toLowerCase();
+    const en = (targetUniEn || '').trim().toLowerCase();
+    if (s === 'غير محدد' || s === 'not specified' || s === '') return false;
+
+    if (s === ar || s === en) return true;
+    if (ar && (s.includes(ar) || ar.includes(s))) return true;
+    if (en && (s.includes(en) || en.includes(s))) return true;
+
+    const clean = (str: string) => str.replace(/^(جامعة|جامعه)\s+/, '').replace(/\s+(university|univ)$/i, '').replace(/^university\s+of\s+/i, '').trim();
+    const cleanS = clean(s);
+    const cleanAr = clean(ar);
+    const cleanEn = clean(en);
+
+    if (cleanS && (cleanS === cleanAr || cleanS === cleanEn || cleanAr.includes(cleanS) || cleanS.includes(cleanAr) || cleanEn.includes(cleanS) || cleanS.includes(cleanEn))) {
+      return true;
+    }
+
+    const uniAbbreviations: Record<string, string[]> = {
+      'بنها': ['bnu', 'bu', 'benha', 'banha'],
+      'القاهرة': ['cu', 'cairo'],
+      'عين شمس': ['asu', 'ain shams', 'ain-shams'],
+      'الإسكندرية': ['au', 'alex', 'alexandria'],
+      'المنصورة': ['mu', 'mansoura'],
+      'حلوان': ['hu', 'helwan'],
+      'المنوفية': ['mu', 'menofia', 'menoufia'],
+      'الزقازيق': ['zu', 'zagazig'],
+      'أسيوط': ['au', 'assiut', 'asyut'],
+      'طنطا': ['tu', 'tanta'],
+      'كفر الشيخ': ['ksu', 'kafr el-sheikh', 'kafr el sheikh'],
+      'قناة السويس': ['scu', 'suez canal'],
+      'بورسعيد': ['psu', 'port said'],
+      'دمياط': ['du', 'damietta'],
+      'سوهاج': ['su', 'sohag'],
+      'جنوب الوادي': ['svu', 'south valley'],
+      'بني سويف': ['bsu', 'beni-suef', 'beni suef'],
+      'الفيوم': ['fu', 'fayoum', 'fayum'],
+      'الأزهر': ['azhar', 'al-azhar', 'alazhar']
+    };
+
+    for (const [keyWord, aliases] of Object.entries(uniAbbreviations)) {
+      const isTargetThisUni = ar.includes(keyWord) || aliases.some(a => en.includes(a));
+      if (isTargetThisUni) {
+        if (s.includes(keyWord) || aliases.some(a => s === a || s.includes(a))) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  };
+
+  // Filtered Students for Create University Modal
+  const filteredStudentsForCreateUni = useMemo(() => {
+    if (!uniStudentSearchQuery.trim()) return studentsList;
+    const q = uniStudentSearchQuery.toLowerCase().trim();
+    return studentsList.filter(s => 
+      (s.name || '').toLowerCase().includes(q) ||
+      (s.email || '').toLowerCase().includes(q) ||
+      (s.university || '').toLowerCase().includes(q) ||
+      (s.college || '').toLowerCase().includes(q)
+    );
+  }, [studentsList, uniStudentSearchQuery]);
+
+  // Filtered Students for Create College Modal
+  const filteredStudentsForCreateCollege = useMemo(() => {
+    let list = studentsList;
+    if (!showAllStudentsForCollege && currentUniversityGroup) {
+      list = list.filter(st => matchesUniversity(st.university, currentUniversityGroup.nameAr, currentUniversityGroup.nameEn));
+    }
+    if (!collegeStudentSearchQuery.trim()) return list;
+    const q = collegeStudentSearchQuery.toLowerCase().trim();
+    return list.filter(s => 
+      (s.name || '').toLowerCase().includes(q) ||
+      (s.email || '').toLowerCase().includes(q) ||
+      (s.university || '').toLowerCase().includes(q) ||
+      (s.college || '').toLowerCase().includes(q)
+    );
+  }, [studentsList, showAllStudentsForCollege, currentUniversityGroup, collegeStudentSearchQuery]);
+
+  // Filtered Students for Switch Source Modal
   const filterStudentsByQuery = (query: string) => {
     if (!query.trim()) return studentsList;
     const q = query.toLowerCase().trim();
@@ -353,69 +465,75 @@ export function AdminUniversitiesTab({
       (s.college || '').toLowerCase().includes(q)
     );
   };
-
-  const filteredStudentsForCreate = useMemo(() => filterStudentsByQuery(studentSearchQuery), [studentsList, studentSearchQuery]);
   const filteredStudentsForSource = useMemo(() => filterStudentsByQuery(sourceSearchQuery), [studentsList, sourceSearchQuery]);
 
-  // Handle University Name AR Change -> Auto Translate EN
-  const handleUniversityArChange = (text: string) => {
-    const translated = autoTranslateUniversity(text);
-    setCreateForm(prev => ({
-      ...prev,
-      universityNameAr: text,
-      universityNameEn: translated || prev.universityNameEn
-    }));
-  };
-
-  // Handle College Name AR Change -> Auto Translate EN
-  const handleCollegeArChange = (text: string) => {
-    const translated = autoTranslateCollege(text);
-    setCreateForm(prev => ({
-      ...prev,
-      collegeNameAr: text,
-      collegeNameEn: translated || prev.collegeNameEn
-    }));
-  };
-
-  // Handle Student Selection in Create Modal
-  const handleSelectStudent = (st: any) => {
+  // Handle Student Selection in Create University Modal (Pulls ONLY University name)
+  const handleSelectStudentForUni = (st: any) => {
     const uniAr = st.university && st.university !== 'غير محدد' && st.university !== 'Not specified' ? st.university : '';
-    const colAr = st.college && st.college !== 'غير محدد' && st.college !== 'Not specified' ? st.college : '';
-    
-    setCreateForm(prev => ({
-      ...prev,
+    setCreateUniForm({
       sourceUserId: st.id,
-      universityNameAr: prev.universityNameAr || uniAr,
-      universityNameEn: prev.universityNameEn || autoTranslateUniversity(uniAr),
-      collegeNameAr: prev.collegeNameAr || colAr,
-      collegeNameEn: prev.collegeNameEn || autoTranslateCollege(colAr),
-      customYears: st.totalYears || 4,
-      customSemesters: st.semestersPerYear || 2
-    }));
+      nameAr: uniAr,
+      nameEn: autoTranslateUniversity(uniAr)
+    });
   };
 
-  // Create University DB Action
-  const handleCreateDatabase = async () => {
-    if (!createForm.universityNameAr.trim() && !createForm.universityNameEn.trim()) {
-      alert(isAr ? 'يرجى إدخال اسم الجامعة.' : 'Please enter university name.');
-      return;
-    }
-    if (!createForm.collegeNameAr.trim() && !createForm.collegeNameEn.trim()) {
-      alert(isAr ? 'يرجى إدخال اسم الكلية.' : 'Please enter college name.');
-      return;
-    }
-    if (!createForm.sourceUserId) {
-      alert(isAr ? 'يرجى اختيار الطالب المصدر لسحب البيانات منه.' : 'Please select a source student.');
+  // Handle Create University Action
+  const handleCreateUniversity = async () => {
+    const nameAr = createUniForm.nameAr.trim();
+    const nameEn = createUniForm.nameEn.trim() || autoTranslateUniversity(nameAr);
+    if (!nameAr && !nameEn) {
+      alert(isAr ? 'يرجى إدخال اسم الجامعة أو اختيار طالب.' : 'Please enter university name or pick a student.');
       return;
     }
 
     try {
-      setCreating(true);
-      const source = studentsList.find(s => s.id === createForm.sourceUserId);
+      setCreatingUni(true);
+      db.registerUniversity(nameAr, nameEn);
+      setIsCreateUniModalOpen(false);
+      const createdKey = nameAr || nameEn;
+      setCreateUniForm({ nameAr: '', nameEn: '', sourceUserId: '' });
+      await loadUniData();
+      // Directly select this university to open its Colleges page
+      setSelectedUniversityKey(createdKey);
+      setSelectedCollegeId(null);
+    } catch (e) {
+      console.error('Error creating university:', e);
+    } finally {
+      setCreatingUni(false);
+    }
+  };
+
+  // Handle Student Selection in Create College Modal (Pulls College name, study years & semesters)
+  const handleSelectStudentForCollege = (st: any) => {
+    const colAr = st.college && st.college !== 'غير محدد' && st.college !== 'Not specified' ? st.college : '';
+    setCreateCollegeForm({
+      sourceUserId: st.id,
+      collegeNameAr: colAr,
+      collegeNameEn: autoTranslateCollege(colAr),
+      customYears: st.totalYears || 4,
+      customSemesters: st.semestersPerYear || 2
+    });
+  };
+
+  // Handle Create College in University Action
+  const handleCreateCollege = async () => {
+    if (!currentUniversityGroup) return;
+    if (!createCollegeForm.collegeNameAr.trim() && !createCollegeForm.collegeNameEn.trim()) {
+      alert(isAr ? 'يرجى إدخال اسم الكلية.' : 'Please enter college name.');
+      return;
+    }
+    if (!createCollegeForm.sourceUserId) {
+      alert(isAr ? 'يرجى اختيار الطالب المصدر لسحب بيانات الكلية منه.' : 'Please select a source student.');
+      return;
+    }
+
+    try {
+      setCreatingCollege(true);
+      const source = studentsList.find(s => s.id === createCollegeForm.sourceUserId);
       const studentSubjs = source?.subjects || source?.raw?.subjects || [];
       const studentFiles = source?.files || source?.raw?.files || [];
 
-      // Clone subjects cleanly
+      // Clone subjects cleanly with exact yearIndex and semesterIndex
       const clonedSubjects: Subject[] = studentSubjs.map((s: any) => ({
         id: uuidv4(),
         code: (s.code || '').trim(),
@@ -449,28 +567,26 @@ export function AdminUniversitiesTab({
 
       const newDb: UniversityDatabase = {
         id: uuidv4(),
-        universityNameAr: createForm.universityNameAr.trim() || createForm.universityNameEn.trim(),
-        universityNameEn: createForm.universityNameEn.trim() || createForm.universityNameAr.trim(),
-        collegeNameAr: createForm.collegeNameAr.trim() || createForm.collegeNameEn.trim(),
-        collegeNameEn: createForm.collegeNameEn.trim() || createForm.collegeNameAr.trim(),
-        sourceUserId: source.id,
-        sourceUserEmail: source.email || '',
-        sourceUserName: source.name || '',
-        totalYears: createForm.customYears || source.totalYears || 4,
-        semestersPerYear: createForm.customSemesters || source.semestersPerYear || 2,
+        universityNameAr: currentUniversityGroup.nameAr,
+        universityNameEn: currentUniversityGroup.nameEn,
+        collegeNameAr: createCollegeForm.collegeNameAr.trim() || createCollegeForm.collegeNameEn.trim(),
+        collegeNameEn: createCollegeForm.collegeNameEn.trim() || createCollegeForm.collegeNameAr.trim(),
+        sourceUserId: source ? source.id : createCollegeForm.sourceUserId,
+        sourceUserEmail: source?.email || '',
+        sourceUserName: source?.name || '',
+        totalYears: createCollegeForm.customYears || source?.totalYears || 4,
+        semestersPerYear: createCollegeForm.customSemesters || source?.semestersPerYear || 2,
         subjects: clonedSubjects,
         driveFiles: clonedDrive,
-        gradingScale: (source.gradingScale && source.gradingScale.length > 0) ? source.gradingScale : (source.raw?.settings?.grading_scale || []),
+        gradingScale: (source?.gradingScale && source.gradingScale.length > 0) ? source.gradingScale : (source?.raw?.settings?.grading_scale || []),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
 
       await db.createUniversityDatabase(newDb);
 
-      setIsCreateModalOpen(false);
-      setCreateForm({
-        universityNameAr: '',
-        universityNameEn: '',
+      setIsCreateCollegeModalOpen(false);
+      setCreateCollegeForm({
         collegeNameAr: '',
         collegeNameEn: '',
         sourceUserId: '',
@@ -478,11 +594,10 @@ export function AdminUniversitiesTab({
         customSemesters: 2
       });
       await loadUniData();
-    } catch (e: any) {
-      console.error('Error creating university database:', e);
-      alert(isAr ? 'حدث خطأ أثناء إنشاء قاعدة البيانات.' : 'Error creating university database.');
+    } catch (e) {
+      console.error('Error creating college:', e);
     } finally {
-      setCreating(false);
+      setCreatingCollege(false);
     }
   };
 
@@ -662,6 +777,11 @@ export function AdminUniversitiesTab({
         return dbItem;
       }));
       await db.updateUniversityDatabase(selectedCollegeDb.id, { gradingScale: newScale });
+      // Sync grading scale to all students who restored this database
+      await db.syncUniversityDatabaseChangesToStudents(selectedCollegeDb.id, {
+        type: 'update_grading_scale',
+        gradingScale: newScale
+      });
     } catch (e) {
       console.error('Error updating grading scale:', e);
     }
@@ -790,6 +910,13 @@ export function AdminUniversitiesTab({
       }
 
       await db.updateUniversityDatabase(selectedCollegeDb.id, { subjects: updatedSubjects });
+      
+      // Real-time synchronization to all enrolled/restored students
+      await db.syncUniversityDatabaseChangesToStudents(selectedCollegeDb.id, {
+        type: editingSubject ? 'update_subject' : 'add_subject',
+        subject: subjectPayload
+      });
+
       setIsSubjectModalOpen(false);
       await loadUniData();
     } catch (e) {
@@ -802,8 +929,17 @@ export function AdminUniversitiesTab({
     if (!selectedCollegeDb) return;
     if (!confirm(isAr ? 'هل أنت متأكد من حذف هذه المادة من قالب الكلية؟' : 'Delete subject from template?')) return;
     try {
+      const targetSubj = selectedCollegeDb.subjects.find(s => s.id === subjectId);
       const updatedSubjects = selectedCollegeDb.subjects.filter(s => s.id !== subjectId);
       await db.updateUniversityDatabase(selectedCollegeDb.id, { subjects: updatedSubjects });
+      
+      // Real-time synchronization to all enrolled/restored students
+      await db.syncUniversityDatabaseChangesToStudents(selectedCollegeDb.id, {
+        type: 'delete_subject',
+        subjectId,
+        subject: targetSubj
+      });
+
       await loadUniData();
     } catch (e) {
       console.error('Error deleting subject:', e);
@@ -1205,6 +1341,30 @@ export function AdminUniversitiesTab({
                               <h5 className="font-bold text-sm text-zinc-900 dark:text-white">
                                 {update.description || (isAr ? 'تعديل مقترح' : 'Proposed Update')}
                               </h5>
+                              {update.data && (
+                                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                  {update.data.yearIndex !== undefined && (
+                                    <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-black">
+                                      📅 {isAr ? `سنة ${update.data.yearIndex}` : `Year ${update.data.yearIndex}`}
+                                    </span>
+                                  )}
+                                  {update.data.semesterIndex !== undefined && (
+                                    <span className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-black">
+                                      📖 {isAr ? `ترم ${update.data.semesterIndex}` : `Term ${update.data.semesterIndex}`}
+                                    </span>
+                                  )}
+                                  {update.data.creditHours !== undefined && (
+                                    <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
+                                      ⏳ {update.data.creditHours} {isAr ? 'ساعات' : 'hrs'}
+                                    </span>
+                                  )}
+                                  {update.data.totalMarks !== undefined && (
+                                    <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
+                                      💯 {update.data.totalMarks} {isAr ? 'درجة' : 'marks'}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
@@ -1287,11 +1447,15 @@ export function AdminUniversitiesTab({
 
                 <div className="flex items-center gap-2.5 w-full sm:w-auto">
                   <button
-                    onClick={() => setIsCreateModalOpen(true)}
+                    onClick={() => {
+                      setCreateUniForm({ nameAr: '', nameEn: '', sourceUserId: '' });
+                      setUniStudentSearchQuery('');
+                      setIsCreateUniModalOpen(true);
+                    }}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-5 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25 transition-all cursor-pointer shrink-0"
                   >
                     <Plus size={18} />
-                    <span>{isAr ? 'إنشاء قاعدة بيانات لجامعة جديدة' : 'Add University Database'}</span>
+                    <span>{isAr ? 'إضافة جامعة جديدة' : 'Add University'}</span>
                   </button>
                 </div>
               </div>
@@ -1451,11 +1615,22 @@ export function AdminUniversitiesTab({
                 </div>
 
                 <button
-                  onClick={() => setIsCreateModalOpen(true)}
+                  onClick={() => {
+                    setCreateCollegeForm({
+                      collegeNameAr: '',
+                      collegeNameEn: '',
+                      sourceUserId: '',
+                      customYears: 4,
+                      customSemesters: 2
+                    });
+                    setShowAllStudentsForCollege(false);
+                    setCollegeStudentSearchQuery('');
+                    setIsCreateCollegeModalOpen(true);
+                  }}
                   className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shadow-md shadow-indigo-500/25 transition-all cursor-pointer shrink-0"
                 >
                   <Plus size={16} />
-                  <span>{isAr ? 'إنشاء قاعدة بيانات لجامعة/كلية جديدة' : 'Add University/College'}</span>
+                  <span>{isAr ? 'إضافة كلية للجامعة' : 'Add College to University'}</span>
                 </button>
               </div>
 
@@ -1593,17 +1768,21 @@ export function AdminUniversitiesTab({
                             <button
                               type="button"
                               onClick={() => {
-                                setCreateForm(prev => ({
-                                  ...prev,
-                                  universityNameAr: currentUniversityGroup.nameAr,
-                                  universityNameEn: currentUniversityGroup.nameEn
-                                }));
-                                setIsCreateModalOpen(true);
+                                setCreateCollegeForm({
+                                  collegeNameAr: '',
+                                  collegeNameEn: '',
+                                  sourceUserId: '',
+                                  customYears: 4,
+                                  customSemesters: 2
+                                });
+                                setShowAllStudentsForCollege(false);
+                                setCollegeStudentSearchQuery('');
+                                setIsCreateCollegeModalOpen(true);
                               }}
                               className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-sm"
                             >
                               <Plus size={15} />
-                              <span>{isAr ? 'إضافة كلية للجامعة الآن' : 'Add College Now'}</span>
+                              <span>{isAr ? 'إضافة أول كلية للجامعة الآن' : 'Add First College Now'}</span>
                             </button>
                           </td>
                         </tr>
@@ -2167,8 +2346,8 @@ export function AdminUniversitiesTab({
       {/* MODALS */}
       {/* ========================================================================= */}
 
-      {/* --- CREATE UNIVERSITY DATABASE MODAL --- */}
-      {isCreateModalOpen && (
+      {/* --- MODAL 1: CREATE UNIVERSITY ONLY --- */}
+      {isCreateUniModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-2xl max-h-[92vh] shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
             
@@ -2179,48 +2358,217 @@ export function AdminUniversitiesTab({
                 </div>
                 <div>
                   <h3 className="font-black text-lg text-zinc-900 dark:text-white">
-                    {isAr ? 'إنشاء وتجهيز قاعدة بيانات لجامعة جديدة' : 'Create University Database'}
+                    {isAr ? 'إضافة وتسجيل جامعة جديدة' : 'Add & Register University'}
                   </h3>
                   <p className="text-xs text-zinc-400">
-                    {isAr ? 'سحب الخطة والمواد والدرايف من طالب كقالب مستقل تماماً' : 'Clone curriculum & drive from a student as an independent template'}
+                    {isAr ? 'اختر طالباً لسحب اسم الجامعة تلقائياً أو أدخل اسم الجامعة مباشرة' : 'Pick a student to auto-pull university name or type it manually'}
                   </p>
                 </div>
               </div>
-              <button onClick={() => setIsCreateModalOpen(false)} className="p-2 text-zinc-400 hover:text-zinc-600 cursor-pointer">
+              <button onClick={() => setIsCreateUniModalOpen(false)} className="p-2 text-zinc-400 hover:text-zinc-600 cursor-pointer">
                 <X size={20} />
               </button>
             </div>
 
             <div className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1">
               
-              {/* Step 1: Select Source Student with Live Search */}
+              {/* Option A: Quick pick from student */}
               <div className="space-y-3">
                 <label className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white block">
-                  {isAr ? '1. اختر الطالب المصدر لسحب البيانات منه *' : '1. Select Source Student *'}
+                  {isAr ? '1. اختيار سريع من الطلاب المسجلين (اختياري لسحب اسم الجامعة):' : '1. Quick pick from registered students (optional):'}
                 </label>
 
                 <div className="relative">
                   <Search className="absolute left-3.5 rtl:left-auto rtl:right-3.5 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
                   <input
                     type="text"
-                    value={studentSearchQuery}
-                    onChange={(e) => setStudentSearchQuery(e.target.value)}
-                    placeholder={isAr ? 'ابحث بالاسم، الإيميل، الجامعة، أو الكلية...' : 'Search student by name, email, university...'}
+                    value={uniStudentSearchQuery}
+                    onChange={(e) => setUniStudentSearchQuery(e.target.value)}
+                    placeholder={isAr ? 'ابحث عن طالب أو جامعة...' : 'Search student or university...'}
                     className="w-full pl-10 rtl:pl-4 rtl:pr-10 pr-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
 
-                <div className="max-h-[300px] overflow-y-auto p-1 space-y-3">
+                <div className="max-h-[220px] overflow-y-auto p-1 space-y-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {filteredStudentsForCreateUni.map(st => {
+                      const isSelected = createUniForm.sourceUserId === st.id;
+                      return (
+                        <div
+                          key={st.id}
+                          onClick={() => handleSelectStudentForUni(st)}
+                          className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-2.5 cursor-pointer ${
+                            isSelected
+                              ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
+                              : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-indigo-300 shadow-2xs'
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <h4 className="font-black text-xs text-zinc-900 dark:text-white truncate">
+                              {st.name}
+                            </h4>
+                            <p className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 truncate mt-0.5">
+                              🏛️ {st.university && st.university !== 'غير محدد' ? st.university : (isAr ? 'غير محدد' : 'Not specified')}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className={`px-2.5 py-1 rounded-xl text-[10px] font-black transition-all shrink-0 ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                            }`}
+                          >
+                            {isSelected ? (isAr ? 'محدد ✓' : 'Selected ✓') : (isAr ? 'سحب الجامعة' : 'Select')}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Option B: University Names */}
+              <div className="space-y-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <label className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white block">
+                  {isAr ? '2. اسم الجامعة المطلوب تسجيلها:' : '2. University Name to Register:'}
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-500 mb-1">
+                      {isAr ? 'اسم الجامعة (عربي) *' : 'University Name (Arabic) *'}
+                    </label>
+                    <input
+                      type="text"
+                      value={createUniForm.nameAr}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCreateUniForm(prev => ({
+                          ...prev,
+                          nameAr: val,
+                          nameEn: autoTranslateUniversity(val) || prev.nameEn
+                        }));
+                      }}
+                      placeholder={isAr ? 'مثال: جامعة بنها' : 'e.g. Benha University'}
+                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-500 mb-1">
+                      {isAr ? 'اسم الجامعة (English - تلقائي)' : 'University Name (English - Auto)'}
+                    </label>
+                    <input
+                      type="text"
+                      value={createUniForm.nameEn}
+                      onChange={(e) => setCreateUniForm(prev => ({ ...prev, nameEn: e.target.value }))}
+                      placeholder="e.g. Benha University"
+                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="p-5 sm:p-6 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsCreateUniModalOpen(false)}
+                className="px-5 py-2.5 text-xs sm:text-sm font-bold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-2xl cursor-pointer"
+              >
+                {isAr ? 'إلغاء' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateUniversity}
+                disabled={creatingUni || (!createUniForm.nameAr.trim() && !createUniForm.nameEn.trim())}
+                className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 disabled:opacity-50 text-white px-6 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25 transition-all cursor-pointer"
+              >
+                {creatingUni ? <Loader2 size={16} className="animate-spin" /> : <Building2 size={16} />}
+                <span>{isAr ? 'تسجيل وإنشاء الجامعة' : 'Register & Create University'}</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL 2: CREATE COLLEGE IN SELECTED UNIVERSITY --- */}
+      {isCreateCollegeModalOpen && currentUniversityGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-2xl max-h-[92vh] shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+            
+            <div className="p-6 sm:p-7 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
+                  <GraduationCap size={20} />
+                </div>
+                <div>
+                  <h3 className="font-black text-lg text-zinc-900 dark:text-white">
+                    {isAr ? `إضافة كلية لـ ${currentUniversityGroup.nameAr}` : `Add College to ${currentUniversityGroup.nameEn}`}
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    {isAr ? 'سحب الخطة والمواد والدرايف ولائحة التقديرات من طالب وربطها بهذه الجامعة' : 'Clone curriculum, drive & grading scale from student to this university'}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setIsCreateCollegeModalOpen(false)} className="p-2 text-zinc-400 hover:text-zinc-600 cursor-pointer">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1">
+              
+              {/* Step 1: Select Source Student with Filter & University Matcher */}
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <label className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white block">
+                    {isAr ? '1. اختر الطالب المصدر لسحب الكلية منه *' : '1. Select Source Student *'}
+                  </label>
+
+                  {/* Toggle: Show all students or only this university */}
+                  <label className="inline-flex items-center gap-2 cursor-pointer text-xs font-bold text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded-xl">
+                    <input
+                      type="checkbox"
+                      checked={showAllStudentsForCollege}
+                      onChange={(e) => setShowAllStudentsForCollege(e.target.checked)}
+                      className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <span>{isAr ? 'إظهار جميع الطلاب من كافة الجامعات' : 'Show all students from all universities'}</span>
+                  </label>
+                </div>
+
+                {!showAllStudentsForCollege && (
+                  <div className="p-3 bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40 rounded-2xl flex items-center justify-between text-xs font-bold text-blue-700 dark:text-blue-300">
+                    <span>🏛️ {isAr ? `يتم الآن عرض طلاب (${currentUniversityGroup.nameAr}) فقط` : `Showing only students of (${currentUniversityGroup.nameEn})`}</span>
+                    <span className="px-2 py-0.5 bg-blue-600 text-white rounded-lg text-[11px]">
+                      {filteredStudentsForCreateCollege.length} {isAr ? 'طالب' : 'students'}
+                    </span>
+                  </div>
+                )}
+
+                <div className="relative">
+                  <Search className="absolute left-3.5 rtl:left-auto rtl:right-3.5 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                  <input
+                    type="text"
+                    value={collegeStudentSearchQuery}
+                    onChange={(e) => setCollegeStudentSearchQuery(e.target.value)}
+                    placeholder={isAr ? 'ابحث بالاسم، الكلية، أو البريد...' : 'Search student by name, college, email...'}
+                    className="w-full pl-10 rtl:pl-4 rtl:pr-10 pr-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="max-h-[260px] overflow-y-auto p-1 space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {filteredStudentsForCreate.map(st => {
-                      const isSelected = createForm.sourceUserId === st.id;
+                    {filteredStudentsForCreateCollege.map(st => {
+                      const isSelected = createCollegeForm.sourceUserId === st.id;
                       const subjsCount = st.subjects?.length || st.subjectsCount || 0;
                       const filesCount = st.files?.length || st.filesCount || 0;
 
                       return (
                         <div
                           key={st.id}
-                          onClick={() => handleSelectStudent(st)}
+                          onClick={() => handleSelectStudentForCollege(st)}
                           className={`p-3.5 sm:p-4 rounded-3xl border transition-all flex flex-col justify-between gap-3 cursor-pointer ${
                             isSelected
                               ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-500 ring-2 ring-blue-500/20 shadow-md'
@@ -2247,11 +2595,13 @@ export function AdminUniversitiesTab({
                               </p>
                               <div className="flex flex-wrap gap-1 mt-1.5">
                                 <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
-                                  🏛️ {st.university && st.university !== 'غير محدد' ? st.university : (isAr ? 'غير محدد' : 'No uni')}
-                                </span>
-                                <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
                                   🎓 {st.college && st.college !== 'غير محدد' ? st.college : (isAr ? 'غير محدد' : 'No col')}
                                 </span>
+                                {showAllStudentsForCollege && (
+                                  <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold">
+                                    🏛️ {st.university || ''}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -2278,47 +2628,31 @@ export function AdminUniversitiesTab({
                         </div>
                       );
                     })}
+
+                    {filteredStudentsForCreateCollege.length === 0 && (
+                      <div className="col-span-full py-8 text-center text-zinc-400">
+                        <p className="text-xs font-bold">
+                          {isAr ? 'لا يوجد طلاب مطابقين في هذه الجامعة حالياً.' : 'No matching students in this university.'}
+                        </p>
+                        {!showAllStudentsForCollege && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllStudentsForCollege(true)}
+                            className="mt-2 text-xs text-blue-600 font-bold underline cursor-pointer"
+                          >
+                            {isAr ? 'اضغط هنا للبحث في جميع طلاب الجامعات الأخرى' : 'Click here to search all students across all universities'}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Step 2: University Names with Real-time Auto Translation */}
-              <div className="space-y-2">
+              {/* Step 2: College Names with Real-time Auto Translation */}
+              <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
                 <label className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white block">
-                  {isAr ? '2. اسم الجامعة (عربي وإنجليزي)' : '2. University Name (Arabic & English)'}
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-zinc-500 mb-1">
-                      {isAr ? 'اسم الجامعة (عربي) *' : 'University (Arabic) *'}
-                    </label>
-                    <input
-                      type="text"
-                      value={createForm.universityNameAr}
-                      onChange={(e) => handleUniversityArChange(e.target.value)}
-                      placeholder={isAr ? 'مثال: جامعة القاهرة' : 'e.g. Cairo University'}
-                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-zinc-500 mb-1">
-                      {isAr ? 'اسم الجامعة (English - تلقائي)' : 'University (English - Auto)'}
-                    </label>
-                    <input
-                      type="text"
-                      value={createForm.universityNameEn}
-                      onChange={(e) => setCreateForm({ ...createForm, universityNameEn: e.target.value })}
-                      placeholder="e.g. Cairo University"
-                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Step 3: College Names with Real-time Auto Translation */}
-              <div className="space-y-2">
-                <label className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white block">
-                  {isAr ? '3. اسم الكلية (عربي وإنجليزي)' : '3. College Name (Arabic & English)'}
+                  {isAr ? '2. اسم الكلية (عربي وإنجليزي)' : '2. College Name (Arabic & English)'}
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -2327,8 +2661,15 @@ export function AdminUniversitiesTab({
                     </label>
                     <input
                       type="text"
-                      value={createForm.collegeNameAr}
-                      onChange={(e) => handleCollegeArChange(e.target.value)}
+                      value={createCollegeForm.collegeNameAr}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCreateCollegeForm(prev => ({
+                          ...prev,
+                          collegeNameAr: val,
+                          collegeNameEn: autoTranslateCollege(val) || prev.collegeNameEn
+                        }));
+                      }}
                       placeholder={isAr ? 'مثال: كلية الحاسبات والذكاء الاصطناعي' : 'e.g. Faculty of Computers'}
                       className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                     />
@@ -2339,8 +2680,8 @@ export function AdminUniversitiesTab({
                     </label>
                     <input
                       type="text"
-                      value={createForm.collegeNameEn}
-                      onChange={(e) => setCreateForm({ ...createForm, collegeNameEn: e.target.value })}
+                      value={createCollegeForm.collegeNameEn}
+                      onChange={(e) => setCreateCollegeForm(prev => ({ ...prev, collegeNameEn: e.target.value }))}
                       placeholder="e.g. Faculty of Computers and AI"
                       className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                     />
@@ -2348,7 +2689,7 @@ export function AdminUniversitiesTab({
                 </div>
               </div>
 
-              {/* Step 4: Total Study Years & Semesters */}
+              {/* Step 3: Total Study Years & Semesters */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-zinc-500 mb-1">
@@ -2358,8 +2699,8 @@ export function AdminUniversitiesTab({
                     type="number"
                     min={1}
                     max={7}
-                    value={createForm.customYears}
-                    onChange={(e) => setCreateForm({ ...createForm, customYears: Number(e.target.value) })}
+                    value={createCollegeForm.customYears}
+                    onChange={(e) => setCreateCollegeForm(prev => ({ ...prev, customYears: Number(e.target.value) }))}
                     className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -2371,8 +2712,8 @@ export function AdminUniversitiesTab({
                     type="number"
                     min={1}
                     max={4}
-                    value={createForm.customSemesters}
-                    onChange={(e) => setCreateForm({ ...createForm, customSemesters: Number(e.target.value) })}
+                    value={createCollegeForm.customSemesters}
+                    onChange={(e) => setCreateCollegeForm(prev => ({ ...prev, customSemesters: Number(e.target.value) }))}
                     className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -2383,19 +2724,19 @@ export function AdminUniversitiesTab({
             <div className="p-5 sm:p-6 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
               <button
                 type="button"
-                onClick={() => setIsCreateModalOpen(false)}
+                onClick={() => setIsCreateCollegeModalOpen(false)}
                 className="px-5 py-2.5 text-xs sm:text-sm font-bold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-2xl cursor-pointer"
               >
                 {isAr ? 'إلغاء' : 'Cancel'}
               </button>
               <button
                 type="button"
-                onClick={handleCreateDatabase}
-                disabled={creating}
-                className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-6 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25 transition-all cursor-pointer"
+                onClick={handleCreateCollege}
+                disabled={creatingCollege || (!createCollegeForm.collegeNameAr.trim() && !createCollegeForm.collegeNameEn.trim()) || !createCollegeForm.sourceUserId}
+                className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 text-white px-6 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-blue-500/25 transition-all cursor-pointer"
               >
-                {creating ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-                <span>{isAr ? 'إنشاء وسحب قاعدة البيانات' : 'Create & Clone Database'}</span>
+                {creatingCollege ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                <span>{isAr ? 'سحب وإنشاء الكلية للجامعة' : 'Clone & Create College'}</span>
               </button>
             </div>
 

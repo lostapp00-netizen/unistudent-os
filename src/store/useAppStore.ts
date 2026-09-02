@@ -197,11 +197,47 @@ export const useAppStore = create<AppState>((set, get) => ({
         );
 
         if (matchedDb && matchedDb.subjects && matchedDb.subjects.length > 0) {
-          const existingSubjectNames = new Set(finalSubjects.map(s => s.name.trim().toLowerCase()));
+          const updatedSubjsMap = new Map(finalSubjects.map(s => [s.name.trim().toLowerCase(), s]));
           const newTemplateSubjects: Subject[] = [];
 
+          // 1. Sync grading scale if needed
+          if (matchedDb.gradingScale && matchedDb.gradingScale.length > 0) {
+            const currentScaleStr = JSON.stringify(mergedSettings.gradingScale || []);
+            const templateScaleStr = JSON.stringify(matchedDb.gradingScale);
+            if (currentScaleStr !== templateScaleStr) {
+              mergedSettings.gradingScale = matchedDb.gradingScale;
+              db.upsertSettings(userId, { gradingScale: matchedDb.gradingScale }).catch(() => {});
+            }
+          }
+
+          // 2. Sync subjects (add new or update moved/edited subjects)
           matchedDb.subjects.forEach(templateSubj => {
-            if (!existingSubjectNames.has(templateSubj.name.trim().toLowerCase())) {
+            const key = templateSubj.name.trim().toLowerCase();
+            const existing = updatedSubjsMap.get(key);
+
+            if (existing) {
+              // Check if moved to another year/semester or changed credit/marks
+              const hasChanged = 
+                existing.yearIndex !== templateSubj.yearIndex ||
+                existing.semesterIndex !== templateSubj.semesterIndex ||
+                existing.creditHours !== templateSubj.creditHours ||
+                existing.totalMarks !== templateSubj.totalMarks;
+
+              if (hasChanged) {
+                existing.yearIndex = templateSubj.yearIndex;
+                existing.semesterIndex = templateSubj.semesterIndex;
+                existing.creditHours = templateSubj.creditHours;
+                existing.totalMarks = templateSubj.totalMarks;
+                existing.code = templateSubj.code || existing.code;
+                db.updateSubject(userId, existing.id, {
+                  yearIndex: templateSubj.yearIndex,
+                  semesterIndex: templateSubj.semesterIndex,
+                  creditHours: templateSubj.creditHours,
+                  totalMarks: templateSubj.totalMarks,
+                  code: existing.code
+                }).catch(() => {});
+              }
+            } else {
               const newS: Subject = {
                 ...templateSubj,
                 id: uuidv4(),
@@ -692,6 +728,13 @@ async function checkAndNotifySourceUpdate(
     const uniDbs = await db.getUniversityDatabases();
     const matchingDb = uniDbs.find(u => u.sourceUserId === userId);
     if (matchingDb) {
+      let finalDescription = description;
+      if (type === 'add_subject' && data?.name) {
+        finalDescription = `إضافة مادة جديدة: ${data.name} (سنة ${data.yearIndex || 1} - ترم ${data.semesterIndex || 1})`;
+      } else if (type === 'update_subject' && data?.name) {
+        finalDescription = `تعديل مادة: ${data.name} (سنة ${data.yearIndex || 1} - ترم ${data.semesterIndex || 1})`;
+      }
+
       await db.recordPendingUpdate({
         id: uuidv4(),
         universityDatabaseId: matchingDb.id,
@@ -701,7 +744,7 @@ async function checkAndNotifySourceUpdate(
         sourceUserEmail: userEmail || '',
         sourceUserName: userName || '',
         type,
-        description,
+        description: finalDescription,
         data,
         status: 'pending',
         createdAt: new Date().toISOString()

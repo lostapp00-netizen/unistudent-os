@@ -165,13 +165,47 @@ export function Settings() {
           <button
             type="button"
             onClick={() => setIsRestoreModalOpen(true)}
-            className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-500/20 transition-all cursor-pointer"
+            className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-500/20 transition-all cursor-pointer shrink-0"
           >
             <Building2 size={16} />
             <Sparkles size={14} className="text-amber-300" />
             <span>{isAr ? 'استرداد من قاعدة بيانات الجامعات' : 'Restore from University Database'}</span>
           </button>
         </div>
+
+        {/* Linked / Restored Database Attribution Banner */}
+        {settings.university && settings.college && settings.university !== 'غير محدد' && (
+          <div className="p-4 sm:p-5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                <Building2 size={18} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-black text-indigo-700 dark:text-indigo-300">
+                    {isAr ? 'قاعدة البيانات مستردة من:' : 'Curriculum Restored from:'}
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white border border-indigo-100 dark:border-indigo-950 shadow-2xs">
+                    {settings.university} • {settings.college}
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  {isAr 
+                    ? `الخطة مربوطة تلقائياً (${settings.totalYears} سنوات، ${settings.semestersPerYear} فصول/سنة ولائحة التقديرات المعتمدة)` 
+                    : `Linked template (${settings.totalYears} years, ${settings.semestersPerYear} terms/yr & accredited scale)`}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsRestoreModalOpen(true)}
+              className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer self-end sm:self-center"
+            >
+              {isAr ? 'تغيير أو إعادة استرداد' : 'Change or Re-import'}
+            </button>
+          </div>
+        )}
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
