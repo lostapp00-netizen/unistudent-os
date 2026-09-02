@@ -851,6 +851,19 @@ export function Admin() {
           </div>
 
           <div className="flex items-center gap-2">
+            {activeTab === 'universities' && (
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('open-create-uni-modal'));
+                }}
+                className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-3.5 py-2 rounded-xl text-xs font-black shadow-md shadow-indigo-500/25 transition-all cursor-pointer shrink-0"
+              >
+                <Plus size={15} />
+                <span className="hidden sm:inline">{isAr ? 'إنشاء قاعدة بيانات جديدة' : 'Add Database'}</span>
+                <span className="sm:hidden">{isAr ? 'إضافة' : 'Add'}</span>
+              </button>
+            )}
+
             <button 
               onClick={toggleTheme}
               className="p-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all shadow-2xs cursor-pointer"
