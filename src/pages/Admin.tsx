@@ -45,7 +45,13 @@ import {
   GraduationCap,
   Sun,
   Moon,
-  Globe
+  Globe,
+  ChevronDown,
+  ChevronUp,
+  ChevronRight,
+  ChevronLeft,
+  BellRing,
+  Bell
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { db } from '../lib/db';
