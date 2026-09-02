@@ -995,6 +995,60 @@ export const db = {
       }
     } catch {}
 
+    // 3. For all user IDs, merge cached subjects & files if missing from Supabase response
+    userIds.forEach(uid => {
+      try {
+        const cachedSubjs = localStorage.getItem(`unistudent_subjects_${uid}`);
+        if (cachedSubjs) {
+          const parsed = JSON.parse(cachedSubjs);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed.forEach(s => {
+              if (!rawSubjects.some(rs => rs.id === s.id)) {
+                rawSubjects.push({
+                  id: s.id,
+                  user_id: uid,
+                  code: s.code || '',
+                  name: s.name || '',
+                  credit_hours: s.creditHours || 3,
+                  total_marks: s.totalMarks || 100,
+                  year_index: s.yearIndex || 1,
+                  semester_index: s.semesterIndex || 1,
+                  status: s.status || 'current',
+                  distributions: s.distributions || [],
+                  final_grade_letter: s.finalGradeLetter,
+                  include_in_gpa: s.includeInGpa !== false
+                });
+              }
+            });
+          }
+        }
+      } catch {}
+
+      try {
+        const cachedFiles = localStorage.getItem(`unistudent_drive_files_${uid}`);
+        if (cachedFiles) {
+          const parsed = JSON.parse(cachedFiles);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed.forEach(f => {
+              if (!rawFiles.some(rf => rf.id === f.id)) {
+                rawFiles.push({
+                  id: f.id,
+                  user_id: uid,
+                  name: f.name || '',
+                  size: f.size || 0,
+                  type: f.type || 'file',
+                  url: f.url || '',
+                  upload_date: f.createdAt || new Date().toISOString(),
+                  parent_id: f.parentId || null,
+                  b2_file_id: f.b2FileId
+                });
+              }
+            });
+          }
+        }
+      } catch {}
+    });
+
     return {
       userIds: Array.from(userIds),
       rawSettings,

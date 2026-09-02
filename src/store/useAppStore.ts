@@ -268,7 +268,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!userId) return;
     const finalSubject: Subject = {
       ...subject,
-      code: subject.code?.trim() || `SUB-${Math.floor(100 + Math.random() * 900)}`,
+      code: (subject.code || '').trim(),
       distributions: subject.distributions || [],
       includeInGpa: subject.includeInGpa !== false
     };
@@ -587,7 +587,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (udb.subjects && udb.subjects.length > 0) {
       const importedSubjects: Subject[] = udb.subjects.map(s => ({
         id: uuidv4(),
-        code: s.code || `SUB-${Math.floor(100 + Math.random() * 900)}`,
+        code: (s.code || '').trim(),
         name: s.name,
         creditHours: Number(s.creditHours || 3),
         totalMarks: Number(s.totalMarks || 100),

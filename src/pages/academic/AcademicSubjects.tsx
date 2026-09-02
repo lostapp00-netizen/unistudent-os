@@ -74,7 +74,7 @@ export function AcademicSubjects() {
     if (editingSubject) {
       updateSubject(editingSubject.id, {
         name: formData.name.trim(),
-        code: formData.code.trim() || `SUB-${Math.floor(100 + Math.random() * 900)}`,
+        code: formData.code.trim(),
         creditHours: Number(formData.creditHours) || 3,
         totalMarks: Number(formData.totalMarks) || 100,
         yearIndex: Number(formData.yearIndex),
@@ -86,7 +86,7 @@ export function AcademicSubjects() {
       const subject: Subject = {
         id: newSubId,
         name: formData.name.trim(),
-        code: formData.code.trim() || `SUB-${Math.floor(100 + Math.random() * 900)}`,
+        code: formData.code.trim(),
         creditHours: Number(formData.creditHours) || 3,
         totalMarks: Number(formData.totalMarks) || 100,
         yearIndex: Number(formData.yearIndex),

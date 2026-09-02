@@ -235,6 +235,28 @@ export function Admin() {
         scheduleCount: userSchedule.length,
         filesCount: userFiles.length,
         feedbacksCount: userFeedbacks.length,
+        subjects: userSubjects.map(s => ({
+          id: s.id,
+          code: s.code || '',
+          name: s.name,
+          creditHours: Number(s.credit_hours || s.creditHours || 3),
+          totalMarks: Number(s.total_marks || s.totalMarks || 100),
+          yearIndex: Number(s.year_index || s.yearIndex || 1),
+          semesterIndex: Number(s.semester_index || s.semesterIndex || 1),
+          distributions: s.distributions || [],
+          status: s.status || 'current',
+          includeInGpa: s.include_in_gpa !== false && s.includeInGpa !== false
+        })),
+        files: (adminData.rawFiles.filter(f => f.user_id === uid)).map(f => ({
+          id: f.id,
+          name: f.name,
+          size: Number(f.size || 0),
+          type: f.type || 'file',
+          url: f.url || '',
+          createdAt: f.upload_date || f.created_at || new Date().toISOString(),
+          parentId: f.parent_id || f.parentId || null,
+          b2FileId: f.b2_file_id || f.b2FileId
+        })),
         raw: {
           settings: userSettingsRow,
           subjects: userSubjects,
