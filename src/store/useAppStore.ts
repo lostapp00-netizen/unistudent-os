@@ -186,12 +186,48 @@ export const useAppStore = create<AppState>((set, get) => ({
         localStorage.setItem('unistudent_known_users', JSON.stringify(knownList));
       } catch {}
 
+      // Sync master university database updates if student is linked to a database template
+      let finalSubjects = subjects || [];
+      try {
+        const uniDatabases = await db.getUniversityDatabases();
+        const matchedDb = uniDatabases.find(d => 
+          (mergedSettings.universityDatabaseId && d.id === mergedSettings.universityDatabaseId) ||
+          ((d.universityNameAr === mergedSettings.university || d.universityNameEn === mergedSettings.university) &&
+           (d.collegeNameAr === mergedSettings.college || d.collegeNameEn === mergedSettings.college))
+        );
+
+        if (matchedDb && matchedDb.subjects && matchedDb.subjects.length > 0) {
+          const existingSubjectNames = new Set(finalSubjects.map(s => s.name.trim().toLowerCase()));
+          const newTemplateSubjects: Subject[] = [];
+
+          matchedDb.subjects.forEach(templateSubj => {
+            if (!existingSubjectNames.has(templateSubj.name.trim().toLowerCase())) {
+              const newS: Subject = {
+                ...templateSubj,
+                id: uuidv4(),
+                status: 'current',
+                includeInGpa: true,
+                distributions: (templateSubj.distributions || []).map(d => ({ ...d, id: uuidv4(), achievedMarks: null, status: 'current' }))
+              };
+              newTemplateSubjects.push(newS);
+              db.addSubject(userId, newS).catch(() => {});
+            }
+          });
+
+          if (newTemplateSubjects.length > 0) {
+            finalSubjects = [...finalSubjects, ...newTemplateSubjects];
+          }
+        }
+      } catch (syncErr) {
+        console.warn('Silent university DB sync caught:', syncErr);
+      }
+
       set({
         userId,
         userEmail: email || null,
         isInitialized: true,
         settings: mergedSettings,
-        subjects: subjects || [],
+        subjects: finalSubjects,
         tasks: tasks || [],
         notes: notes || [],
         appointments: appointments || [],

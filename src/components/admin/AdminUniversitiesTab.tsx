@@ -41,12 +41,14 @@ import {
   CornerDownRight,
   RotateCcw,
   Send,
-  UserCheck
+  UserCheck,
+  Move
 } from 'lucide-react';
 import { db } from '../../lib/db';
 import { UniversityDatabase, UniversityPendingUpdate, Subject, DriveFile, GradeDistributionItem } from '../../types';
 import { ConfirmModal } from '../ui/CustomModal';
 import { autoTranslateUniversity, autoTranslateCollege } from '../../lib/academicTranslation';
+import { previewFile, downloadFile } from '../../lib/backblaze';
 
 interface AdminUniversitiesTabProps {
   studentsList: any[];
@@ -70,8 +72,7 @@ export function AdminUniversitiesTab({
   const [databases, setDatabases] = useState<UniversityDatabase[]>([]);
   const [pendingUpdates, setPendingUpdates] = useState<UniversityPendingUpdate[]>([]);
   
-  // Navigation / Hierarchical Drilldown state with Session Storage Persistence
-  // View Levels: 'universities_list' -> 'university_overview' -> 'college_studio'
+  // Navigation State with Session Storage Persistence
   const [selectedUniversityKey, setSelectedUniversityKey] = useState<string | null>(() => {
     try {
       return sessionStorage.getItem('unistudent_admin_selected_uni_key') || null;
@@ -127,14 +128,14 @@ export function AdminUniversitiesTab({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [dbToDelete, setDbToDelete] = useState<UniversityDatabase | null>(null);
 
-  // College Academic Structure Modal State (Years & Semesters)
+  // College Academic Structure Modal State
   const [isStructureModalOpen, setIsStructureModalOpen] = useState(false);
   const [structureForm, setStructureForm] = useState({ totalYears: 4, semestersPerYear: 2 });
 
   // Switch Source Student Modal State
   const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
   const [sourceSearchQuery, setSourceSearchQuery] = useState('');
-  const [notifySourceStudent, setNotifySourceStudent] = useState(true);
+  const [notifySourceStudent, setNotifySourceStudent] = useState(false);
 
   // Subject Add / Edit Modal State
   const [isSubjectModalOpen, setIsSubjectModalOpen] = useState(false);
@@ -165,6 +166,7 @@ export function AdminUniversitiesTab({
   // Drive File / Folder Management State
   const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
   const [currentDriveFolderId, setCurrentDriveFolderId] = useState<string | null>(null);
+  const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
   const [driveForm, setDriveForm] = useState<{
     name: string;
     type: 'folder' | 'file';
@@ -285,17 +287,20 @@ export function AdminUniversitiesTab({
     );
   }, [groupedUniversities, globalSearch]);
 
-  // Filtered Students for Create Modal
-  const filteredStudentsForCreate = useMemo(() => {
-    if (!studentSearchQuery.trim()) return studentsList;
-    const q = studentSearchQuery.toLowerCase().trim();
+  // Filtered Students for Create & Switch Source Modal
+  const filterStudentsByQuery = (query: string) => {
+    if (!query.trim()) return studentsList;
+    const q = query.toLowerCase().trim();
     return studentsList.filter(s => 
       (s.name || '').toLowerCase().includes(q) ||
       (s.email || '').toLowerCase().includes(q) ||
       (s.university || '').toLowerCase().includes(q) ||
       (s.college || '').toLowerCase().includes(q)
     );
-  }, [studentsList, studentSearchQuery]);
+  };
+
+  const filteredStudentsForCreate = useMemo(() => filterStudentsByQuery(studentSearchQuery), [studentsList, studentSearchQuery]);
+  const filteredStudentsForSource = useMemo(() => filterStudentsByQuery(sourceSearchQuery), [studentsList, sourceSearchQuery]);
 
   // Handle University Name AR Change -> Auto Translate EN
   const handleUniversityArChange = (text: string) => {
@@ -355,7 +360,7 @@ export function AdminUniversitiesTab({
       const studentSubjs = source?.subjects || source?.raw?.subjects || [];
       const studentFiles = source?.files || source?.raw?.files || [];
 
-      // Clone subjects cleanly without auto SUB-xxx
+      // Clone subjects cleanly
       const clonedSubjects: Subject[] = studentSubjs.map((s: any) => ({
         id: uuidv4(),
         code: (s.code || '').trim(),
@@ -406,15 +411,6 @@ export function AdminUniversitiesTab({
       };
 
       await db.createUniversityDatabase(newDb);
-
-      // Notify source student
-      await db.sendStudentNotification(source.id, {
-        title: isAr ? 'تم اعتماد حسابك كمصدر لقاعدة بيانات الكلية' : 'Account Chosen as Source Template',
-        message: isAr 
-          ? `مرحباً ${source.name}، تم اختيار حسابك من قبل الإدارة كقالب مرجعي معتمد لكلية ${newDb.collegeNameAr}. شكراً لمساهمتك!` 
-          : `Your account was chosen as reference template for ${newDb.collegeNameEn}.`,
-        type: 'source_alert'
-      });
 
       setIsCreateModalOpen(false);
       setCreateForm({
@@ -477,9 +473,9 @@ export function AdminUniversitiesTab({
 
       if (notifySourceStudent) {
         await db.sendStudentNotification(newStudent.id, {
-          title: isAr ? 'تم تعيينك كطالب مصدر لقاعدة بيانات الكلية' : 'Assigned as Source Student',
+          title: isAr ? 'تم اختيار حسابك كقالب مصدر لقاعدة بيانات الكلية' : 'Assigned as Source Student',
           message: isAr 
-            ? `مرحباً ${newStudent.name}، تم تعيين حسابك من قبل الإدارة كقالب مرجعي لكلية ${selectedCollegeDb.collegeNameAr}.` 
+            ? `مرحباً ${newStudent.name}، تم اختيار حسابك من قبل الإدارة كقالب مرجعي معتمد لكلية ${selectedCollegeDb.collegeNameAr}.` 
             : `Your account is now the reference template for ${selectedCollegeDb.collegeNameEn}.`,
           type: 'source_alert'
         });
@@ -541,6 +537,16 @@ export function AdminUniversitiesTab({
     }
 
     try {
+      const sanitizedDistributions = subjectForm.distributions
+        .filter(d => (d.name || '').trim() !== '' || Number(d.maxMarks) > 0)
+        .map(d => ({
+          id: d.id || uuidv4(),
+          name: (d.name || 'بند').trim(),
+          maxMarks: Number(d.maxMarks || 0),
+          achievedMarks: null,
+          status: 'current' as const
+        }));
+
       const subjectPayload: Subject = {
         id: editingSubject ? editingSubject.id : uuidv4(),
         name: subjectForm.name.trim(),
@@ -549,13 +555,9 @@ export function AdminUniversitiesTab({
         totalMarks: Number(subjectForm.totalMarks || 100),
         yearIndex: Number(subjectForm.yearIndex),
         semesterIndex: Number(subjectForm.semesterIndex),
-        distributions: subjectForm.distributions.map(d => ({
-          id: d.id || uuidv4(),
-          name: d.name.trim() || 'بند',
-          maxMarks: Number(d.maxMarks || 0),
-          achievedMarks: null,
-          status: 'current'
-        })),
+        distributions: sanitizedDistributions.length > 0 ? sanitizedDistributions : [
+          { id: uuidv4(), name: 'درجة المادة', maxMarks: Number(subjectForm.totalMarks || 100), achievedMarks: null, status: 'current' }
+        ],
         status: 'current',
         includeInGpa: true
       };
@@ -568,13 +570,6 @@ export function AdminUniversitiesTab({
       }
 
       await db.updateUniversityDatabase(selectedCollegeDb.id, { subjects: updatedSubjects });
-      
-      // Propagate notification to enrolled students
-      await db.notifyEnrolledStudentsOfDbUpdate(
-        selectedCollegeDb.id,
-        isAr ? `تم تحديث مادة "${subjectPayload.name}" في خطة الكلية.` : `Updated subject "${subjectPayload.name}".`
-      );
-
       setIsSubjectModalOpen(false);
       await loadUniData();
     } catch (e) {
@@ -609,7 +604,7 @@ export function AdminUniversitiesTab({
         type: driveForm.type,
         size: 0,
         parentId: currentDriveFolderId,
-        createdAt: new Date().toISOString(),
+        createdAt: new Date().toISOString().split('T')[0],
         url: driveForm.url.trim()
       };
 
@@ -644,7 +639,6 @@ export function AdminUniversitiesTab({
     if (!selectedCollegeDb) return;
     if (!confirm(isAr ? 'هل أنت متأكد من حذف هذا الملف/المجلد من درايف الكلية؟' : 'Delete file from drive?')) return;
     try {
-      // Also delete any nested children if it's a folder
       const updatedFiles = selectedCollegeDb.driveFiles.filter(f => f.id !== fileId && f.parentId !== fileId);
       await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
       await loadUniData();
@@ -653,11 +647,56 @@ export function AdminUniversitiesTab({
     }
   };
 
+  // Preview Drive File in Browser
+  const handlePreviewDriveFile = async (file: DriveFile) => {
+    if (file.type === 'folder') {
+      setCurrentDriveFolderId(file.id);
+      return;
+    }
+
+    try {
+      await previewFile(file);
+    } catch (err) {
+      console.error('Error previewing file:', err);
+      if (file.url) {
+        window.open(file.url, '_blank');
+      } else {
+        alert(isAr ? 'لا يوجد رابط متاح لمعاينة هذا الملف.' : 'No preview URL available for this file.');
+      }
+    }
+  };
+
+  // Download Drive File
+  const handleDownloadDriveFile = async (e: React.MouseEvent, file: DriveFile) => {
+    e.stopPropagation();
+    try {
+      setDownloadingFileId(file.id);
+      await downloadFile(file);
+    } catch (err) {
+      console.error('Error downloading file:', err);
+      if (file.url) {
+        window.open(file.url, '_blank');
+      } else {
+        alert(isAr ? 'فشل تنزيل الملف.' : 'Failed to download file.');
+      }
+    } finally {
+      setDownloadingFileId(null);
+    }
+  };
+
+  // Format file size
+  const formatSize = (bytes: number) => {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
   // Respond to Pending Update (with Reversible status)
   const handleResolvePendingUpdate = async (update: UniversityPendingUpdate, status: 'approved' | 'rejected' | 'pending') => {
     try {
       if (status === 'pending') {
-        // Reset to pending
         await db.recordPendingUpdate({ ...update, status: 'pending', resolvedAt: undefined });
       } else {
         await db.respondToPendingUpdate(update.id, status, (targetDb) => {
@@ -744,8 +783,8 @@ export function AdminUniversitiesTab({
                 </h2>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
                   {isAr 
-                    ? 'مراجعة واعتماد التعديلات المقترحة من الطلاب المصدر لكل جامعة وكلية ونشرها للطلاب' 
-                    : 'Review and approve proposed modifications from source students and broadcast to enrolled students'}
+                    ? 'مراجعة واعتماد التعديلات المقترحة من الطلاب المصدر لكل جامعة وكلية لتحديث القوالب' 
+                    : 'Review and approve proposed modifications from source students to update master templates'}
                 </p>
               </div>
             </div>
@@ -829,7 +868,6 @@ export function AdminUniversitiesTab({
                       </p>
                     </div>
 
-                    {/* Action Buttons */}
                     <div className="flex items-center gap-2 self-end sm:self-center">
                       {update.status === 'pending' ? (
                         <>
@@ -844,7 +882,7 @@ export function AdminUniversitiesTab({
                             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer"
                           >
                             <Check size={14} />
-                            <span>{isAr ? 'موافقة واعتماد ونشر' : 'Approve & Publish'}</span>
+                            <span>{isAr ? 'موافقة واعتماد في القالب' : 'Approve & Merge'}</span>
                           </button>
                         </>
                       ) : (
@@ -940,7 +978,7 @@ export function AdminUniversitiesTab({
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full text-xs sm:text-sm text-left rtl:text-right">
+                  <table className="w-full text-xs sm:text-sm text-left rtl:text-right whitespace-nowrap">
                     <thead className="bg-zinc-50 dark:bg-zinc-800/60 text-zinc-500 uppercase text-[11px] font-black border-b border-zinc-200 dark:border-zinc-800">
                       <tr>
                         <th className="py-4 px-6">{isAr ? 'اسم الجامعة' : 'University Name'}</th>
@@ -1056,7 +1094,7 @@ export function AdminUniversitiesTab({
                 </div>
               </div>
 
-              {/* Colleges Table (Styled like Subjects Table) */}
+              {/* Colleges Table (Separating Years and Semesters columns cleanly) */}
               <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs overflow-hidden">
                 <div className="p-5 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
                   <h3 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white flex items-center gap-2">
@@ -1069,13 +1107,14 @@ export function AdminUniversitiesTab({
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full text-xs sm:text-sm text-left rtl:text-right">
+                  <table className="w-full text-xs sm:text-sm text-left rtl:text-right whitespace-nowrap">
                     <thead className="bg-zinc-50 dark:bg-zinc-800/60 text-zinc-500 uppercase text-[11px] font-black border-b border-zinc-200 dark:border-zinc-800">
                       <tr>
                         <th className="py-4 px-6">{isAr ? 'اسم الكلية' : 'College Name'}</th>
-                        <th className="py-4 px-6 text-center">{isAr ? 'السنوات والفصول' : 'Years & Semesters'}</th>
-                        <th className="py-4 px-6 text-center">{isAr ? 'المواد' : 'Subjects'}</th>
-                        <th className="py-4 px-6 text-center">{isAr ? 'الدرايف' : 'Drive'}</th>
+                        <th className="py-4 px-6 text-center">{isAr ? 'السنوات الدراسية' : 'Study Years'}</th>
+                        <th className="py-4 px-6 text-center">{isAr ? 'فصول السنة (الترمات)' : 'Semesters/Year'}</th>
+                        <th className="py-4 px-6 text-center">{isAr ? 'المواد المسجلة' : 'Subjects'}</th>
+                        <th className="py-4 px-6 text-center">{isAr ? 'ملفات الدرايف' : 'Drive Files'}</th>
                         <th className="py-4 px-6 text-center">{isAr ? 'الطالب المصدر' : 'Source Student'}</th>
                         <th className="py-4 px-6 text-center">{isAr ? 'الإجراءات' : 'Actions'}</th>
                       </tr>
@@ -1107,9 +1146,15 @@ export function AdminUniversitiesTab({
                               </div>
                             </td>
 
-                            <td className="py-4 px-6 text-center">
-                              <span className="px-2.5 py-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 font-bold text-xs">
-                                {collegeDb.totalYears || 4} {isAr ? 'سنوات' : 'Yrs'} • {collegeDb.semestersPerYear || 2} {isAr ? 'ترم/سنة' : 'Sem/Yr'}
+                            <td className="py-4 px-6 text-center font-bold">
+                              <span className="px-3 py-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs">
+                                {collegeDb.totalYears || 4} {isAr ? 'سنوات' : 'Years'}
+                              </span>
+                            </td>
+
+                            <td className="py-4 px-6 text-center font-bold">
+                              <span className="px-3 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-xs">
+                                {collegeDb.semestersPerYear || 2} {isAr ? 'ترم / سنة' : 'Semesters/Yr'}
                               </span>
                             </td>
 
@@ -1122,7 +1167,7 @@ export function AdminUniversitiesTab({
                             </td>
 
                             <td className="py-4 px-6 text-center text-xs text-zinc-500">
-                              <span className="font-bold block text-zinc-800 dark:text-zinc-200">{collegeDb.sourceUserName}</span>
+                              <span className="font-bold block text-zinc-800 dark:text-zinc-200">{collegeDb.sourceUserName || 'طالب مسجل'}</span>
                               <span className="text-[10px] text-zinc-400">{collegeDb.sourceUserEmail}</span>
                             </td>
 
@@ -1185,7 +1230,6 @@ export function AdminUniversitiesTab({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {/* Academic Structure Modifier Button */}
                   <button
                     onClick={() => {
                       setStructureForm({
@@ -1200,7 +1244,6 @@ export function AdminUniversitiesTab({
                     <span>{selectedCollegeDb.totalYears || 4} {isAr ? 'سنوات' : 'Yrs'} • {selectedCollegeDb.semestersPerYear || 2} {isAr ? 'فصول/سنة' : 'Sem/Yr'}</span>
                   </button>
 
-                  {/* Switch Source Student Button */}
                   <button
                     onClick={() => {
                       setSourceSearchQuery('');
@@ -1227,7 +1270,7 @@ export function AdminUniversitiesTab({
                 <div className="flex items-center gap-2 text-purple-900 dark:text-purple-200">
                   <UserCheck size={18} className="text-purple-600 shrink-0" />
                   <span>
-                    {isAr ? 'الطالب المصدر المعتمد لهذه الكلية:' : 'Source Student:'} <strong>{selectedCollegeDb.sourceUserName || 'طالب مسجل'}</strong> ({selectedCollegeDb.sourceUserEmail})
+                    {isAr ? 'الطالب المصدر المعتمد لقالب هذه الكلية:' : 'Source Student:'} <strong>{selectedCollegeDb.sourceUserName || 'طالب مسجل'}</strong> ({selectedCollegeDb.sourceUserEmail})
                   </span>
                 </div>
                 <button
@@ -1432,7 +1475,7 @@ export function AdminUniversitiesTab({
                 </div>
               )}
 
-              {/* STUDIO TAB 2: FULL DRIVE FILE MANAGER */}
+              {/* STUDIO TAB 2: FULL DRIVE FILE MANAGER WITH REAL PREVIEW & DOWNLOAD */}
               {activeStudioTab === 'drive' && (
                 <div className="space-y-4">
                   {/* Drive Actions & Breadcrumbs */}
@@ -1482,71 +1525,89 @@ export function AdminUniversitiesTab({
                     </div>
                   </div>
 
-                  {/* Drive Files Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                    {currentDriveFiles.map(file => (
-                      <div
-                        key={file.id}
-                        className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2 shadow-2xs hover:shadow-md transition-all group"
-                      >
-                        <div 
-                          onClick={() => file.type === 'folder' && setCurrentDriveFolderId(file.id)}
-                          className={`flex items-center gap-3 min-w-0 flex-1 ${
-                            file.type === 'folder' ? 'cursor-pointer hover:opacity-80' : ''
-                          }`}
-                        >
-                          {file.type === 'folder' ? (
-                            <Folder size={22} className="text-amber-500 shrink-0" />
-                          ) : (
-                            <FileText size={22} className="text-blue-500 shrink-0" />
-                          )}
-                          <div className="min-w-0">
-                            <h5 className="font-bold text-xs text-zinc-900 dark:text-white truncate">{file.name}</h5>
-                            <span className="text-[10px] text-zinc-400 font-medium">
-                              {file.type === 'folder' ? (isAr ? 'مجلد' : 'Folder') : (file.url ? 'رابط ويب' : 'ملف')}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          {file.url && (
-                            <a
-                              href={file.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950 rounded-lg cursor-pointer"
-                              title={isAr ? 'عرض / فتح الملف' : 'Open'}
-                            >
-                              <ExternalLink size={14} />
-                            </a>
-                          )}
-
-                          <button
-                            onClick={() => {
-                              setMovingFile(file);
-                              setTargetMoveFolderId(null);
-                            }}
-                            className="p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg cursor-pointer"
-                            title={isAr ? 'نقل إلى مجلد' : 'Move'}
-                          >
-                            <FolderInput size={14} />
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteDriveItem(file.id)}
-                            className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950 rounded-lg cursor-pointer"
-                            title={isAr ? 'حذف من درايف الكلية' : 'Delete'}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
+                  {/* Drive Files List (Styled matching Student Drive) */}
+                  <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+                    {currentDriveFiles.length === 0 ? (
+                      <div className="py-16 text-center text-zinc-400 flex flex-col items-center">
+                        <Folder size={48} className="mb-2 opacity-25 text-zinc-500" />
+                        <p className="font-bold text-sm text-zinc-500">{isAr ? 'هذا المجلد فارغ حالياً' : 'Folder is empty'}</p>
+                        <p className="text-xs text-zinc-400 mt-0.5">{isAr ? 'يمكنك إضافة ملفات أو مجلدات فرعية.' : 'Add files or subfolders.'}</p>
                       </div>
-                    ))}
+                    ) : (
+                      <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                        {currentDriveFiles.map(file => (
+                          <li 
+                            key={file.id} 
+                            className="group flex items-center justify-between p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer"
+                            onClick={() => handlePreviewDriveFile(file)}
+                          >
+                            <div className="flex items-center gap-3.5 min-w-0">
+                              <div className={`p-3 rounded-2xl ${
+                                file.type === 'folder' 
+                                  ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/40' 
+                                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700/60'
+                              }`}>
+                                {file.type === 'folder' ? <Folder size={22} /> : <FileText size={22} />}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-bold text-sm text-zinc-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                  {file.name}
+                                </p>
+                                <p className="text-xs text-zinc-400 mt-0.5">
+                                  {file.type === 'folder' ? (isAr ? 'مجلد درايف' : 'Folder') : `${formatSize(file.size)} • ${file.createdAt}`}
+                                </p>
+                              </div>
+                            </div>
 
-                    {currentDriveFiles.length === 0 && (
-                      <div className="col-span-full py-12 text-center text-xs text-zinc-400 bg-white dark:bg-zinc-900 rounded-3xl border border-dashed border-zinc-200 dark:border-zinc-800 p-6">
-                        {isAr ? 'لا توجد عناصر في هذا المجلد بعد.' : 'No items in this folder yet.'}
-                      </div>
+                            {/* Actions */}
+                            <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                              {/* Move Button */}
+                              <button
+                                onClick={() => {
+                                  setMovingFile(file);
+                                  setTargetMoveFolderId(null);
+                                }}
+                                className="p-2 text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 dark:hover:text-blue-400 border border-zinc-200 dark:border-zinc-700/60 rounded-xl transition-all shadow-2xs cursor-pointer"
+                                title={isAr ? 'نقل إلى مجلد' : 'Move'}
+                              >
+                                <Move size={15} />
+                              </button>
+
+                              {/* Preview in Browser */}
+                              {file.type === 'file' && (
+                                <button
+                                  onClick={() => handlePreviewDriveFile(file)}
+                                  className="p-2 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-all rounded-xl shadow-2xs cursor-pointer"
+                                  title={isAr ? 'معاينة في المتصفح' : 'Preview'}
+                                >
+                                  <Eye size={15} />
+                                </button>
+                              )}
+
+                              {/* Download Button */}
+                              {file.type === 'file' && (
+                                <button
+                                  onClick={(e) => handleDownloadDriveFile(e, file)}
+                                  disabled={downloadingFileId === file.id}
+                                  className="p-2 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 disabled:opacity-50 transition-all rounded-xl shadow-2xs cursor-pointer"
+                                  title={isAr ? 'تنزيل الملف' : 'Download'}
+                                >
+                                  {downloadingFileId === file.id ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                                </button>
+                              )}
+
+                              {/* Delete Button */}
+                              <button
+                                onClick={() => handleDeleteDriveItem(file.id)}
+                                className="p-2 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all rounded-xl shadow-2xs cursor-pointer"
+                                title={isAr ? 'حذف' : 'Delete'}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
                     )}
                   </div>
                 </div>
@@ -1855,13 +1916,18 @@ export function AdminUniversitiesTab({
         </div>
       )}
 
-      {/* --- SWITCH SOURCE STUDENT MODAL --- */}
+      {/* --- SWITCH SOURCE STUDENT MODAL (With Full Card Layout) --- */}
       {isSourceModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-xl max-h-[85vh] p-6 sm:p-7 space-y-4 border border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col">
-            <h3 className="font-black text-base text-zinc-900 dark:text-white">
-              {isAr ? 'تغيير الطالب المصدر المعتمد لقالب الكلية' : 'Switch Source Student'}
-            </h3>
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-2xl max-h-[90vh] p-6 sm:p-7 space-y-4 border border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
+              <h3 className="font-black text-base text-zinc-900 dark:text-white">
+                {isAr ? 'تغيير الطالب المصدر المعتمد لقالب الكلية' : 'Switch Source Student'}
+              </h3>
+              <button onClick={() => setIsSourceModalOpen(false)} className="p-1.5 text-zinc-400 hover:text-zinc-600 cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
 
             <div className="relative">
               <Search className="absolute left-3.5 rtl:left-auto rtl:right-3.5 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
@@ -1869,31 +1935,48 @@ export function AdminUniversitiesTab({
                 type="text"
                 value={sourceSearchQuery}
                 onChange={(e) => setSourceSearchQuery(e.target.value)}
-                placeholder={isAr ? 'ابحث عن طالب بالاسم أو الإيميل...' : 'Search student...'}
+                placeholder={isAr ? 'ابحث بالاسم، الإيميل، الجامعة، أو الكلية...' : 'Search student by name, email, university...'}
                 className="w-full pl-10 rtl:pl-4 rtl:pr-10 pr-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold outline-none"
               />
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2 max-h-[260px] p-1 border border-zinc-200 dark:border-zinc-800 rounded-2xl bg-zinc-50/50 dark:bg-zinc-800/20">
-              {studentsList.filter(s => 
-                (s.name || '').toLowerCase().includes(sourceSearchQuery.toLowerCase()) ||
-                (s.email || '').toLowerCase().includes(sourceSearchQuery.toLowerCase())
-              ).map(st => (
-                <button
-                  key={st.id}
-                  type="button"
-                  onClick={() => handleSwitchSourceStudent(st)}
-                  className="w-full p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-purple-500 text-left rtl:text-right transition-all flex items-center justify-between gap-3 cursor-pointer"
-                >
-                  <div>
-                    <p className="font-black text-xs text-zinc-900 dark:text-white">{st.name}</p>
-                    <p className="text-[11px] text-zinc-400">{st.email}</p>
-                  </div>
-                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
-                    {isAr ? 'اختيار كطالب مصدر' : 'Select'}
-                  </span>
-                </button>
-              ))}
+            {/* Rich Student Cards */}
+            <div className="flex-1 overflow-y-auto space-y-2 max-h-[320px] p-1 border border-zinc-200 dark:border-zinc-800 rounded-2xl bg-zinc-50/50 dark:bg-zinc-800/20">
+              {filteredStudentsForSource.map(st => {
+                const isSelected = selectedCollegeDb?.sourceUserId === st.id;
+                const subjsCount = st.subjects?.length || st.subjectsCount || 0;
+                const filesCount = st.files?.length || st.filesCount || 0;
+
+                return (
+                  <button
+                    key={st.id}
+                    type="button"
+                    onClick={() => handleSwitchSourceStudent(st)}
+                    className={`w-full p-3 rounded-xl border text-left rtl:text-right transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                      isSelected
+                        ? 'bg-purple-50 dark:bg-purple-950/80 border-purple-500 shadow-xs'
+                        : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-purple-400'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="font-black text-xs text-zinc-900 dark:text-white truncate">{st.name}</p>
+                      <p className="text-[11px] text-zinc-400 truncate">{st.email} • {st.university || 'غير محدد'} / {st.college || 'غير محدد'}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+                        {subjsCount} {isAr ? 'مادة' : 'subjects'}
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+                        {filesCount} {isAr ? 'ملف' : 'files'}
+                      </span>
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-purple-600 text-white">
+                        {isSelected ? (isAr ? 'الطالب الحالي' : 'Current') : (isAr ? 'تعيين كمصدر' : 'Select')}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
             <div className="flex items-center gap-2 pt-2">

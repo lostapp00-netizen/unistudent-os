@@ -796,12 +796,6 @@ export const db = {
       if (udb) {
         const updatedDb = applyAction(udb);
         await this.updateUniversityDatabase(udb.id, updatedDb);
-
-        // Notify students who imported this database
-        await this.notifyEnrolledStudentsOfDbUpdate(
-          target.universityDatabaseId,
-          `تم اعتماد تحديث جديد في خطة كلية ${udb.collegeNameAr}: ${target.description || 'تحديث مواد/درايف'}`
-        );
       }
     }
   },

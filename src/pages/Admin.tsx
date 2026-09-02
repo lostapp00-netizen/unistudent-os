@@ -360,7 +360,23 @@ export function Admin() {
   const honorStudents = studentsList.filter(s => s.cgpa >= 3.5).length;
   const warningStudents = studentsList.filter(s => s.warningCount > 0).length;
   const avgCgpa = totalStudents > 0 ? (studentsList.reduce((acc, s) => acc + s.cgpa, 0) / totalStudents).toFixed(2) : '0.00';
-  const totalPlatformStorageBytes = studentsList.reduce((acc, s) => acc + s.totalStorageBytes, 0);
+  const uniquePlatformFiles = React.useMemo(() => {
+    if (!adminData?.rawFiles) return [];
+    const seen = new Set<string>();
+    const unique: any[] = [];
+    adminData.rawFiles.forEach(f => {
+      if (f.type === 'folder') return;
+      const key = f.b2_file_id || f.url || `${f.name}_${f.size}`;
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        unique.push(f);
+      }
+    });
+    return unique;
+  }, [adminData]);
+
+  const totalPlatformStorageBytes = uniquePlatformFiles.reduce((acc, f) => acc + (Number(f.size) || 0), 0);
+  const totalPlatformUniqueFilesCount = uniquePlatformFiles.length;
   
   const formatAdminStorage = (bytes: number) => {
     if (!bytes || bytes === 0) return '0.0 MB';
