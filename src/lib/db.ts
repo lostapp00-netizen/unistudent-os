@@ -68,32 +68,31 @@ export const db = {
   // --- Subjects ---
   async getSubjects(userId: string): Promise<Subject[]> {
     let dbSubjects: Subject[] = [];
+    let fetchedFromSupabase = false;
     try {
       const { data, error } = await supabase.from('subjects').select('*').eq('user_id', userId);
-      if (error) console.error('Error fetching subjects:', error);
-      if (data && data.length > 0) {
+      if (!error && data) {
         dbSubjects = data.map(mapSubjectFromDB);
+        fetchedFromSupabase = true;
+      } else if (error) {
+        console.error('Error fetching subjects from Supabase:', error);
       }
     } catch (e) {
       console.warn('Supabase fetch subjects failed, checking cache:', e);
     }
 
     try {
-      const cached = localStorage.getItem(`unistudent_subjects_${userId}`);
+      const cacheKey = `unistudent_subjects_${userId}`;
+      if (fetchedFromSupabase) {
+        // Supabase is authoritative. Keep local cache in sync:
+        localStorage.setItem(cacheKey, JSON.stringify(dbSubjects));
+        return dbSubjects;
+      }
+
+      // Only fall back to local storage if Supabase failed to respond (offline)
+      const cached = localStorage.getItem(cacheKey);
       if (cached) {
-        const localList: Subject[] = JSON.parse(cached);
-        if (dbSubjects.length === 0) return localList;
-        // Merge with local changes if any
-        const mergedMap = new Map<string, Subject>();
-        dbSubjects.forEach(s => mergedMap.set(s.id, s));
-        localList.forEach(s => {
-          if (!mergedMap.has(s.id)) mergedMap.set(s.id, s);
-        });
-        const result = Array.from(mergedMap.values());
-        localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(result));
-        return result;
-      } else if (dbSubjects.length > 0) {
-        localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(dbSubjects));
+        return JSON.parse(cached);
       }
     } catch {}
 
@@ -156,8 +155,30 @@ export const db = {
 
     try {
       const { error } = await supabase.from('subjects').delete().eq('id', id).eq('user_id', userId);
-      if (error) console.error('Error deleting subject:', error);
-    } catch (e) {}
+      if (error) console.error('Error deleting subject in Supabase:', error);
+    } catch (e) {
+      console.error('Error deleting subject:', e);
+    }
+  },
+  async clearAllSubjects(userId: string) {
+    try {
+      localStorage.removeItem(`unistudent_subjects_${userId}`);
+    } catch {}
+    try {
+      await supabase.from('subjects').delete().eq('user_id', userId);
+    } catch (e) {
+      console.warn('Error clearing subjects in Supabase:', e);
+    }
+  },
+  async clearAllDriveFiles(userId: string) {
+    try {
+      localStorage.removeItem(`unistudent_files_${userId}`);
+    } catch {}
+    try {
+      await supabase.from('drive_files').delete().eq('user_id', userId);
+    } catch (e) {
+      console.warn('Error clearing drive files in Supabase:', e);
+    }
   },
 
   // --- Tasks ---
@@ -1594,35 +1615,39 @@ function mapSettingsFromDB(row: any): UserSettings {
 }
 
 function mapSubjectFromDB(row: any): Subject {
+  const y = row.year_index !== undefined && row.year_index !== null ? row.year_index : (row.yearIndex !== undefined ? row.yearIndex : 1);
+  const sem = row.semester_index !== undefined && row.semester_index !== null ? row.semester_index : (row.semesterIndex !== undefined ? row.semesterIndex : 1);
   return {
     id: row.id,
-    code: row.code,
+    code: row.code || '',
     name: row.name,
-    creditHours: row.credit_hours,
-    totalMarks: row.total_marks,
-    yearIndex: row.year_index,
-    semesterIndex: row.semester_index,
-    status: row.status,
+    creditHours: Number(row.credit_hours !== undefined ? row.credit_hours : (row.creditHours !== undefined ? row.creditHours : 3)),
+    totalMarks: Number(row.total_marks !== undefined ? row.total_marks : (row.totalMarks !== undefined ? row.totalMarks : 100)),
+    yearIndex: Number(y || 1),
+    semesterIndex: Number(sem || 1),
+    status: row.status || 'current',
     distributions: (row.distributions || []).map((d: any) => ({ ...d, status: d.status || 'current' })),
-    finalGradeLetter: row.final_grade_letter,
-    includeInGpa: row.include_in_gpa !== false // Defaults to true if null
+    finalGradeLetter: row.final_grade_letter || row.finalGradeLetter,
+    includeInGpa: row.include_in_gpa !== false && row.includeInGpa !== false
   };
 }
 
 function mapSubjectToDB(userId: string, subject: Subject) {
+  const y = subject.yearIndex !== undefined ? subject.yearIndex : ((subject as any).year_index !== undefined ? (subject as any).year_index : 1);
+  const sem = subject.semesterIndex !== undefined ? subject.semesterIndex : ((subject as any).semester_index !== undefined ? (subject as any).semester_index : 1);
   return {
     id: subject.id,
     user_id: userId,
-    code: subject.code,
+    code: subject.code || '',
     name: subject.name,
-    credit_hours: subject.creditHours,
-    total_marks: subject.totalMarks,
-    year_index: subject.yearIndex,
-    semester_index: subject.semesterIndex,
-    status: subject.status,
-    distributions: subject.distributions,
+    credit_hours: Number(subject.creditHours || (subject as any).credit_hours || 3),
+    total_marks: Number(subject.totalMarks || (subject as any).total_marks || 100),
+    year_index: Number(y || 1),
+    semester_index: Number(sem || 1),
+    status: subject.status || 'current',
+    distributions: subject.distributions || [],
     final_grade_letter: subject.finalGradeLetter,
-    include_in_gpa: subject.includeInGpa !== false
+    include_in_gpa: subject.includeInGpa !== false && (subject as any).include_in_gpa !== false
   };
 }
 

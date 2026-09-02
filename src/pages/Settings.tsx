@@ -8,14 +8,16 @@ import { UserFeedbackSection } from '../components/settings/UserFeedbackSection'
 import { defaultGraduationScale } from '../store/useAppStore';
 import { supabase } from '../lib/supabase';
 import { UniversityRestoreModal } from '../components/settings/UniversityRestoreModal';
-import { Lock, Eye, EyeOff, KeyRound, CheckCircle2, AlertTriangle, ShieldCheck, Building2, Sparkles } from 'lucide-react';
+import { Lock, Eye, EyeOff, KeyRound, CheckCircle2, AlertTriangle, ShieldCheck, Building2, Sparkles, Unlink, Trash2, Loader2 } from 'lucide-react';
 
 export function Settings() {
   const { t, i18n } = useTranslation();
-  const { settings, updateSettings, userEmail } = useAppStore();
+  const { settings, updateSettings, userEmail, unlinkUniversityDatabase } = useAppStore();
   const isAr = i18n.language === 'ar' || settings.language === 'ar';
   
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
+  const [isUnlinkModalOpen, setIsUnlinkModalOpen] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
 
   const [formData, setFormData] = useState({
     name: settings.name,
@@ -54,6 +56,29 @@ export function Settings() {
   };
 
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+
+  const handleConfirmUnlink = async () => {
+    try {
+      setUnlinking(true);
+      await unlinkUniversityDatabase();
+      setIsUnlinkModalOpen(false);
+      setFormData(prev => ({
+        ...prev,
+        university: 'غير محدد',
+        college: 'غير محدد'
+      }));
+      setSaveStatus({
+        type: 'success',
+        message: isAr ? 'تم إلغاء استخدام قاعدة البيانات وحذف المواد والدرايف وإعادة تعيين جدول التقديرات بنجاح.' : 'Database unlinked and curriculum reset successfully.'
+      });
+      setTimeout(() => setSaveStatus(null), 5000);
+    } catch (e) {
+      console.error('Error unlinking database:', e);
+      alert(isAr ? 'حدث خطأ أثناء إلغاء قاعدة البيانات.' : 'Error unlinking database.');
+    } finally {
+      setUnlinking(false);
+    }
+  };
 
   // Password Change State
   const [newPassword, setNewPassword] = useState('');
@@ -197,13 +222,26 @@ export function Settings() {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsRestoreModalOpen(true)}
-              className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer self-end sm:self-center"
-            >
-              {isAr ? 'تغيير أو إعادة استرداد' : 'Change or Re-import'}
-            </button>
+            <div className="flex items-center gap-2.5 self-end sm:self-center flex-wrap">
+              <button
+                type="button"
+                onClick={() => setIsRestoreModalOpen(true)}
+                className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+              >
+                {isAr ? 'تغيير أو إعادة استرداد' : 'Change or Re-import'}
+              </button>
+
+              <span className="text-zinc-300 dark:text-zinc-700">|</span>
+
+              <button
+                type="button"
+                onClick={() => setIsUnlinkModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-900/60 transition-all cursor-pointer shadow-2xs"
+              >
+                <Unlink size={13} />
+                <span>{isAr ? 'إلغاء استخدام قاعدة البيانات' : 'Disconnect Database'}</span>
+              </button>
+            </div>
           </div>
         )}
         
@@ -439,6 +477,48 @@ export function Settings() {
           {isAr ? 'حفظ إعدادات الملف الشخصي' : 'Save Profile Settings'}
         </button>
       </div>
+
+      {/* Confirm Unlink Database Modal */}
+      {isUnlinkModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md p-6 sm:p-7 space-y-4 border border-zinc-200 dark:border-zinc-800 shadow-2xl text-center">
+            <div className="w-14 h-14 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 mx-auto flex items-center justify-center shadow-md shadow-rose-500/10">
+              <Trash2 size={26} />
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="font-black text-lg text-zinc-900 dark:text-white">
+                {isAr ? 'إلغاء استخدام قاعدة بيانات الجامعة' : 'Disconnect University Database'}
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                {isAr 
+                  ? 'هل أنت متأكد من رغبتك في إلغاء ربط واستخدام قاعدة البيانات؟ سيتم حذف جميع المواد المستردة وملفات الدرايف وإعادة ضبط جدول التقديرات إلى اللائحة الافتراضية القياسية.'
+                  : 'Are you sure you want to disconnect? All imported subjects and drive files will be deleted, and your grading scale will reset to the standard scale.'}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsUnlinkModalOpen(false)}
+                disabled={unlinking}
+                className="px-5 py-2.5 text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer"
+              >
+                {isAr ? 'تراجع وإلغاء' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmUnlink}
+                disabled={unlinking}
+                className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-lg shadow-rose-500/25 cursor-pointer flex items-center gap-1.5"
+              >
+                {unlinking ? <Loader2 size={14} className="animate-spin" /> : <Unlink size={14} />}
+                <span>{isAr ? 'نعم، إلغاء ومسح المواد' : 'Yes, Disconnect'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <UniversityRestoreModal
         isOpen={isRestoreModalOpen}

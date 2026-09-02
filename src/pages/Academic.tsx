@@ -149,6 +149,8 @@ export function Academic() {
                 <tr>
                   <th className="px-6 py-4 font-medium">{t('subject_name')}</th>
                   <th className="px-6 py-4 font-medium">{t('subject_code')}</th>
+                  <th className="px-6 py-4 font-medium text-center">{t('year')}</th>
+                  <th className="px-6 py-4 font-medium text-center">{t('semester')}</th>
                   <th className="px-6 py-4 font-medium text-center">{t('credit_hours')}</th>
                   <th className="px-6 py-4 font-medium text-center">{t('total_marks')}</th>
                   <th className="px-6 py-4 font-medium text-center">{t('current_grade')}</th>
@@ -168,6 +170,8 @@ export function Academic() {
                         {subject.name}
                       </td>
                       <td className="px-6 py-4 text-zinc-500">{subject.code}</td>
+                      <td className="px-6 py-4 text-center font-bold text-zinc-700 dark:text-zinc-300">{subject.yearIndex}</td>
+                      <td className="px-6 py-4 text-center font-bold text-zinc-700 dark:text-zinc-300">{subject.semesterIndex}</td>
                       <td className="px-6 py-4 text-center">{subject.creditHours}</td>
                       <td className="px-6 py-4 text-center">{subject.totalMarks}</td>
                       <td className="px-6 py-4 text-center font-bold">
@@ -202,7 +206,7 @@ export function Academic() {
                 })}
                 {filteredSubjects.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-zinc-400">
+                    <td colSpan={8} className="px-6 py-8 text-center text-zinc-400">
                       {isAr ? 'لا توجد مواد مضافة في هذا الفصل الدراسي.' : 'No subjects added for this semester.'}
                     </td>
                   </tr>

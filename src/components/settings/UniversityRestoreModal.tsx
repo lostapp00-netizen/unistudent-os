@@ -128,7 +128,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div 
-        className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-2xl max-h-[92vh] shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+        className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-3xl max-h-[92vh] shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -209,35 +209,35 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                       <button
                         type="button"
                         onClick={() => handleToggleExpand(group.key)}
-                        className="w-full p-4 flex items-center justify-between gap-3 text-left rtl:text-right hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer"
+                        className="w-full p-4 sm:p-5 flex items-center justify-between gap-4 text-left rtl:text-right hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 transition-all cursor-pointer"
                       >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 flex items-center justify-center font-bold shrink-0">
-                            <Building2 size={20} />
+                        <div className="flex items-center gap-3.5 sm:gap-4 min-w-0 flex-1">
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white flex items-center justify-center font-bold shrink-0 shadow-md shadow-indigo-500/20">
+                            <Building2 size={24} />
                           </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-extrabold text-sm text-zinc-900 dark:text-white truncate">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              <h4 className="font-black text-base sm:text-lg text-zinc-900 dark:text-white tracking-tight leading-snug">
                                 {group.nameAr || group.nameEn}
                               </h4>
-                              <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-full shrink-0">
-                                {group.databases.length} {isAr ? 'كليات' : 'Colleges'}
+                              <span className="text-[11px] font-black text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/80 px-3 py-0.5 rounded-full border border-indigo-200/60 dark:border-indigo-800/60 shrink-0 shadow-2xs">
+                                {group.databases.length} {isAr ? 'كليات متاحة' : 'Colleges'}
                               </span>
                             </div>
                             {group.nameEn && group.nameEn !== group.nameAr && (
-                              <p className="text-[11px] text-zinc-400 font-medium truncate">
+                              <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 font-bold mt-1">
                                 {group.nameEn}
                               </p>
                             )}
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hidden sm:inline">
-                            {isExpanded ? (isAr ? 'إخفاء الكليات' : 'Hide Colleges') : (isAr ? 'عرض الكليات المتاحة' : 'View Colleges')}
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <span className="text-xs sm:text-sm font-bold text-indigo-600 dark:text-indigo-400 hidden sm:inline">
+                            {isExpanded ? (isAr ? 'إخفاء الكليات' : 'Hide Colleges') : (isAr ? 'عرض الكليات' : 'View Colleges')}
                           </span>
-                          <div className={`w-8 h-8 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-indigo-600' : ''}`}>
-                            <ChevronDown size={16} />
+                          <div className={`w-9 h-9 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-indigo-600 bg-indigo-50 dark:bg-indigo-950' : ''}`}>
+                            <ChevronDown size={18} />
                           </div>
                         </div>
                       </button>

@@ -92,6 +92,8 @@ export function AdminUniversitiesTab({
   const [editingUni, setEditingUni] = useState<{ oldKey: string; nameAr: string; nameEn: string } | null>(null);
   const [isEditUniModalOpen, setIsEditUniModalOpen] = useState(false);
   const [uniToDelete, setUniToDelete] = useState<{ key: string; nameAr: string; nameEn: string; collegeCount: number } | null>(null);
+  const [savingEditUni, setSavingEditUni] = useState(false);
+  const [deletingUni, setDeletingUni] = useState(false);
 
   // College Grading Scale State
   const [isGradeModalOpen, setIsGradeModalOpen] = useState(false);
@@ -719,11 +721,14 @@ export function AdminUniversitiesTab({
   const handleSaveEditUni = async () => {
     if (!editingUni) return;
     const newNameAr = editingUni.nameAr.trim();
-    const newNameEn = editingUni.nameEn.trim() || newNameAr;
-    if (!newNameAr) return;
+    const newNameEn = editingUni.nameEn.trim() || autoTranslateUniversity(newNameAr);
+    if (!newNameAr && !newNameEn) return;
 
     try {
+      setSavingEditUni(true);
+      db.updateRegisteredUniversity(editingUni.oldKey, newNameAr, newNameEn);
       await db.updateUniversityName(editingUni.oldKey, newNameAr, newNameEn);
+      
       setDatabases(prev => prev.map(dbItem => {
         if ((dbItem.universityNameAr && dbItem.universityNameAr.trim() === editingUni.oldKey.trim()) || 
             (dbItem.universityNameEn && dbItem.universityNameEn.trim() === editingUni.oldKey.trim())) {
@@ -735,14 +740,18 @@ export function AdminUniversitiesTab({
         }
         return dbItem;
       }));
+
       if (selectedUniversityKey === editingUni.oldKey) {
-        setSelectedUniversityKey(newNameAr);
+        setSelectedUniversityKey(newNameAr || newNameEn);
       }
       setIsEditUniModalOpen(false);
       setEditingUni(null);
       await loadUniData();
     } catch (e) {
       console.error('Error updating university name:', e);
+      alert(isAr ? 'حدث خطأ أثناء تعديل اسم الجامعة.' : 'Error updating university name.');
+    } finally {
+      setSavingEditUni(false);
     }
   };
 
@@ -750,11 +759,15 @@ export function AdminUniversitiesTab({
   const handleConfirmDeleteUni = async () => {
     if (!uniToDelete) return;
     try {
+      setDeletingUni(true);
+      db.deleteRegisteredUniversity(uniToDelete.key);
       await db.deleteUniversity(uniToDelete.key);
+
       setDatabases(prev => prev.filter(d => 
         (d.universityNameAr && d.universityNameAr.trim() !== uniToDelete.key.trim()) &&
         (d.universityNameEn && d.universityNameEn.trim() !== uniToDelete.key.trim())
       ));
+
       if (selectedUniversityKey === uniToDelete.key) {
         setSelectedUniversityKey(null);
         setSelectedCollegeId(null);
@@ -763,6 +776,9 @@ export function AdminUniversitiesTab({
       await loadUniData();
     } catch (e) {
       console.error('Error deleting university:', e);
+      alert(isAr ? 'حدث خطأ أثناء حذف الجامعة.' : 'Error deleting university.');
+    } finally {
+      setDeletingUni(false);
     }
   };
 
@@ -3491,6 +3507,123 @@ export function AdminUniversitiesTab({
                 className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold cursor-pointer"
               >
                 {isAr ? 'حفظ التقدير' : 'Save Grade'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- EDIT UNIVERSITY MODAL --- */}
+      {isEditUniModalOpen && editingUni && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md p-6 sm:p-7 space-y-5 border border-zinc-200 dark:border-zinc-800 shadow-2xl">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950 text-blue-600 flex items-center justify-center font-bold shrink-0">
+                <Edit2 size={18} />
+              </div>
+              <div>
+                <h3 className="font-black text-base text-zinc-900 dark:text-white">
+                  {isAr ? 'تعديل اسم الجامعة' : 'Edit University Name'}
+                </h3>
+                <p className="text-xs text-zinc-400">
+                  {isAr ? 'تعديل الاسم بالعربي والإنجليزي وتحديث كافة كلياتها المرتبطة' : 'Update Arabic and English name across all colleges'}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {isAr ? 'اسم الجامعة (عربي) *' : 'University Name (Arabic) *'}
+                </label>
+                <input
+                  type="text"
+                  value={editingUni.nameAr}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setEditingUni({
+                      ...editingUni,
+                      nameAr: val,
+                      nameEn: autoTranslateUniversity(val) || editingUni.nameEn
+                    });
+                  }}
+                  className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {isAr ? 'اسم الجامعة (English)' : 'University Name (English)'}
+                </label>
+                <input
+                  type="text"
+                  value={editingUni.nameEn}
+                  onChange={(e) => setEditingUni({ ...editingUni, nameEn: e.target.value })}
+                  className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditUniModalOpen(false);
+                  setEditingUni(null);
+                }}
+                className="px-4 py-2 text-xs font-bold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer"
+              >
+                {isAr ? 'إلغاء' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditUni}
+                disabled={savingEditUni || (!editingUni.nameAr.trim() && !editingUni.nameEn.trim())}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-sm disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+              >
+                {savingEditUni ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                <span>{isAr ? 'حفظ التعديل' : 'Save Changes'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- DELETE UNIVERSITY CONFIRMATION MODAL --- */}
+      {uniToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md p-6 sm:p-7 space-y-4 border border-zinc-200 dark:border-zinc-800 shadow-2xl text-center">
+            <div className="w-14 h-14 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 mx-auto flex items-center justify-center shadow-md shadow-rose-500/10">
+              <Trash2 size={26} />
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="font-black text-lg text-zinc-900 dark:text-white">
+                {isAr ? 'تأكيد حذف الجامعة' : 'Confirm Delete University'}
+              </h3>
+              <p className="text-xs text-zinc-500 leading-relaxed">
+                {isAr 
+                  ? `هل أنت متأكد من حذف جامعة (${uniToDelete.nameAr})؟ سيتم أيضاً حذف كافة الكليات التابعة لها (${uniToDelete.collegeCount} كليات) وجميع موادها وقواعد بياناتها نهائياً!`
+                  : `Are you sure you want to delete (${uniToDelete.nameEn || uniToDelete.nameAr}) and all its (${uniToDelete.collegeCount}) colleges permanently?`}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setUniToDelete(null)}
+                className="px-5 py-2.5 text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer"
+              >
+                {isAr ? 'تراجع وإلغاء' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteUni}
+                disabled={deletingUni}
+                className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-lg shadow-rose-500/25 cursor-pointer flex items-center gap-1.5"
+              >
+                {deletingUni ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                <span>{isAr ? 'نعم، احذف الجامعة وكلياتها' : 'Yes, Delete All'}</span>
               </button>
             </div>
           </div>

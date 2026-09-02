@@ -93,6 +93,7 @@ export interface AppState {
   updateGroup: (id: string, group: Partial<Group>) => void;
   deleteGroup: (id: string) => void;
   importFromUniversityDatabase: (universityDbId: string, options?: { importDrive?: boolean }) => Promise<void>;
+  unlinkUniversityDatabase: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -186,72 +187,56 @@ export const useAppStore = create<AppState>((set, get) => ({
         localStorage.setItem('unistudent_known_users', JSON.stringify(knownList));
       } catch {}
 
-      // Sync master university database updates if student is linked to a database template
+      // Sync master university database updates if student is explicitly linked to a database template
       let finalSubjects = subjects || [];
       try {
-        const uniDatabases = await db.getUniversityDatabases();
-        const matchedDb = uniDatabases.find(d => 
-          (mergedSettings.universityDatabaseId && d.id === mergedSettings.universityDatabaseId) ||
-          ((d.universityNameAr === mergedSettings.university || d.universityNameEn === mergedSettings.university) &&
-           (d.collegeNameAr === mergedSettings.college || d.collegeNameEn === mergedSettings.college))
-        );
+        if (mergedSettings.universityDatabaseId) {
+          const matchedDb = await db.getUniversityDatabase(mergedSettings.universityDatabaseId);
 
-        if (matchedDb && matchedDb.subjects && matchedDb.subjects.length > 0) {
-          const updatedSubjsMap = new Map(finalSubjects.map(s => [s.name.trim().toLowerCase(), s]));
-          const newTemplateSubjects: Subject[] = [];
-
-          // 1. Sync grading scale if needed
-          if (matchedDb.gradingScale && matchedDb.gradingScale.length > 0) {
-            const currentScaleStr = JSON.stringify(mergedSettings.gradingScale || []);
-            const templateScaleStr = JSON.stringify(matchedDb.gradingScale);
-            if (currentScaleStr !== templateScaleStr) {
-              mergedSettings.gradingScale = matchedDb.gradingScale;
-              db.upsertSettings(userId, { gradingScale: matchedDb.gradingScale }).catch(() => {});
-            }
-          }
-
-          // 2. Sync subjects (add new or update moved/edited subjects)
-          matchedDb.subjects.forEach(templateSubj => {
-            const key = templateSubj.name.trim().toLowerCase();
-            const existing = updatedSubjsMap.get(key);
-
-            if (existing) {
-              // Check if moved to another year/semester or changed credit/marks
-              const hasChanged = 
-                existing.yearIndex !== templateSubj.yearIndex ||
-                existing.semesterIndex !== templateSubj.semesterIndex ||
-                existing.creditHours !== templateSubj.creditHours ||
-                existing.totalMarks !== templateSubj.totalMarks;
-
-              if (hasChanged) {
-                existing.yearIndex = templateSubj.yearIndex;
-                existing.semesterIndex = templateSubj.semesterIndex;
-                existing.creditHours = templateSubj.creditHours;
-                existing.totalMarks = templateSubj.totalMarks;
-                existing.code = templateSubj.code || existing.code;
-                db.updateSubject(userId, existing.id, {
-                  yearIndex: templateSubj.yearIndex,
-                  semesterIndex: templateSubj.semesterIndex,
-                  creditHours: templateSubj.creditHours,
-                  totalMarks: templateSubj.totalMarks,
-                  code: existing.code
-                }).catch(() => {});
+          if (matchedDb && matchedDb.subjects && matchedDb.subjects.length > 0) {
+            // 1. Sync grading scale if needed
+            if (matchedDb.gradingScale && matchedDb.gradingScale.length > 0) {
+              const currentScaleStr = JSON.stringify(mergedSettings.gradingScale || []);
+              const templateScaleStr = JSON.stringify(matchedDb.gradingScale);
+              if (currentScaleStr !== templateScaleStr) {
+                mergedSettings.gradingScale = matchedDb.gradingScale;
+                db.upsertSettings(userId, { gradingScale: matchedDb.gradingScale }).catch(() => {});
               }
-            } else {
-              const newS: Subject = {
-                ...templateSubj,
-                id: uuidv4(),
-                status: 'current',
-                includeInGpa: true,
-                distributions: (templateSubj.distributions || []).map(d => ({ ...d, id: uuidv4(), achievedMarks: null, status: 'current' }))
-              };
-              newTemplateSubjects.push(newS);
-              db.addSubject(userId, newS).catch(() => {});
             }
-          });
 
-          if (newTemplateSubjects.length > 0) {
-            finalSubjects = [...finalSubjects, ...newTemplateSubjects];
+            // 2. Safely sync changes to EXISTING subjects only (never re-add deleted subjects!)
+            const templateSubjsByName = new Map(matchedDb.subjects.map(s => [s.name.trim().toLowerCase(), s]));
+
+            finalSubjects.forEach(existing => {
+              const template = templateSubjsByName.get(existing.name.trim().toLowerCase());
+              if (template) {
+                const tYear = Number(template.yearIndex !== undefined ? template.yearIndex : ((template as any).year_index !== undefined ? (template as any).year_index : 1));
+                const tSem = Number(template.semesterIndex !== undefined ? template.semesterIndex : ((template as any).semester_index !== undefined ? (template as any).semester_index : 1));
+                const tHours = Number(template.creditHours !== undefined ? template.creditHours : ((template as any).credit_hours !== undefined ? (template as any).credit_hours : 3));
+                const tMarks = Number(template.totalMarks !== undefined ? template.totalMarks : ((template as any).total_marks !== undefined ? (template as any).total_marks : 100));
+
+                const hasChanged = 
+                  existing.yearIndex !== tYear ||
+                  existing.semesterIndex !== tSem ||
+                  existing.creditHours !== tHours ||
+                  existing.totalMarks !== tMarks;
+
+                if (hasChanged) {
+                  existing.yearIndex = tYear;
+                  existing.semesterIndex = tSem;
+                  existing.creditHours = tHours;
+                  existing.totalMarks = tMarks;
+                  existing.code = template.code || existing.code;
+                  db.updateSubject(userId, existing.id, {
+                    yearIndex: tYear,
+                    semesterIndex: tSem,
+                    creditHours: tHours,
+                    totalMarks: tMarks,
+                    code: existing.code
+                  }).catch(() => {});
+                }
+              }
+            });
           }
         }
       } catch (syncErr) {
@@ -657,35 +642,44 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // 2. Clone and import Subjects
     if (udb.subjects && udb.subjects.length > 0) {
-      const importedSubjects: Subject[] = udb.subjects.map(s => ({
-        id: uuidv4(),
-        code: (s.code || '').trim(),
-        name: s.name,
-        creditHours: Number(s.creditHours || 3),
-        totalMarks: Number(s.totalMarks || 100),
-        yearIndex: Number(s.yearIndex || 1),
-        semesterIndex: Number(s.semesterIndex || 1),
-        distributions: (s.distributions || []).map((d: any) => ({
+      // Clear old subjects first to prevent duplicate subjects when restoring
+      await db.clearAllSubjects(userId);
+
+      const importedSubjects: Subject[] = udb.subjects.map(s => {
+        const y = s.yearIndex !== undefined && s.yearIndex !== null ? s.yearIndex : ((s as any).year_index !== undefined ? (s as any).year_index : 1);
+        const sem = s.semesterIndex !== undefined && s.semesterIndex !== null ? s.semesterIndex : ((s as any).semester_index !== undefined ? (s as any).semester_index : 1);
+        const hrs = s.creditHours !== undefined && s.creditHours !== null ? s.creditHours : ((s as any).credit_hours !== undefined ? (s as any).credit_hours : 3);
+        const marks = s.totalMarks !== undefined && s.totalMarks !== null ? s.totalMarks : ((s as any).total_marks !== undefined ? (s as any).total_marks : 100);
+
+        return {
           id: uuidv4(),
-          name: d.name,
-          maxMarks: Number(d.maxMarks || 0),
-          achievedMarks: null,
-          status: 'current'
-        })),
-        status: s.status || 'current',
-        includeInGpa: s.includeInGpa !== false
-      }));
+          code: (s.code || '').trim(),
+          name: s.name,
+          creditHours: Number(hrs || 3),
+          totalMarks: Number(marks || 100),
+          yearIndex: Number(y || 1),
+          semesterIndex: Number(sem || 1),
+          distributions: (s.distributions || []).map((d: any) => ({
+            id: uuidv4(),
+            name: d.name,
+            maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : ((d as any).max_marks !== undefined ? (d as any).max_marks : 0)),
+            achievedMarks: null,
+            status: 'current' as const
+          })),
+          status: s.status || 'current',
+          includeInGpa: s.includeInGpa !== false && (s as any).include_in_gpa !== false
+        };
+      });
 
       for (const subj of importedSubjects) {
-        db.addSubject(userId, subj).catch(console.error);
+        await db.addSubject(userId, subj);
       }
-      set(state => ({
-        subjects: [...state.subjects, ...importedSubjects]
-      }));
+      set({ subjects: importedSubjects });
     }
 
     // 3. Clone and import Drive Files
     if (options?.importDrive !== false && udb.driveFiles && udb.driveFiles.length > 0) {
+      await db.clearAllDriveFiles(userId);
       const idMap = new Map<string, string>();
       const clonedFiles: DriveFile[] = [];
       const sortedFiles = [...udb.driveFiles].sort((a, b) => (a.type === 'folder' ? -1 : 1));
@@ -706,13 +700,51 @@ export const useAppStore = create<AppState>((set, get) => ({
           b2FileId: file.b2FileId
         };
         clonedFiles.push(cloned);
-        db.addDriveFile(userId, cloned).catch(console.error);
+        await db.addDriveFile(userId, cloned);
       }
 
-      set(state => ({
-        files: [...state.files, ...clonedFiles]
-      }));
+      set({ files: clonedFiles });
     }
+  },
+
+  // Disconnect / Unlink University Database
+  unlinkUniversityDatabase: async () => {
+    const { userId, settings } = get();
+    if (!userId) return;
+
+    // 1. Delete all subjects for this student
+    await db.clearAllSubjects(userId);
+
+    // 2. Delete all drive files for this student
+    await db.clearAllDriveFiles(userId);
+
+    // 3. Reset standard grading scale
+    const defaultScale = [
+      { id: '1', letter: 'A+', nameAr: 'ممتاز مرتفع', nameEn: 'High Excellent', minPercentage: 90, maxPercentage: 100, maxOperator: '<=', points: 4.0 },
+      { id: '2', letter: 'A', nameAr: 'ممتاز', nameEn: 'Excellent', minPercentage: 85, maxPercentage: 89.99, maxOperator: '<=', points: 3.7 },
+      { id: '3', letter: 'B+', nameAr: 'جيد جداً مرتفع', nameEn: 'High Very Good', minPercentage: 80, maxPercentage: 84.99, maxOperator: '<=', points: 3.3 },
+      { id: '4', letter: 'B', nameAr: 'جيد جداً', nameEn: 'Very Good', minPercentage: 75, maxPercentage: 79.99, maxOperator: '<=', points: 3.0 },
+      { id: '5', letter: 'C+', nameAr: 'جيد مرتفع', nameEn: 'High Good', minPercentage: 70, maxPercentage: 74.99, maxOperator: '<=', points: 2.7 },
+      { id: '6', letter: 'C', nameAr: 'جيد', nameEn: 'Good', minPercentage: 65, maxPercentage: 69.99, maxOperator: '<=', points: 2.4 },
+      { id: '7', letter: 'D+', nameAr: 'مقبول مرتفع', nameEn: 'High Pass', minPercentage: 60, maxPercentage: 64.99, maxOperator: '<=', points: 2.2 },
+      { id: '8', letter: 'D', nameAr: 'مقبول', nameEn: 'Pass', minPercentage: 50, maxPercentage: 59.99, maxOperator: '<=', points: 2.0 },
+      { id: '9', letter: 'F', nameAr: 'راسب', nameEn: 'Fail', minPercentage: 0, maxPercentage: 49.99, maxOperator: '<', points: 0.0 }
+    ];
+
+    const updatedSettings: Partial<UserSettings> = {
+      universityDatabaseId: undefined,
+      university: 'غير محدد',
+      college: 'غير محدد',
+      gradingScale: defaultScale
+    };
+
+    set(state => ({
+      subjects: [],
+      files: [],
+      settings: { ...state.settings, ...updatedSettings }
+    }));
+
+    await db.upsertSettings(userId, updatedSettings);
   }
 }));
 
