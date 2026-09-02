@@ -732,7 +732,7 @@ export const db = {
   // --- Pending Updates for University Databases ---
   async getPendingUpdates(universityDbId?: string): Promise<UniversityPendingUpdate[]> {
     try {
-      let query = supabase.from('university_pending_updates').select('*').order('created_at', { ascending: false });
+      let query = supabase.from('university_pending_updates').select('*').order('created_at', { ascending: true });
       if (universityDbId) {
         query = query.eq('university_database_id', universityDbId);
       }
@@ -745,10 +745,30 @@ export const db = {
     }
     try {
       const local = localStorage.getItem('unistudent_pending_updates');
-      const all: UniversityPendingUpdate[] = local ? JSON.parse(local) : [];
+      let all: UniversityPendingUpdate[] = local ? JSON.parse(local) : [];
+      all.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
       return universityDbId ? all.filter(p => p.universityDatabaseId === universityDbId) : all;
     } catch {
       return [];
+    }
+  },
+
+  async updateUniversityName(oldName: string, newNameAr: string, newNameEn: string): Promise<void> {
+    const current = await this.getUniversityDatabases();
+    const toUpdate = current.filter(u => (u.universityNameAr && u.universityNameAr.trim() === oldName.trim()) || (u.universityNameEn && u.universityNameEn.trim() === oldName.trim()));
+    for (const item of toUpdate) {
+      await this.updateUniversityDatabase(item.id, {
+        universityNameAr: newNameAr,
+        universityNameEn: newNameEn
+      });
+    }
+  },
+
+  async deleteUniversity(uniName: string): Promise<void> {
+    const current = await this.getUniversityDatabases();
+    const toDelete = current.filter(u => (u.universityNameAr && u.universityNameAr.trim() === uniName.trim()) || (u.universityNameEn && u.universityNameEn.trim() === uniName.trim()));
+    for (const item of toDelete) {
+      await this.deleteUniversityDatabase(item.id);
     }
   },
 

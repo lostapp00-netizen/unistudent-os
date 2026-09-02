@@ -42,10 +42,12 @@ import {
   RotateCcw,
   Send,
   UserCheck,
-  Move
+  Move,
+  Award,
+  Save
 } from 'lucide-react';
 import { db } from '../../lib/db';
-import { UniversityDatabase, UniversityPendingUpdate, Subject, DriveFile, GradeDistributionItem } from '../../types';
+import { UniversityDatabase, UniversityPendingUpdate, Subject, DriveFile, GradeDistributionItem, GradeRule } from '../../types';
 import { ConfirmModal } from '../ui/CustomModal';
 import { autoTranslateUniversity, autoTranslateCollege } from '../../lib/academicTranslation';
 import { previewFile, downloadFile } from '../../lib/backblaze';
@@ -72,6 +74,42 @@ export function AdminUniversitiesTab({
   const [databases, setDatabases] = useState<UniversityDatabase[]>([]);
   const [pendingUpdates, setPendingUpdates] = useState<UniversityPendingUpdate[]>([]);
   
+  // Reset View Listener when clicking Universities in Sidebar
+  useEffect(() => {
+    const handleResetView = () => {
+      setSelectedUniversityKey(null);
+      setSelectedCollegeId(null);
+      try {
+        sessionStorage.removeItem('unistudent_admin_selected_uni_key');
+        sessionStorage.removeItem('unistudent_admin_selected_college_id');
+      } catch {}
+    };
+    window.addEventListener('reset-universities-view', handleResetView);
+    return () => window.removeEventListener('reset-universities-view', handleResetView);
+  }, []);
+
+  // Edit / Delete University State
+  const [editingUni, setEditingUni] = useState<{ oldKey: string; nameAr: string; nameEn: string } | null>(null);
+  const [isEditUniModalOpen, setIsEditUniModalOpen] = useState(false);
+  const [uniToDelete, setUniToDelete] = useState<{ key: string; nameAr: string; nameEn: string; collegeCount: number } | null>(null);
+
+  // College Grading Scale State
+  const [isGradeModalOpen, setIsGradeModalOpen] = useState(false);
+  const [editingGrade, setEditingGrade] = useState<GradeRule | null>(null);
+  const [gradeForm, setGradeForm] = useState<GradeRule>({
+    id: '',
+    letter: 'A',
+    nameAr: 'ممتاز',
+    nameEn: 'Excellent',
+    minPercentage: 85,
+    maxPercentage: 100,
+    maxOperator: '<=',
+    points: 4.0
+  });
+
+  // Grouped Pending Updates State
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Record<string, boolean>>({});
+
   // Navigation State with Session Storage Persistence
   const [selectedUniversityKey, setSelectedUniversityKey] = useState<string | null>(() => {
     try {
@@ -118,7 +156,7 @@ export function AdminUniversitiesTab({
   // Studio Navigation inside a College
   const [selectedYearIndex, setSelectedYearIndex] = useState<number>(1);
   const [selectedSemesterIndex, setSelectedSemesterIndex] = useState<number>(1);
-  const [activeStudioTab, setActiveStudioTab] = useState<'subjects' | 'drive' | 'students' | 'updates'>('subjects');
+  const [activeStudioTab, setActiveStudioTab] = useState<'subjects' | 'drive' | 'students' | 'updates' | 'grading'>('subjects');
 
   // Search & Global Filter
   const [globalSearch, setGlobalSearch] = useState('');
@@ -271,10 +309,21 @@ export function AdminUniversitiesTab({
     return Object.values(map);
   }, [databases, studentsList, pendingUpdates]);
 
-  // Active University Group
+  // Active University Group (with resilient fallback if all colleges are deleted)
   const currentUniversityGroup = useMemo(() => {
     if (!selectedUniversityKey) return null;
-    return groupedUniversities.find(u => u.key === selectedUniversityKey) || null;
+    const found = groupedUniversities.find(u => u.key === selectedUniversityKey);
+    if (found) return found;
+    return {
+      key: selectedUniversityKey,
+      nameAr: selectedUniversityKey,
+      nameEn: selectedUniversityKey,
+      colleges: [],
+      totalStudents: 0,
+      totalSubjects: 0,
+      totalDriveFiles: 0,
+      pendingUpdatesCount: 0
+    };
   }, [groupedUniversities, selectedUniversityKey]);
 
   // Filtered Universities for Search
@@ -411,7 +460,7 @@ export function AdminUniversitiesTab({
         semestersPerYear: createForm.customSemesters || source.semestersPerYear || 2,
         subjects: clonedSubjects,
         driveFiles: clonedDrive,
-        gradingScale: source.gradingScale || [],
+        gradingScale: (source.gradingScale && source.gradingScale.length > 0) ? source.gradingScale : (source.raw?.settings?.grading_scale || []),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -467,29 +516,72 @@ export function AdminUniversitiesTab({
     }
   };
 
-  // Switch Source Student Action
+  // Switch Source Student Action (Clean Wipe & Overwrite: No Merging)
   const handleSwitchSourceStudent = async (newStudent: any) => {
     if (!selectedCollegeDb) return;
     try {
+      const studentSubjs = newStudent?.subjects || newStudent?.raw?.subjects || [];
+      const studentFiles = newStudent?.files || newStudent?.raw?.files || [];
+      const studentGrading = (newStudent?.gradingScale && newStudent.gradingScale.length > 0)
+        ? newStudent.gradingScale
+        : (newStudent?.raw?.settings?.grading_scale || selectedCollegeDb.gradingScale || []);
+
+      // Clone subjects cleanly with fresh template IDs
+      const clonedSubjects: Subject[] = studentSubjs.map((s: any) => ({
+        id: s.id || uuidv4(),
+        code: (s.code || '').trim(),
+        name: s.name,
+        creditHours: Number(s.creditHours || s.credit_hours || 3),
+        totalMarks: Number(s.totalMarks || s.total_marks || 100),
+        yearIndex: Number(s.yearIndex || s.year_index || 1),
+        semesterIndex: Number(s.semesterIndex || s.semester_index || 1),
+        distributions: (s.distributions || []).map((d: any) => ({
+          id: d.id || uuidv4(),
+          name: d.name,
+          maxMarks: Number(d.maxMarks || d.max_marks || 0),
+          achievedMarks: null,
+          status: 'current' as const
+        })),
+        status: 'current' as const,
+        includeInGpa: s.includeInGpa !== false && s.include_in_gpa !== false
+      }));
+
+      // Clone drive files cleanly
+      const clonedDrive: DriveFile[] = studentFiles.map((f: any) => ({
+        id: f.id || uuidv4(),
+        name: f.name,
+        size: Number(f.size || 0),
+        type: f.type || 'file',
+        parentId: f.parentId || f.parent_id || null,
+        createdAt: f.createdAt || f.upload_date || new Date().toISOString(),
+        url: f.url || '',
+        b2FileId: f.b2FileId || f.b2_file_id
+      }));
+
+      const cleanOverwriteData: Partial<UniversityDatabase> = {
+        sourceUserId: newStudent.id,
+        sourceUserName: newStudent.name || '',
+        sourceUserEmail: newStudent.email || '',
+        totalYears: newStudent.totalYears || selectedCollegeDb.totalYears || 4,
+        semestersPerYear: newStudent.semestersPerYear || selectedCollegeDb.semestersPerYear || 2,
+        subjects: clonedSubjects,
+        driveFiles: clonedDrive,
+        gradingScale: studentGrading
+      };
+
       // 1. Immediate local state update for instant UI feedback
       setDatabases(prev => prev.map(dbItem => {
         if (dbItem.id === selectedCollegeDb.id) {
           return {
             ...dbItem,
-            sourceUserId: newStudent.id,
-            sourceUserName: newStudent.name || '',
-            sourceUserEmail: newStudent.email || ''
+            ...cleanOverwriteData
           };
         }
         return dbItem;
       }));
 
-      // 2. Persist to DB
-      await db.updateUniversityDatabase(selectedCollegeDb.id, {
-        sourceUserId: newStudent.id,
-        sourceUserName: newStudent.name || '',
-        sourceUserEmail: newStudent.email || ''
-      });
+      // 2. Persist to DB (Completely overwrites old subjects & drive & grading)
+      await db.updateUniversityDatabase(selectedCollegeDb.id, cleanOverwriteData);
 
       if (notifySourceStudent) {
         await db.sendStudentNotification(newStudent.id, {
@@ -506,6 +598,114 @@ export function AdminUniversitiesTab({
     } catch (e) {
       console.error('Error switching source student:', e);
     }
+  };
+
+  // Save / Edit University Name Across All Colleges
+  const handleSaveEditUni = async () => {
+    if (!editingUni) return;
+    const newNameAr = editingUni.nameAr.trim();
+    const newNameEn = editingUni.nameEn.trim() || newNameAr;
+    if (!newNameAr) return;
+
+    try {
+      await db.updateUniversityName(editingUni.oldKey, newNameAr, newNameEn);
+      setDatabases(prev => prev.map(dbItem => {
+        if ((dbItem.universityNameAr && dbItem.universityNameAr.trim() === editingUni.oldKey.trim()) || 
+            (dbItem.universityNameEn && dbItem.universityNameEn.trim() === editingUni.oldKey.trim())) {
+          return {
+            ...dbItem,
+            universityNameAr: newNameAr,
+            universityNameEn: newNameEn
+          };
+        }
+        return dbItem;
+      }));
+      if (selectedUniversityKey === editingUni.oldKey) {
+        setSelectedUniversityKey(newNameAr);
+      }
+      setIsEditUniModalOpen(false);
+      setEditingUni(null);
+      await loadUniData();
+    } catch (e) {
+      console.error('Error updating university name:', e);
+    }
+  };
+
+  // Delete University & All Its Colleges
+  const handleConfirmDeleteUni = async () => {
+    if (!uniToDelete) return;
+    try {
+      await db.deleteUniversity(uniToDelete.key);
+      setDatabases(prev => prev.filter(d => 
+        (d.universityNameAr && d.universityNameAr.trim() !== uniToDelete.key.trim()) &&
+        (d.universityNameEn && d.universityNameEn.trim() !== uniToDelete.key.trim())
+      ));
+      if (selectedUniversityKey === uniToDelete.key) {
+        setSelectedUniversityKey(null);
+        setSelectedCollegeId(null);
+      }
+      setUniToDelete(null);
+      await loadUniData();
+    } catch (e) {
+      console.error('Error deleting university:', e);
+    }
+  };
+
+  // College Grading Scale Handlers
+  const handleSaveGradingScale = async (newScale: GradeRule[]) => {
+    if (!selectedCollegeDb) return;
+    try {
+      setDatabases(prev => prev.map(dbItem => {
+        if (dbItem.id === selectedCollegeDb.id) {
+          return { ...dbItem, gradingScale: newScale };
+        }
+        return dbItem;
+      }));
+      await db.updateUniversityDatabase(selectedCollegeDb.id, { gradingScale: newScale });
+    } catch (e) {
+      console.error('Error updating grading scale:', e);
+    }
+  };
+
+  const handleOpenAddGrade = () => {
+    setEditingGrade(null);
+    setGradeForm({
+      id: uuidv4(),
+      letter: 'A',
+      nameAr: 'ممتاز',
+      nameEn: 'Excellent',
+      minPercentage: 85,
+      maxPercentage: 100,
+      maxOperator: '<=',
+      points: 4.0
+    });
+    setIsGradeModalOpen(true);
+  };
+
+  const handleOpenEditGrade = (grade: GradeRule) => {
+    setEditingGrade(grade);
+    setGradeForm({ ...grade });
+    setIsGradeModalOpen(true);
+  };
+
+  const handleSaveGradeForm = async () => {
+    if (!selectedCollegeDb) return;
+    const currentScale = selectedCollegeDb.gradingScale || [];
+    let updatedScale: GradeRule[];
+    if (editingGrade) {
+      updatedScale = currentScale.map(g => g.id === editingGrade.id ? gradeForm : g);
+    } else {
+      updatedScale = [...currentScale, { ...gradeForm, id: gradeForm.id || uuidv4() }];
+    }
+    await handleSaveGradingScale(updatedScale);
+    setIsGradeModalOpen(false);
+  };
+
+  const handleDeleteGrade = async (gradeId: string) => {
+    if (!selectedCollegeDb) return;
+    const currentScale = selectedCollegeDb.gradingScale || [];
+    const updatedScale = currentScale.filter(g => g.id !== gradeId);
+    await handleSaveGradingScale(updatedScale);
   };
 
   // Open Subject Modal for Add
@@ -713,7 +913,7 @@ export function AdminUniversitiesTab({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
-  // Respond to Pending Update (with Reversible status)
+  // Respond to Pending Update (with Reversible status and resilient ID & Distribution matching)
   const handleResolvePendingUpdate = async (update: UniversityPendingUpdate, status: 'approved' | 'rejected' | 'pending') => {
     try {
       if (status === 'pending') {
@@ -721,34 +921,56 @@ export function AdminUniversitiesTab({
       } else {
         await db.respondToPendingUpdate(update.id, status, (targetDb) => {
           if (update.type === 'add_subject' && update.data) {
+            const subjectId = update.data.id || uuidv4();
             const newSubj: Subject = {
-              id: uuidv4(),
+              id: subjectId,
               code: (update.data.code || '').trim(),
               name: update.data.name,
-              creditHours: Number(update.data.creditHours || 3),
-              totalMarks: Number(update.data.totalMarks || 100),
-              yearIndex: Number(update.data.yearIndex || 1),
-              semesterIndex: Number(update.data.semesterIndex || 1),
+              creditHours: Number(update.data.creditHours || update.data.credit_hours || 3),
+              totalMarks: Number(update.data.totalMarks || update.data.total_marks || 100),
+              yearIndex: Number(update.data.yearIndex || update.data.year_index || 1),
+              semesterIndex: Number(update.data.semesterIndex || update.data.semester_index || 1),
               distributions: (update.data.distributions || []).map((d: any) => ({
-                id: uuidv4(),
+                id: d.id || uuidv4(),
                 name: d.name,
-                maxMarks: Number(d.maxMarks || 0),
+                maxMarks: Number(d.maxMarks || d.max_marks || 0),
                 achievedMarks: null,
-                status: 'current'
+                status: 'current' as const
               })),
               status: 'current',
-              includeInGpa: true
+              includeInGpa: update.data.includeInGpa !== false
             };
-            return { ...targetDb, subjects: [...targetDb.subjects, newSubj] };
-          } else if (update.type === 'update_subject' && update.data?.id) {
+            const filtered = targetDb.subjects.filter(s => s.id !== subjectId && !(s.name === newSubj.name && s.yearIndex === newSubj.yearIndex && s.semesterIndex === newSubj.semesterIndex));
+            return { ...targetDb, subjects: [...filtered, newSubj] };
+          } else if (update.type === 'update_subject' && update.data) {
+            const upd = update.data;
+            const updatedDistributions = upd.distributions
+              ? upd.distributions.map((d: any) => ({
+                  id: d.id || uuidv4(),
+                  name: d.name,
+                  maxMarks: Number(d.maxMarks || d.max_marks || 0),
+                  achievedMarks: null,
+                  status: 'current' as const
+                }))
+              : undefined;
+
             return {
               ...targetDb,
-              subjects: targetDb.subjects.map(s => s.id === update.data.id ? { ...s, ...update.data } : s)
+              subjects: targetDb.subjects.map(s => {
+                const isMatch = s.id === upd.id || (upd.name && s.name === upd.name && s.yearIndex === upd.yearIndex && s.semesterIndex === upd.semesterIndex);
+                if (!isMatch) return s;
+                return {
+                  ...s,
+                  ...upd,
+                  distributions: updatedDistributions !== undefined ? updatedDistributions : s.distributions
+                };
+              })
             };
-          } else if (update.type === 'delete_subject' && update.data?.id) {
+          } else if (update.type === 'delete_subject' && update.data) {
+            const upd = update.data;
             return {
               ...targetDb,
-              subjects: targetDb.subjects.filter(s => s.id !== update.data.id)
+              subjects: targetDb.subjects.filter(s => s.id !== upd.id && s.name !== upd.name)
             };
           }
           return targetDb;
@@ -757,6 +979,15 @@ export function AdminUniversitiesTab({
       await loadUniData();
     } catch (e) {
       console.error('Error resolving pending update:', e);
+    }
+  };
+
+  // Grouped Bulk Resolution (Approve / Reject all in group)
+  const handleResolveGroup = async (groupUpdates: UniversityPendingUpdate[], status: 'approved' | 'rejected') => {
+    for (const u of groupUpdates) {
+      if (u.status === 'pending') {
+        await handleResolvePendingUpdate(u, status);
+      }
     }
   };
 
@@ -854,72 +1085,164 @@ export function AdminUniversitiesTab({
             </div>
           </div>
 
-          {/* Updates List Grid */}
+          {/* Grouped Updates by Student & College */}
           <div className="space-y-4">
-            {filteredUpdatesList.map(update => {
-              const targetDb = databases.find(d => d.id === update.universityDatabaseId);
+            {(() => {
+              const groupsMap: Record<string, {
+                key: string;
+                studentId: string;
+                studentName: string;
+                studentEmail: string;
+                collegeDb?: UniversityDatabase;
+                collegeId: string;
+                updates: UniversityPendingUpdate[];
+              }> = {};
 
-              return (
-                <div 
-                  key={update.id} 
-                  className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-4 transition-all"
-                >
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-xs font-black">
-                          {targetDb ? `${targetDb.universityNameAr} • ${targetDb.collegeNameAr}` : update.universityDatabaseId}
-                        </span>
-                        <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${
-                          update.status === 'pending'
-                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200'
-                            : (update.status === 'approved'
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200'
-                                : 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200')
-                        }`}>
-                          {update.status === 'pending' ? (isAr ? 'قيد المراجعة' : 'Pending') : (update.status === 'approved' ? (isAr ? 'تمت الموافقة' : 'Approved') : (isAr ? 'مرفوض' : 'Rejected'))}
-                        </span>
+              filteredUpdatesList.forEach(update => {
+                const key = `${update.sourceUserId}_${update.universityDatabaseId}`;
+                if (!groupsMap[key]) {
+                  const targetDb = databases.find(d => d.id === update.universityDatabaseId);
+                  groupsMap[key] = {
+                    key,
+                    studentId: update.sourceUserId,
+                    studentName: update.sourceUserName || (isAr ? 'طالب مسجل' : 'Registered Student'),
+                    studentEmail: update.sourceUserEmail || '',
+                    collegeDb: targetDb,
+                    collegeId: update.universityDatabaseId,
+                    updates: []
+                  };
+                }
+                groupsMap[key].updates.push(update);
+              });
+
+              const groupedList = Object.values(groupsMap);
+
+              return groupedList.map(group => {
+                const pendingInGroup = group.updates.filter(u => u.status === 'pending');
+                const isExpanded = expandedGroupKeys[group.key] !== false; // expanded by default
+
+                return (
+                  <div 
+                    key={group.key} 
+                    className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs overflow-hidden transition-all"
+                  >
+                    {/* Group Header Card */}
+                    <div className="p-5 sm:p-6 bg-zinc-50/50 dark:bg-zinc-800/30 border-b border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
+                          {group.studentName ? group.studentName.charAt(0).toUpperCase() : 'S'}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-black text-base text-zinc-900 dark:text-white">{group.studentName}</h4>
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
+                              {group.collegeDb ? `${group.collegeDb.universityNameAr} • ${group.collegeDb.collegeNameAr}` : group.collegeId}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300">
+                              {group.updates.length} {isAr ? 'تعديل' : 'updates'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-zinc-400 mt-0.5 font-medium">{group.studentEmail}</p>
+                        </div>
                       </div>
-                      <h4 className="font-black text-base text-zinc-900 dark:text-white">
-                        {update.description || (isAr ? 'تعديل مقترح على الخطة الدراسية' : 'Proposed Update')}
-                      </h4>
-                      <p className="text-xs text-zinc-400">
-                        {isAr ? 'المصدر:' : 'Source:'} <span className="font-bold text-zinc-700 dark:text-zinc-200">{update.sourceUserName}</span> ({update.sourceUserEmail}) • {new Date(update.createdAt).toLocaleDateString(isAr ? 'ar-EG' : 'en-US')}
-                      </p>
+
+                      <div className="flex items-center gap-2 self-end sm:self-center">
+                        {pendingInGroup.length > 0 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleResolveGroup(group.updates, 'approved')}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+                              title={isAr ? 'الموافقة على جميع تعديلات هذا الطالب' : 'Approve all updates for this student'}
+                            >
+                              <CheckCircle2 size={14} />
+                              <span>{isAr ? `موافقة على الكل (${pendingInGroup.length})` : `Approve All (${pendingInGroup.length})`}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleResolveGroup(group.updates, 'rejected')}
+                              className="px-3 py-2 text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                              title={isAr ? 'رفض جميع تعديلات هذا الطالب' : 'Reject all updates for this student'}
+                            >
+                              {isAr ? 'رفض الكل' : 'Reject All'}
+                            </button>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setExpandedGroupKeys(prev => ({ ...prev, [group.key]: !isExpanded }))}
+                          className="p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
+                          title={isExpanded ? (isAr ? 'طي' : 'Collapse') : (isAr ? 'عرض التفاصيل' : 'Expand')}
+                        >
+                          <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-2 self-end sm:self-center">
-                      {update.status === 'pending' ? (
-                        <>
-                          <button
-                            onClick={() => handleResolvePendingUpdate(update, 'rejected')}
-                            className="px-4 py-2 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
-                          >
-                            {isAr ? 'رفض' : 'Reject'}
-                          </button>
-                          <button
-                            onClick={() => handleResolvePendingUpdate(update, 'approved')}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer"
-                          >
-                            <Check size={14} />
-                            <span>{isAr ? 'موافقة واعتماد في القالب' : 'Approve & Merge'}</span>
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => handleResolvePendingUpdate(update, 'pending')}
-                          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-colors cursor-pointer"
-                          title={isAr ? 'إعادة التحديث لحالة المراجعة والتراجع عن القرار' : 'Reverse Decision'}
-                        >
-                          <RotateCcw size={13} />
-                          <span>{isAr ? 'تراجع عن القرار' : 'Reverse Decision'}</span>
-                        </button>
-                      )}
-                    </div>
+                    {/* Group Items List (Oldest to Newest) */}
+                    {isExpanded && (
+                      <div className="p-4 sm:p-6 divide-y divide-zinc-100 dark:divide-zinc-800/80 space-y-3">
+                        {group.updates.map((update, idx) => (
+                          <div key={update.id} className="pt-3 first:pt-0 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="w-5 h-5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 flex items-center justify-center text-[10px] font-black">
+                                  {idx + 1}
+                                </span>
+                                <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${
+                                  update.status === 'pending'
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200'
+                                    : (update.status === 'approved'
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200'
+                                        : 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200')
+                                }`}>
+                                  {update.status === 'pending' ? (isAr ? 'قيد المراجعة' : 'Pending') : (update.status === 'approved' ? (isAr ? 'تمت الموافقة' : 'Approved') : (isAr ? 'مرفوض' : 'Rejected'))}
+                                </span>
+                                <span className="text-[11px] text-zinc-400">
+                                  {new Date(update.createdAt).toLocaleTimeString(isAr ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' })} • {new Date(update.createdAt).toLocaleDateString(isAr ? 'ar-EG' : 'en-US')}
+                                </span>
+                              </div>
+                              <h5 className="font-bold text-sm text-zinc-900 dark:text-white">
+                                {update.description || (isAr ? 'تعديل مقترح' : 'Proposed Update')}
+                              </h5>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                              {update.status === 'pending' ? (
+                                <>
+                                  <button
+                                    onClick={() => handleResolvePendingUpdate(update, 'rejected')}
+                                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 transition-colors cursor-pointer"
+                                  >
+                                    {isAr ? 'رفض' : 'Reject'}
+                                  </button>
+                                  <button
+                                    onClick={() => handleResolvePendingUpdate(update, 'approved')}
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer"
+                                  >
+                                    <Check size={13} />
+                                    <span>{isAr ? 'موافقة' : 'Approve'}</span>
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  onClick={() => handleResolvePendingUpdate(update, 'pending')}
+                                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 transition-colors cursor-pointer"
+                                  title={isAr ? 'تراجع عن القرار' : 'Reverse Decision'}
+                                >
+                                  <RotateCcw size={12} />
+                                  <span>{isAr ? 'تراجع' : 'Reverse'}</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
 
             {filteredUpdatesList.length === 0 && (
               <div className="py-16 text-center text-zinc-400 bg-white dark:bg-zinc-900 rounded-3xl border border-dashed border-zinc-200 dark:border-zinc-800 p-8 space-y-2">
@@ -965,7 +1288,7 @@ export function AdminUniversitiesTab({
                 <div className="flex items-center gap-2.5 w-full sm:w-auto">
                   <button
                     onClick={() => setIsCreateModalOpen(true)}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-5 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25 transition-all cursor-pointer shrink-0"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-5 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25 transition-all cursor-pointer shrink-0"
                   >
                     <Plus size={18} />
                     <span>{isAr ? 'إنشاء قاعدة بيانات لجامعة جديدة' : 'Add University Database'}</span>
@@ -1032,7 +1355,7 @@ export function AdminUniversitiesTab({
                           </td>
 
                           <td className="py-4 px-6 text-center font-bold">
-                            <span className="px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-xs font-black">
+                            <span className="px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-black">
                               {group.colleges.length} {isAr ? 'كليات' : 'Colleges'}
                             </span>
                           </td>
@@ -1050,13 +1373,43 @@ export function AdminUniversitiesTab({
                           </td>
 
                           <td className="py-4 px-6 text-center">
-                            <button
-                              onClick={() => setSelectedUniversityKey(group.key)}
-                              className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
-                            >
-                              <span>{isAr ? 'عرض الكليات' : 'View Colleges'}</span>
-                              <ArrowIcon size={14} />
-                            </button>
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => setSelectedUniversityKey(group.key)}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+                              >
+                                <span>{isAr ? 'عرض الكليات' : 'View Colleges'}</span>
+                                <ArrowIcon size={14} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingUni({
+                                    oldKey: group.key,
+                                    nameAr: group.nameAr,
+                                    nameEn: group.nameEn || group.nameAr
+                                  });
+                                  setIsEditUniModalOpen(true);
+                                }}
+                                className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/60 rounded-xl transition-colors cursor-pointer border border-blue-200 dark:border-blue-800/60"
+                                title={isAr ? 'تعديل اسم الجامعة' : 'Edit University'}
+                              >
+                                <Edit2 size={15} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setUniToDelete({
+                                    key: group.key,
+                                    nameAr: group.nameAr,
+                                    nameEn: group.nameEn || group.nameAr,
+                                    collegeCount: group.colleges.length
+                                  });
+                                }}
+                                className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/60 rounded-xl transition-colors cursor-pointer border border-rose-200 dark:border-rose-900/40"
+                                title={isAr ? 'حذف الجامعة وكافة كلياتها' : 'Delete University'}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1099,7 +1452,7 @@ export function AdminUniversitiesTab({
 
                 <button
                   onClick={() => setIsCreateModalOpen(true)}
-                  className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shadow-md shadow-indigo-500/25 transition-all cursor-pointer shrink-0"
+                  className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shadow-md shadow-indigo-500/25 transition-all cursor-pointer shrink-0"
                 >
                   <Plus size={16} />
                   <span>{isAr ? 'إنشاء قاعدة بيانات لجامعة/كلية جديدة' : 'Add University/College'}</span>
@@ -1130,7 +1483,7 @@ export function AdminUniversitiesTab({
               <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs overflow-hidden">
                 <div className="p-5 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
                   <h3 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white flex items-center gap-2">
-                    <GraduationCap size={18} className="text-purple-600" />
+                    <GraduationCap size={18} className="text-blue-600" />
                     <span>{isAr ? `كليات ${currentUniversityGroup.nameAr}` : `Colleges of ${currentUniversityGroup.nameEn}`}</span>
                   </h3>
                   <span className="text-xs font-bold text-zinc-400">
@@ -1159,7 +1512,7 @@ export function AdminUniversitiesTab({
                           <tr key={collegeDb.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors">
                             <td className="py-4 px-6">
                               <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950 text-purple-600 flex items-center justify-center font-bold shrink-0">
+                                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-600 flex items-center justify-center font-bold shrink-0">
                                   <GraduationCap size={18} />
                                 </div>
                                 <div>
@@ -1185,7 +1538,7 @@ export function AdminUniversitiesTab({
                             </td>
 
                             <td className="py-4 px-6 text-center font-bold">
-                              <span className="px-3 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-xs">
+                              <span className="px-3 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs">
                                 {collegeDb.semestersPerYear || 2} {isAr ? 'ترم / سنة' : 'Semesters/Yr'}
                               </span>
                             </td>
@@ -1229,6 +1582,32 @@ export function AdminUniversitiesTab({
                           </tr>
                         );
                       })}
+
+                      {currentUniversityGroup.colleges.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="py-12 text-center text-zinc-400">
+                            <GraduationCap size={44} className="mx-auto opacity-20 mb-2 text-blue-500" />
+                            <p className="font-bold text-sm text-zinc-700 dark:text-zinc-300">
+                              {isAr ? 'لا توجد كليات مسجلة لهذه الجامعة حالياً.' : 'No colleges registered for this university currently.'}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCreateForm(prev => ({
+                                  ...prev,
+                                  universityNameAr: currentUniversityGroup.nameAr,
+                                  universityNameEn: currentUniversityGroup.nameEn
+                                }));
+                                setIsCreateModalOpen(true);
+                              }}
+                              className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-sm"
+                            >
+                              <Plus size={15} />
+                              <span>{isAr ? 'إضافة كلية للجامعة الآن' : 'Add College Now'}</span>
+                            </button>
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1263,14 +1642,6 @@ export function AdminUniversitiesTab({
 
                 <div className="flex flex-wrap items-center gap-2">
                   <button
-                    onClick={() => setIsCreateModalOpen(true)}
-                    className="flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-3.5 py-2 rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer shrink-0"
-                  >
-                    <Plus size={15} />
-                    <span>{isAr ? 'إنشاء قاعدة بيانات جديدة' : 'Add Database'}</span>
-                  </button>
-
-                  <button
                     onClick={() => {
                       setStructureForm({
                         totalYears: selectedCollegeDb.totalYears || 4,
@@ -1289,36 +1660,22 @@ export function AdminUniversitiesTab({
                       setSourceSearchQuery('');
                       setIsSourceModalOpen(true);
                     }}
-                    className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
                   >
                     <UserCheck size={14} />
                     <span>{isAr ? 'تغيير الطالب المصدر' : 'Switch Source'}</span>
-                  </button>
-
-                  <button
-                    onClick={handleOpenAddSubject}
-                    className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
-                  >
-                    <Plus size={15} />
-                    <span>{isAr ? 'إضافة مادة للترم' : 'Add Subject'}</span>
                   </button>
                 </div>
               </div>
 
               {/* Source Student Notice Banner */}
-              <div className="bg-purple-50/60 dark:bg-purple-950/30 p-4 rounded-2xl border border-purple-200/80 dark:border-purple-800/40 flex items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2 text-purple-900 dark:text-purple-200">
-                  <UserCheck size={18} className="text-purple-600 shrink-0" />
+              <div className="bg-blue-50/60 dark:bg-blue-950/30 p-4 rounded-2xl border border-blue-200/80 dark:border-blue-800/40 flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-blue-900 dark:text-blue-200">
+                  <UserCheck size={18} className="text-blue-600 shrink-0" />
                   <span>
                     {isAr ? 'الطالب المصدر المعتمد لقالب هذه الكلية:' : 'Source Student:'} <strong>{selectedCollegeDb.sourceUserName || 'طالب مسجل'}</strong> ({selectedCollegeDb.sourceUserEmail})
                   </span>
                 </div>
-                <button
-                  onClick={() => setIsSourceModalOpen(true)}
-                  className="text-purple-700 dark:text-purple-300 font-bold hover:underline cursor-pointer shrink-0"
-                >
-                  {isAr ? 'تغيير الطالب' : 'Change'}
-                </button>
               </div>
 
               {/* Studio Tabs */}
@@ -1327,31 +1684,43 @@ export function AdminUniversitiesTab({
                   onClick={() => setActiveStudioTab('subjects')}
                   className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs sm:text-sm font-black transition-all cursor-pointer shrink-0 ${
                     activeStudioTab === 'subjects'
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
                       : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
                   }`}
                 >
                   <BookOpen size={16} />
-                  <span>{isAr ? `المواد وتوزيع الدرجات (${selectedCollegeDb.subjects?.length || 0})` : `Subjects & Grades (${selectedCollegeDb.subjects?.length || 0})`}</span>
+                  <span>{isAr ? 'المواد وتوزيع الدرجات' : 'Subjects & Grades'}</span>
                 </button>
 
                 <button
                   onClick={() => setActiveStudioTab('drive')}
                   className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs sm:text-sm font-black transition-all cursor-pointer shrink-0 ${
                     activeStudioTab === 'drive'
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
                       : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
                   }`}
                 >
                   <HardDrive size={16} />
-                  <span>{isAr ? `ملفات ومجلدات الدرايف (${selectedCollegeDb.driveFiles?.length || 0})` : `Drive Files (${selectedCollegeDb.driveFiles?.length || 0})`}</span>
+                  <span>{isAr ? 'ملفات ومجلدات الدرايف' : 'Drive Files'}</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveStudioTab('grading')}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs sm:text-sm font-black transition-all cursor-pointer shrink-0 ${
+                    activeStudioTab === 'grading'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                      : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <Award size={16} />
+                  <span>{isAr ? 'جدول التقديرات' : 'Grading Scale'}</span>
                 </button>
 
                 <button
                   onClick={() => setActiveStudioTab('students')}
                   className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs sm:text-sm font-black transition-all cursor-pointer shrink-0 ${
                     activeStudioTab === 'students'
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
                       : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
                   }`}
                 >
@@ -1398,7 +1767,7 @@ export function AdminUniversitiesTab({
                             onClick={() => setSelectedSemesterIndex(sem)}
                             className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer ${
                               selectedSemesterIndex === sem
-                                ? 'bg-purple-600 text-white shadow-sm'
+                                ? 'bg-blue-600 text-white shadow-sm'
                                 : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200'
                             }`}
                           >
@@ -1688,6 +2057,107 @@ export function AdminUniversitiesTab({
                 </div>
               )}
 
+              {/* STUDIO TAB: COLLEGE GRADING SCALE */}
+              {activeStudioTab === 'grading' && (
+                <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-5">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-4">
+                    <div>
+                      <h4 className="font-black text-base text-zinc-900 dark:text-white flex items-center gap-2">
+                        <Award size={18} className="text-blue-600" />
+                        <span>{isAr ? `جدول تقديرات ${selectedCollegeDb.collegeNameAr}` : `Grading Scale for ${selectedCollegeDb.collegeNameEn}`}</span>
+                      </h4>
+                      <p className="text-xs text-zinc-400 mt-0.5">
+                        {isAr 
+                          ? 'هذا الجدول مسحوب ومطابق لحساب الطالب المصدر. يمكنك التعديل عليه لإضافة أو حذف أو تعديل أي تقدير، ويتم اعتماده لكافة الطلاب.' 
+                          : 'This grading scale is synced with source student. You can edit, add, or delete grade rules.'}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={handleOpenAddGrade}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer shrink-0"
+                    >
+                      <Plus size={14} />
+                      <span>{isAr ? 'إضافة تقدير جديد' : 'Add Grade Rule'}</span>
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs sm:text-sm text-left rtl:text-right whitespace-nowrap">
+                      <thead className="bg-zinc-50 dark:bg-zinc-800/60 text-zinc-500 uppercase text-[11px] font-black border-b border-zinc-200 dark:border-zinc-800">
+                        <tr>
+                          <th className="py-3 px-4">{isAr ? 'الرمز' : 'Letter'}</th>
+                          <th className="py-3 px-4">{isAr ? 'الاسم بالعربي' : 'Name (AR)'}</th>
+                          <th className="py-3 px-4">{isAr ? 'الاسم بالإنجليزي' : 'Name (EN)'}</th>
+                          <th className="py-3 px-4 text-center">{isAr ? 'النسبة الدنيا (%)' : 'Min (%)'}</th>
+                          <th className="py-3 px-4 text-center">{isAr ? 'الحد الأقصى والنوع' : 'Upper Bound & Operator'}</th>
+                          <th className="py-3 px-4 text-center">{isAr ? 'نقاط المعدل (GPA)' : 'GPA Points'}</th>
+                          <th className="py-3 px-4 text-center">{isAr ? 'الإجراءات' : 'Actions'}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                        {(selectedCollegeDb.gradingScale || []).map((grade) => {
+                          const isInclusive = grade.maxOperator ? grade.maxOperator === '<=' : grade.maxPercentage >= 100;
+                          return (
+                            <tr key={grade.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors">
+                              <td className="py-3 px-4 font-black text-zinc-900 dark:text-white">{grade.letter}</td>
+                              <td className="py-3 px-4 font-bold text-zinc-800 dark:text-zinc-200">{grade.nameAr}</td>
+                              <td className="py-3 px-4 text-zinc-500">{grade.nameEn}</td>
+                              <td className="py-3 px-4 text-center font-bold text-zinc-700 dark:text-zinc-300">{grade.minPercentage}%</td>
+                              <td className="py-3 px-4 text-center">
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold ${
+                                  isInclusive 
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/40' 
+                                    : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40'
+                                }`}>
+                                  <span>{isInclusive ? 'إلى (≤)' : 'إلى أقل من (<)'}</span>
+                                  <span className="font-black">{grade.maxPercentage}%</span>
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-center font-black text-blue-600 dark:text-blue-400">
+                                {grade.points !== undefined ? Number(grade.points).toFixed(2) : '-'}
+                              </td>
+                              <td className="py-3 px-4 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => handleOpenEditGrade(grade)}
+                                    className="p-1.5 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 hover:bg-blue-100 rounded-xl transition-all cursor-pointer"
+                                    title={isAr ? 'تعديل' : 'Edit'}
+                                  >
+                                    <Edit2 size={13} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteGrade(grade.id)}
+                                    className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 rounded-xl transition-all cursor-pointer"
+                                    title={isAr ? 'حذف' : 'Delete'}
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {(!selectedCollegeDb.gradingScale || selectedCollegeDb.gradingScale.length === 0) && (
+                          <tr>
+                            <td colSpan={7} className="py-12 text-center text-zinc-400">
+                              <p className="font-bold text-xs">{isAr ? 'لا يوجد جدول تقديرات مخصص لهذه الكلية حتى الآن.' : 'No custom grading scale for this college yet.'}</p>
+                              <button
+                                onClick={handleOpenAddGrade}
+                                className="mt-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-bold cursor-pointer inline-flex items-center gap-1"
+                              >
+                                <Plus size={13} />
+                                <span>{isAr ? 'إضافة تقدير الآن' : 'Add Grade Now'}</span>
+                              </button>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
         </>
@@ -1740,40 +2210,75 @@ export function AdminUniversitiesTab({
                   />
                 </div>
 
-                <div className="max-h-[180px] overflow-y-auto space-y-2 p-1 border border-zinc-200 dark:border-zinc-800 rounded-2xl bg-zinc-50/50 dark:bg-zinc-800/20">
-                  {filteredStudentsForCreate.map(st => {
-                    const isSelected = createForm.sourceUserId === st.id;
-                    const subjsCount = st.subjects?.length || st.subjectsCount || 0;
-                    const filesCount = st.files?.length || st.filesCount || 0;
+                <div className="max-h-[300px] overflow-y-auto p-1 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {filteredStudentsForCreate.map(st => {
+                      const isSelected = createForm.sourceUserId === st.id;
+                      const subjsCount = st.subjects?.length || st.subjectsCount || 0;
+                      const filesCount = st.files?.length || st.filesCount || 0;
 
-                    return (
-                      <button
-                        key={st.id}
-                        type="button"
-                        onClick={() => handleSelectStudent(st)}
-                        className={`w-full p-3 rounded-xl border text-left rtl:text-right transition-all flex items-center justify-between gap-3 cursor-pointer ${
-                          isSelected
-                            ? 'bg-indigo-50 dark:bg-indigo-950/80 border-indigo-500 shadow-xs'
-                            : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
-                        }`}
-                      >
-                        <div className="min-w-0">
-                          <p className="font-black text-xs text-zinc-900 dark:text-white truncate">{st.name}</p>
-                          <p className="text-[11px] text-zinc-400 truncate">{st.email} • {st.university || 'غير محدد'} / {st.college || 'غير محدد'}</p>
+                      return (
+                        <div
+                          key={st.id}
+                          onClick={() => handleSelectStudent(st)}
+                          className={`p-3.5 sm:p-4 rounded-3xl border transition-all flex flex-col justify-between gap-3 cursor-pointer ${
+                            isSelected
+                              ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-500 ring-2 ring-blue-500/20 shadow-md'
+                              : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-blue-300 dark:hover:border-blue-800/60 shadow-xs'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
+                              {st.name ? st.name.charAt(0).toUpperCase() : 'S'}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <h4 className="font-black text-xs sm:text-sm text-zinc-900 dark:text-white truncate">
+                                  {st.name}
+                                </h4>
+                                {isSelected && (
+                                  <span className="px-2 py-0.2 rounded-full text-[10px] font-black bg-blue-600 text-white">
+                                    {isAr ? 'تم الاختيار' : 'Selected'}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-zinc-400 truncate mt-0.5">
+                                {st.email}
+                              </p>
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
+                                  🏛️ {st.university && st.university !== 'غير محدد' ? st.university : (isAr ? 'غير محدد' : 'No uni')}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
+                                  🎓 {st.college && st.college !== 'غير محدد' ? st.college : (isAr ? 'غير محدد' : 'No col')}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 text-[11px] font-bold">
+                              <span className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
+                                {subjsCount} {isAr ? 'مادة' : 'subjs'}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+                                {filesCount} {isAr ? 'ملف' : 'files'}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className={`px-3 py-1 rounded-xl text-[11px] font-bold transition-all ${
+                                isSelected
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200'
+                              }`}
+                            >
+                              {isSelected ? (isAr ? 'محدد ✓' : 'Selected ✓') : (isAr ? 'اختيار' : 'Select')}
+                            </button>
+                          </div>
                         </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
-                            {subjsCount} {isAr ? 'مادة' : 'subjects'}
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
-                            {filesCount} {isAr ? 'ملف' : 'files'}
-                          </span>
-                          {isSelected && <Check size={16} className="text-indigo-600" />}
-                        </div>
-                      </button>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -1887,7 +2392,7 @@ export function AdminUniversitiesTab({
                 type="button"
                 onClick={handleCreateDatabase}
                 disabled={creating}
-                className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25 transition-all cursor-pointer"
+                className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-6 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25 transition-all cursor-pointer"
               >
                 {creating ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
                 <span>{isAr ? 'إنشاء وسحب قاعدة البيانات' : 'Create & Clone Database'}</span>
@@ -1964,7 +2469,7 @@ export function AdminUniversitiesTab({
             {/* Modal Header */}
             <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
                   <UserCheck size={20} />
                 </div>
                 <div>
@@ -1992,7 +2497,7 @@ export function AdminUniversitiesTab({
                   value={sourceSearchQuery}
                   onChange={(e) => setSourceSearchQuery(e.target.value)}
                   placeholder={isAr ? 'ابحث باسم الطالب، البريد الإلكتروني، الجامعة، أو الكلية...' : 'Search student by name, email, university, or college...'}
-                  className="w-full pl-11 rtl:pl-4 rtl:pr-11 pr-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full pl-11 rtl:pl-4 rtl:pr-11 pr-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
@@ -2010,12 +2515,12 @@ export function AdminUniversitiesTab({
                       key={st.id}
                       className={`p-4 sm:p-5 rounded-3xl border transition-all flex flex-col justify-between gap-4 ${
                         isSelected
-                          ? 'bg-purple-50/70 dark:bg-purple-950/40 border-purple-500 ring-2 ring-purple-500/20 shadow-md'
-                          : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-purple-300 dark:hover:border-purple-800/60 shadow-xs'
+                          ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-500 ring-2 ring-blue-500/20 shadow-md'
+                          : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-blue-300 dark:hover:border-blue-800/60 shadow-xs'
                       }`}
                     >
                       <div className="flex items-start gap-3.5">
-                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
                           {st.name ? st.name.charAt(0).toUpperCase() : 'S'}
                         </div>
 
@@ -2025,7 +2530,7 @@ export function AdminUniversitiesTab({
                               {st.name}
                             </h4>
                             {isSelected && (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-600 text-white">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-600 text-white">
                                 {isAr ? 'المصدر الحالي' : 'Current'}
                               </span>
                             )}
@@ -2060,8 +2565,8 @@ export function AdminUniversitiesTab({
                           onClick={() => handleSwitchSourceStudent(st)}
                           className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
                             isSelected
-                              ? 'bg-purple-600 text-white shadow-purple-500/20'
-                              : 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-purple-600 dark:hover:bg-purple-600 dark:hover:text-white'
+                              ? 'bg-blue-600 text-white shadow-blue-500/20'
+                              : 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-blue-600 dark:hover:bg-blue-600 dark:hover:text-white'
                           }`}
                         >
                           {isSelected ? <Check size={14} /> : <UserCheck size={14} />}
@@ -2088,7 +2593,7 @@ export function AdminUniversitiesTab({
                   id="notifySourceCheck"
                   checked={notifySourceStudent}
                   onChange={(e) => setNotifySourceStudent(e.target.checked)}
-                  className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
+                  className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
                 />
                 <label htmlFor="notifySourceCheck" className="text-xs font-bold text-zinc-700 dark:text-zinc-300 cursor-pointer">
                   {isAr ? 'إرسال إشعار فوري وتنبيه داخل الموقع للطالب المختار' : 'Send in-app notification to student'}
@@ -2445,7 +2950,7 @@ export function AdminUniversitiesTab({
         </div>
       )}
 
-      {/* --- CONFIRM DELETE MODAL --- */}
+      {/* --- CONFIRM DELETE COLLEGE MODAL --- */}
       {dbToDelete && (
         <ConfirmModal
           isOpen={true}
@@ -2455,10 +2960,200 @@ export function AdminUniversitiesTab({
             : `Delete "${dbToDelete.collegeNameAr}" template?`}
           onConfirm={handleDeleteDatabase}
           onCancel={() => setDbToDelete(null)}
-          isDestructive={true}
+          variant="danger"
           confirmText={isAr ? 'نعم، حذف' : 'Yes, Delete'}
           cancelText={isAr ? 'إلغاء' : 'Cancel'}
         />
+      )}
+
+      {/* --- EDIT UNIVERSITY MODAL --- */}
+      {isEditUniModalOpen && editingUni && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md p-6 sm:p-7 space-y-4 border border-zinc-200 dark:border-zinc-800 shadow-2xl">
+            <h3 className="font-black text-base text-zinc-900 dark:text-white flex items-center gap-2">
+              <Edit2 size={16} className="text-blue-600" />
+              <span>{isAr ? 'تعديل اسم الجامعة' : 'Edit University Name'}</span>
+            </h3>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {isAr ? 'اسم الجامعة (عربي)' : 'University Name (Arabic)'} *
+                </label>
+                <input
+                  type="text"
+                  value={editingUni.nameAr}
+                  onChange={(e) => setEditingUni({ ...editingUni, nameAr: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {isAr ? 'اسم الجامعة (English)' : 'University Name (English)'}
+                </label>
+                <input
+                  type="text"
+                  value={editingUni.nameEn}
+                  onChange={(e) => setEditingUni({ ...editingUni, nameEn: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditUniModalOpen(false);
+                  setEditingUni(null);
+                }}
+                className="px-4 py-2 text-xs font-bold text-zinc-500"
+              >
+                {isAr ? 'إلغاء' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditUni}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold cursor-pointer"
+              >
+                {isAr ? 'حفظ التعديل' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- CONFIRM DELETE UNIVERSITY MODAL --- */}
+      {uniToDelete && (
+        <ConfirmModal
+          isOpen={!!uniToDelete}
+          title={isAr ? 'تأكيد حذف الجامعة وكافة كلياتها' : 'Delete University & Colleges'}
+          message={isAr 
+            ? `هل أنت متأكد تماماً من حذف جامعة "${uniToDelete.nameAr}" وجميع كلياتها (${uniToDelete.collegeCount} كلية) وقواعد بياناتها نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.`
+            : `Are you sure you want to permanently delete "${uniToDelete.nameEn}" and all its (${uniToDelete.collegeCount}) colleges? This action cannot be undone.`
+          }
+          confirmText={isAr ? 'نعم، احذف الجامعة وكلياتها' : 'Yes, Delete University'}
+          cancelText={isAr ? 'إلغاء' : 'Cancel'}
+          variant="danger"
+          onConfirm={handleConfirmDeleteUni}
+          onCancel={() => setUniToDelete(null)}
+        />
+      )}
+
+      {/* --- ADD / EDIT GRADE RULE MODAL --- */}
+      {isGradeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md p-6 sm:p-7 space-y-4 border border-zinc-200 dark:border-zinc-800 shadow-2xl">
+            <h3 className="font-black text-base text-zinc-900 dark:text-white flex items-center gap-2">
+              <Award size={18} className="text-blue-600" />
+              <span>{editingGrade ? (isAr ? 'تعديل قاعدة التقدير' : 'Edit Grade Rule') : (isAr ? 'إضافة تقدير جديد للكلية' : 'Add New Grade Rule')}</span>
+            </h3>
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    {isAr ? 'الرمز (مثل A+)' : 'Letter'} *
+                  </label>
+                  <input
+                    type="text"
+                    value={gradeForm.letter}
+                    onChange={(e) => setGradeForm({ ...gradeForm, letter: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-black"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    {isAr ? 'الاسم (عربي)' : 'Name (AR)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={gradeForm.nameAr}
+                    onChange={(e) => setGradeForm({ ...gradeForm, nameAr: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    {isAr ? 'الاسم (EN)' : 'Name (EN)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={gradeForm.nameEn}
+                    onChange={(e) => setGradeForm({ ...gradeForm, nameEn: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    {isAr ? 'النسبة الدنيا (%)' : 'Min Percentage (%)'}
+                  </label>
+                  <input
+                    type="number"
+                    value={gradeForm.minPercentage}
+                    onChange={(e) => setGradeForm({ ...gradeForm, minPercentage: Number(e.target.value) })}
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    {isAr ? 'نقاط المعدل (GPA)' : 'GPA Points'}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    value={gradeForm.points}
+                    onChange={(e) => setGradeForm({ ...gradeForm, points: Number(e.target.value) })}
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  {isAr ? 'نوع الحد الأقصى والنسبة القصوى' : 'Upper Bound Operator & Max %'}
+                </label>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={gradeForm.maxOperator || (gradeForm.maxPercentage >= 100 ? '<=' : '<')}
+                    onChange={(e) => setGradeForm({ ...gradeForm, maxOperator: e.target.value as '<' | '<=' })}
+                    className="w-1/2 text-xs px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 font-bold text-blue-600 dark:text-blue-400 outline-none"
+                  >
+                    <option value="<=">{isAr ? 'إلى (≤) شامل' : 'To (<=) Inclusive'}</option>
+                    <option value="<">{isAr ? 'إلى أقل من (<)' : 'To less than (<)'}</option>
+                  </select>
+                  <input
+                    type="number"
+                    value={gradeForm.maxPercentage}
+                    onChange={(e) => setGradeForm({ ...gradeForm, maxPercentage: Number(e.target.value) })}
+                    className="w-1/2 px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setIsGradeModalOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-zinc-500"
+              >
+                {isAr ? 'إلغاء' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveGradeForm}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold cursor-pointer"
+              >
+                {isAr ? 'حفظ التقدير' : 'Save Grade'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
