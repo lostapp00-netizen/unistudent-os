@@ -42,7 +42,10 @@ import {
   Info,
   Loader2,
   Building2,
-  GraduationCap
+  GraduationCap,
+  Sun,
+  Moon,
+  Globe
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { db } from '../lib/db';
@@ -55,9 +58,20 @@ import { AdminUniversitiesTab } from '../components/admin/AdminUniversitiesTab';
 export function Admin() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { settings } = useAppStore();
+  const { settings, updateTheme, updateLanguage } = useAppStore();
   const isAr = i18n.language === 'ar' || settings.language === 'ar';
   const BackIcon = isAr ? ArrowRight : ArrowLeft;
+
+  const toggleTheme = () => {
+    const newTheme = settings.theme === 'dark' ? 'light' : 'dark';
+    updateTheme(newTheme);
+  };
+
+  const toggleLanguage = () => {
+    const newLang = settings.language === 'ar' ? 'en' : 'ar';
+    i18n.changeLanguage(newLang);
+    updateLanguage(newLang);
+  };
 
   // --- Auth & Access State ---
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -608,10 +622,28 @@ export function Admin() {
         </nav>
 
         {/* Sidebar Footer */}
-        <div className="p-4 border-t border-zinc-100 dark:border-zinc-800">
+        <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 space-y-3">
+          <div className="flex items-center justify-between gap-2 p-1.5 bg-zinc-50 dark:bg-zinc-800/60 rounded-2xl border border-zinc-200/80 dark:border-zinc-700/60">
+            <button 
+              onClick={toggleTheme}
+              className="p-2 rounded-xl hover:bg-white dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 transition-all flex items-center justify-center cursor-pointer flex-1"
+              title={settings.theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+            >
+              {settings.theme === 'dark' ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} className="text-zinc-600" />}
+              <span className="text-[11px] font-bold mx-1.5">{settings.theme === 'dark' ? (isAr ? 'نهاري' : 'Light') : (isAr ? 'ليلي' : 'Dark')}</span>
+            </button>
+            
+            <button 
+              onClick={toggleLanguage}
+              className="px-3 py-1.5 text-xs font-black rounded-xl hover:bg-white dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-all uppercase tracking-wider cursor-pointer flex-1 text-center"
+            >
+              {settings.language === 'ar' ? 'English' : 'عربي'}
+            </button>
+          </div>
+
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 px-3.5 py-3 rounded-2xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50/70 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 transition-all border border-rose-200/60 dark:border-rose-900/40 shadow-xs"
+            className="w-full flex items-center justify-center gap-2 px-3.5 py-3 rounded-2xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50/70 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 transition-all border border-rose-200/60 dark:border-rose-900/40 shadow-xs cursor-pointer"
           >
             <LogOut size={16} />
             <span>{isAr ? 'تسجيل الخروج' : 'Logout'}</span>
@@ -627,7 +659,7 @@ export function Admin() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsMobileSidebarOpen(true)}
-              className="md:hidden p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-300"
+              className="md:hidden p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-300 cursor-pointer"
             >
               <Menu size={20} />
             </button>
@@ -641,11 +673,27 @@ export function Admin() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={toggleTheme}
+              className="p-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all shadow-2xs cursor-pointer"
+              title={settings.theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+            >
+              {settings.theme === 'dark' ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} />}
+            </button>
+
+            <button 
+              onClick={toggleLanguage}
+              className="px-3 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl text-xs font-black transition-all shadow-2xs cursor-pointer uppercase tracking-wider"
+              title={isAr ? 'تغيير اللغة' : 'Change Language'}
+            >
+              {settings.language === 'ar' ? 'EN' : 'عربي'}
+            </button>
+
             <button
               onClick={fetchData}
               disabled={loading}
-              className="p-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all shadow-2xs"
+              className="p-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all shadow-2xs cursor-pointer"
               title={isAr ? 'تحديث البيانات' : 'Refresh Data'}
             >
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
