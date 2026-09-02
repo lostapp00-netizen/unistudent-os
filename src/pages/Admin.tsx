@@ -80,8 +80,39 @@ export function Admin() {
 
   // --- Sidebar & Tabs ---
   type TabType = 'overview' | 'students' | 'universities' | 'suggestions' | 'backup';
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    try {
+      const saved = sessionStorage.getItem('unistudent_admin_active_tab') as TabType;
+      if (saved && ['overview', 'students', 'universities', 'suggestions', 'backup'].includes(saved)) {
+        return saved;
+      }
+    } catch {}
+    return 'overview';
+  });
+
+  const [universitySubTab, setUniversitySubTab] = useState<'universities' | 'updates'>(() => {
+    try {
+      const saved = sessionStorage.getItem('unistudent_admin_uni_subtab');
+      if (saved === 'updates' || saved === 'universities') return saved as any;
+    } catch {}
+    return 'universities';
+  });
+
+  const [universitiesExpanded, setUniversitiesExpanded] = useState<boolean>(true);
+  const [pendingUniUpdatesCount, setPendingUniUpdatesCount] = useState<number>(0);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('unistudent_admin_active_tab', activeTab);
+    } catch {}
+  }, [activeTab]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('unistudent_admin_uni_subtab', universitySubTab);
+    } catch {}
+  }, [universitySubTab]);
 
   // --- Data State ---
   const [loading, setLoading] = useState(true);
@@ -129,8 +160,12 @@ export function Admin() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const data = await db.getAdminAllData();
+      const [data, pendingUpdates] = await Promise.all([
+        db.getAdminAllData(),
+        db.getPendingUpdates()
+      ]);
       setAdminData(data);
+      setPendingUniUpdatesCount(pendingUpdates.filter(p => p.status === 'pending').length);
     } catch (e) {
       console.error('Error loading admin data:', e);
     } finally {
@@ -588,64 +623,184 @@ export function Admin() {
 
         {/* Navigation Tabs */}
         <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  setIsMobileSidebarOpen(false);
-                }}
-                className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all ${
-                  isActive
-                    ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 shadow-xs border border-purple-200/80 dark:border-purple-800/60 font-black'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-purple-600 dark:text-purple-400' : 'text-zinc-400'}`} />
-                  <span>{item.label}</span>
-                </div>
+          {/* 1. Overview */}
+          <button
+            onClick={() => {
+              setActiveTab('overview');
+              setIsMobileSidebarOpen(false);
+            }}
+            className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'overview'
+                ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 shadow-xs border border-purple-200/80 dark:border-purple-800/60 font-black'
+                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <BarChart3 className={`w-4 h-4 ${activeTab === 'overview' ? 'text-purple-600 dark:text-purple-400' : 'text-zinc-400'}`} />
+              <span>{isAr ? 'الإحصائيات العامة' : 'Overview'}</span>
+            </div>
+          </button>
 
-                {item.badge !== undefined && (
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                    item.badgeColor || 'bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
-                  }`}>
-                    {item.badge}
+          {/* 2. Students Directory */}
+          <button
+            onClick={() => {
+              setActiveTab('students');
+              setIsMobileSidebarOpen(false);
+            }}
+            className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'students'
+                ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 shadow-xs border border-purple-200/80 dark:border-purple-800/60 font-black'
+                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Users className={`w-4 h-4 ${activeTab === 'students' ? 'text-purple-600 dark:text-purple-400' : 'text-zinc-400'}`} />
+              <span>{isAr ? 'سجل الطلاب' : 'Students Directory'}</span>
+            </div>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+              {studentsList.length}
+            </span>
+          </button>
+
+          {/* 3. University Databases Collapsible Dropdown */}
+          <div className="space-y-1">
+            <button
+              onClick={() => {
+                if (activeTab !== 'universities') {
+                  setActiveTab('universities');
+                }
+                setUniversitiesExpanded(!universitiesExpanded);
+              }}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'universities'
+                  ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 shadow-xs border border-purple-200/80 dark:border-purple-800/60 font-black'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Building2 className={`w-4 h-4 ${activeTab === 'universities' ? 'text-purple-600 dark:text-purple-400' : 'text-zinc-400'}`} />
+                <span>{isAr ? 'قواعد بيانات الجامعات' : 'University Hub'}</span>
+                {pendingUniUpdatesCount > 0 && (
+                  <span className="px-1.5 py-0.2 text-[10px] font-black bg-amber-500 text-white rounded-full animate-pulse">
+                    {pendingUniUpdatesCount}
                   </span>
                 )}
-              </button>
-            );
-          })}
+              </div>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${universitiesExpanded ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Sub-menu items */}
+            {universitiesExpanded && (
+              <div className="mt-1 mr-4 rtl:mr-4 rtl:ml-0 ml-4 border-r-2 rtl:border-r-2 rtl:border-l-0 border-l-2 border-zinc-200 dark:border-zinc-800 pr-3 rtl:pr-3 rtl:pl-0 pl-3 space-y-1">
+                <button
+                  onClick={() => {
+                    setActiveTab('universities');
+                    setUniversitySubTab('universities');
+                    setIsMobileSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2 p-2 rounded-xl text-xs transition-all cursor-pointer ${
+                    activeTab === 'universities' && universitySubTab === 'universities'
+                      ? 'text-purple-600 dark:text-purple-400 bg-purple-50/70 dark:bg-purple-900/30 font-black'
+                      : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 font-bold'
+                  }`}
+                >
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>{isAr ? 'لوحة وإدارة الجامعات' : 'Universities Directory'}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('universities');
+                    setUniversitySubTab('updates');
+                    setIsMobileSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-2 rounded-xl text-xs transition-all cursor-pointer ${
+                    activeTab === 'universities' && universitySubTab === 'updates'
+                      ? 'text-purple-600 dark:text-purple-400 bg-purple-50/70 dark:bg-purple-900/30 font-black'
+                      : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 font-bold'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <BellRing className="w-3.5 h-3.5" />
+                    <span>{isAr ? 'تحديثات قاعدة البيانات' : 'Database Updates'}</span>
+                  </div>
+                  {pendingUniUpdatesCount > 0 && (
+                    <span className="px-1.5 py-0.2 text-[10px] font-black bg-amber-500 text-white rounded-full">
+                      {pendingUniUpdatesCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 4. Suggestions / Feedbacks */}
+          <button
+            onClick={() => {
+              setActiveTab('suggestions');
+              setIsMobileSidebarOpen(false);
+            }}
+            className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'suggestions'
+                ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 shadow-xs border border-purple-200/80 dark:border-purple-800/60 font-black'
+                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <MessageSquare className={`w-4 h-4 ${activeTab === 'suggestions' ? 'text-purple-600 dark:text-purple-400' : 'text-zinc-400'}`} />
+              <span>{isAr ? 'المقترحات والشكاوى' : 'Feedback Hub'}</span>
+            </div>
+            {pendingFeedbacks > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white">
+                {pendingFeedbacks}
+              </span>
+            )}
+          </button>
+
+          {/* 5. Backup & Email */}
+          <button
+            onClick={() => {
+              setActiveTab('backup');
+              setIsMobileSidebarOpen(false);
+            }}
+            className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'backup'
+                ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 shadow-xs border border-purple-200/80 dark:border-purple-800/60 font-black'
+                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Database className={`w-4 h-4 ${activeTab === 'backup' ? 'text-purple-600 dark:text-purple-400' : 'text-zinc-400'}`} />
+              <span>{isAr ? 'النسخ الاحتياطي والأتمتة' : 'Backup & Email'}</span>
+            </div>
+          </button>
         </nav>
 
-        {/* Sidebar Footer */}
-        <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 space-y-3">
-          <div className="flex items-center justify-between gap-2 p-1.5 bg-zinc-50 dark:bg-zinc-800/60 rounded-2xl border border-zinc-200/80 dark:border-zinc-700/60">
+        {/* Sidebar Footer - Matching Layout.tsx */}
+        <div className="border-t border-zinc-200 dark:border-zinc-800 p-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
             <button 
               onClick={toggleTheme}
-              className="p-2 rounded-xl hover:bg-white dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 transition-all flex items-center justify-center cursor-pointer flex-1"
+              className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 transition-colors flex items-center justify-center cursor-pointer"
               title={settings.theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
             >
-              {settings.theme === 'dark' ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} className="text-zinc-600" />}
-              <span className="text-[11px] font-bold mx-1.5">{settings.theme === 'dark' ? (isAr ? 'نهاري' : 'Light') : (isAr ? 'ليلي' : 'Dark')}</span>
+              {settings.theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
             
             <button 
               onClick={toggleLanguage}
-              className="px-3 py-1.5 text-xs font-black rounded-xl hover:bg-white dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-all uppercase tracking-wider cursor-pointer flex-1 text-center"
+              className="px-2.5 py-1.5 text-xs font-bold rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 transition-colors uppercase tracking-wider cursor-pointer"
             >
-              {settings.language === 'ar' ? 'English' : 'عربي'}
+              {settings.language === 'ar' ? 'EN' : 'عربي'}
             </button>
           </div>
 
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 px-3.5 py-3 rounded-2xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50/70 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 transition-all border border-rose-200/60 dark:border-rose-900/40 shadow-xs cursor-pointer"
+            className="text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 p-2 px-3 py-1.5 text-xs font-bold bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            title={settings.language === 'ar' ? 'تسجيل الخروج' : 'Logout'}
           >
-            <LogOut size={16} />
+            <LogOut className="w-4 h-4" />
             <span>{isAr ? 'تسجيل الخروج' : 'Logout'}</span>
           </button>
         </div>
@@ -1017,6 +1172,8 @@ export function Admin() {
             <AdminUniversitiesTab
               studentsList={studentsList}
               onRefreshAllData={fetchData}
+              subTab={universitySubTab}
+              onSubTabChange={(st) => setUniversitySubTab(st)}
             />
           )}
 

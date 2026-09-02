@@ -796,7 +796,99 @@ export const db = {
       if (udb) {
         const updatedDb = applyAction(udb);
         await this.updateUniversityDatabase(udb.id, updatedDb);
+
+        // Notify students who imported this database
+        await this.notifyEnrolledStudentsOfDbUpdate(
+          target.universityDatabaseId,
+          `تم اعتماد تحديث جديد في خطة كلية ${udb.collegeNameAr}: ${target.description || 'تحديث مواد/درايف'}`
+        );
       }
+    }
+  },
+
+  // --- Student Notifications ---
+  async sendStudentNotification(studentId: string, notification: {
+    id?: string;
+    title: string;
+    message: string;
+    type?: 'info' | 'update' | 'source_alert';
+    date?: string;
+  }): Promise<void> {
+    const notifId = notification.id || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const newNotif = {
+      id: notifId,
+      title: notification.title,
+      message: notification.message,
+      type: notification.type || 'info',
+      date: notification.date || new Date().toISOString(),
+      dismissed: false
+    };
+
+    try {
+      const key = `unistudent_student_notifications_${studentId}`;
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      const filtered = existing.filter((n: any) => n.id !== notifId);
+      localStorage.setItem(key, JSON.stringify([newNotif, ...filtered].slice(0, 50)));
+    } catch {}
+  },
+
+  getStudentNotifications(studentId: string): Array<{
+    id: string;
+    title: string;
+    message: string;
+    type: string;
+    date: string;
+    dismissed: boolean;
+  }> {
+    try {
+      const key = `unistudent_student_notifications_${studentId}`;
+      const saved = JSON.parse(localStorage.getItem(key) || '[]');
+      if (Array.isArray(saved)) {
+        return saved.filter((n: any) => !n.dismissed);
+      }
+    } catch {}
+    return [];
+  },
+
+  dismissStudentNotification(studentId: string, notificationId: string): void {
+    try {
+      const key = `unistudent_student_notifications_${studentId}`;
+      const saved = JSON.parse(localStorage.getItem(key) || '[]');
+      if (Array.isArray(saved)) {
+        const updated = saved.map((n: any) => n.id === notificationId ? { ...n, dismissed: true } : n);
+        localStorage.setItem(key, JSON.stringify(updated));
+      }
+    } catch {}
+  },
+
+  async notifyEnrolledStudentsOfDbUpdate(universityDatabaseId: string, message: string): Promise<void> {
+    try {
+      // Find all students in known users or localStorage who have this universityDatabaseId or match uni/college
+      const udb = await this.getUniversityDatabase(universityDatabaseId);
+      if (!udb) return;
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('unistudent_settings_')) {
+          const uid = key.replace('unistudent_settings_', '');
+          try {
+            const st = JSON.parse(localStorage.getItem(key) || '{}');
+            if (
+              st.universityDatabaseId === universityDatabaseId ||
+              (st.university === udb.universityNameAr && st.college === udb.collegeNameAr)
+            ) {
+              await this.sendStudentNotification(uid, {
+                id: `db_update_${universityDatabaseId}_${Date.now()}`,
+                title: 'تحديث جديد في خطة الكلية',
+                message: message,
+                type: 'update'
+              });
+            }
+          } catch {}
+        }
+      }
+    } catch (e) {
+      console.warn('Error notifying enrolled students:', e);
     }
   },
 
