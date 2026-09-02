@@ -40,7 +40,9 @@ import {
   EyeOff,
   HelpCircle,
   Info,
-  Loader2
+  Loader2,
+  Building2,
+  GraduationCap
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { db } from '../lib/db';
@@ -48,6 +50,7 @@ import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWa
 import { FeedbackSuggestion, EmailBackupConfig, DatabaseBackup } from '../types';
 import { ConfirmModal } from '../components/ui/CustomModal';
 import { formatDateTime, getAcademicEvaluation } from '../lib/utils';
+import { AdminUniversitiesTab } from '../components/admin/AdminUniversitiesTab';
 
 export function Admin() {
   const { t, i18n } = useTranslation();
@@ -62,7 +65,7 @@ export function Admin() {
   });
 
   // --- Sidebar & Tabs ---
-  type TabType = 'overview' | 'students' | 'suggestions' | 'backup';
+  type TabType = 'overview' | 'students' | 'universities' | 'suggestions' | 'backup';
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
@@ -83,6 +86,8 @@ export function Admin() {
 
   // --- Students Search & Filters ---
   const [searchQuery, setSearchQuery] = useState('');
+  const [studentUniFilter, setStudentUniFilter] = useState('all');
+  const [studentCollegeFilter, setStudentCollegeFilter] = useState('all');
   const [gpaFilter, setGpaFilter] = useState<'all' | 'honor' | 'warning' | 'good'>('all');
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
@@ -244,8 +249,19 @@ export function Admin() {
     });
   }, [adminData, isAr, settings.gradingScale]);
 
+  const availableStudentUnis = React.useMemo(() => {
+    return Array.from(new Set(studentsList.map(s => s.university).filter(u => u && u !== 'غير محدد' && u !== 'Not specified')));
+  }, [studentsList]);
+
+  const availableStudentColleges = React.useMemo(() => {
+    return Array.from(new Set(studentsList.map(s => s.college).filter(c => c && c !== 'غير محدد' && c !== 'Not specified')));
+  }, [studentsList]);
+
   const filteredStudents = React.useMemo(() => {
     return studentsList.filter(student => {
+      if (studentUniFilter !== 'all' && student.university !== studentUniFilter) return false;
+      if (studentCollegeFilter !== 'all' && student.college !== studentCollegeFilter) return false;
+
       const matchesSearch = 
         student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         student.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -260,7 +276,7 @@ export function Admin() {
 
       return true;
     });
-  }, [studentsList, searchQuery, gpaFilter]);
+  }, [studentsList, searchQuery, gpaFilter, studentUniFilter, studentCollegeFilter]);
 
   // Overview Metrics
   const totalStudents = studentsList.length;
@@ -481,6 +497,7 @@ export function Admin() {
   const navItems = [
     { id: 'overview' as TabType, label: isAr ? 'الإحصائيات العامة' : 'Overview', icon: BarChart3 },
     { id: 'students' as TabType, label: isAr ? 'سجل الطلاب' : 'Students Directory', icon: Users, badge: studentsList.length },
+    { id: 'universities' as TabType, label: isAr ? 'قواعد بيانات الجامعات' : 'University Databases', icon: Building2 },
     { id: 'suggestions' as TabType, label: isAr ? 'المقترحات والشكاوى' : 'Feedback Hub', icon: MessageSquare, badge: pendingFeedbacks > 0 ? pendingFeedbacks : undefined, badgeColor: 'bg-rose-500 text-white' },
     { id: 'backup' as TabType, label: isAr ? 'النسخ الاحتياطي والأتمتة' : 'Backup & Email', icon: Database },
   ];
@@ -782,13 +799,39 @@ export function Admin() {
                   />
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {availableStudentUnis.length > 0 && (
+                    <select
+                      value={studentUniFilter}
+                      onChange={(e) => setStudentUniFilter(e.target.value)}
+                      className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="all">{isAr ? 'كل الجامعات' : 'All Universities'}</option>
+                      {availableStudentUnis.map(uni => (
+                        <option key={uni} value={uni}>{uni}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {availableStudentColleges.length > 0 && (
+                    <select
+                      value={studentCollegeFilter}
+                      onChange={(e) => setStudentCollegeFilter(e.target.value)}
+                      className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="all">{isAr ? 'كل الكليات' : 'All Colleges'}</option>
+                      {availableStudentColleges.map(col => (
+                        <option key={col} value={col}>{col}</option>
+                      ))}
+                    </select>
+                  )}
+
                   <select
                     value={gpaFilter}
                     onChange={(e) => setGpaFilter(e.target.value as any)}
                     className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-purple-500"
                   >
-                    <option value="all">{isAr ? 'كل الطلاب' : 'All Students'}</option>
+                    <option value="all">{isAr ? 'كل التقديرات' : 'All GPA Tiers'}</option>
                     <option value="honor">{isAr ? 'المتفوقين (امتياز)' : 'Honor (≥ 3.5)'}</option>
                     <option value="good">{isAr ? 'أداء مستقر (2.5 - 3.49)' : 'Good (2.5 - 3.49)'}</option>
                     <option value="warning">{isAr ? 'تحت الإنذار' : 'Under Warning'}</option>
@@ -899,7 +942,15 @@ export function Admin() {
             </div>
           )}
 
-          {/* TAB 3: SUGGESTIONS & FEEDBACK HUB */}
+          {/* TAB 3: UNIVERSITIES & COLLEGES DATABASE */}
+          {activeTab === 'universities' && (
+            <AdminUniversitiesTab
+              studentsList={studentsList}
+              onRefreshAllData={fetchData}
+            />
+          )}
+
+          {/* TAB 4: SUGGESTIONS & FEEDBACK HUB */}
           {activeTab === 'suggestions' && (
             <div className="space-y-6">
               {/* Sub-Tabs: الرئيسية / قيد المراجعة / تم الرد عليها */}

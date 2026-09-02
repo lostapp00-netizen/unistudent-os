@@ -92,6 +92,7 @@ export interface AppState {
   addGroup: (group: Group) => void;
   updateGroup: (id: string, group: Partial<Group>) => void;
   deleteGroup: (id: string) => void;
+  importFromUniversityDatabase: (universityDbId: string, options?: { importDrive?: boolean }) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -263,7 +264,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Subjects
   addSubject: (subject) => {
-    const { userId } = get();
+    const { userId, userEmail, settings } = get();
     if (!userId) return;
     const finalSubject: Subject = {
       ...subject,
@@ -273,26 +274,41 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     set((state) => ({ subjects: [...state.subjects.filter(s => s.id !== finalSubject.id), finalSubject] }));
     db.addSubject(userId, finalSubject);
+
+    // If student is source for university DB, notify admin
+    checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'add_subject', `إضافة مادة جديدة: ${finalSubject.name}`, finalSubject);
   },
   updateSubject: (id, updatedFields) => {
-    const { userId } = get();
+    const { userId, userEmail, settings, subjects } = get();
     if (!userId) return;
+    const old = subjects.find(s => s.id === id);
     set((state) => ({ subjects: state.subjects.map(s => s.id === id ? { ...s, ...updatedFields } : s) }));
     db.updateSubject(userId, id, updatedFields);
+
+    if (old) {
+      checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'update_subject', `تعديل مادة: ${old.name}`, { id, ...updatedFields });
+    }
   },
   deleteSubject: (id) => {
-    const { userId } = get();
+    const { userId, userEmail, settings, subjects } = get();
     if (!userId) return;
+    const old = subjects.find(s => s.id === id);
     set((state) => ({ subjects: state.subjects.filter(s => s.id !== id) }));
     db.deleteSubject(userId, id);
+
+    if (old) {
+      checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'delete_subject', `حذف مادة: ${old.name}`, { id, name: old.name });
+    }
   },
 
   // Files
   addFile: (file) => {
-    const { userId } = get();
+    const { userId, userEmail, settings } = get();
     if (!userId) return;
     set((state) => ({ files: [...state.files, file] }));
     db.addDriveFile(userId, file);
+
+    checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'add_file', `رفع ملف إلى الدرايف: ${file.name}`, file);
   },
   updateFile: (id, updatedFields) => {
     const { userId } = get();
@@ -301,7 +317,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     db.updateDriveFile(userId, id, updatedFields);
   },
   deleteFile: (id) => {
-    const { userId, files } = get();
+    const { userId, files, userEmail, settings } = get();
     if (!userId) return;
     const target = files.find(f => f.id === id);
     if (target) {
@@ -311,6 +327,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           deleteFromB2(key).catch(console.error);
         }
       }).catch(console.error);
+
+      checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'delete_file', `حذف ملف من الدرايف: ${target.name}`, { id, name: target.name });
     }
     set((state) => ({ files: state.files.filter(f => f.id !== id) }));
     db.deleteDriveFile(userId, id);
@@ -520,5 +538,140 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ groups: previousGroups });
       alert('حدث خطأ أثناء حذف المجموعة. يرجى المحاولة لاحقاً.');
     }
+  },
+
+  // University Database Import
+  importFromUniversityDatabase: async (universityDbId: string, options?: { importDrive?: boolean }) => {
+    const { userId, settings } = get();
+    if (!userId) return;
+
+    const udb = await db.getUniversityDatabase(universityDbId);
+    if (!udb) throw new Error('قاعدة بيانات الجامعة غير موجودة');
+
+    const isAr = settings.language === 'ar';
+    const chosenUni = isAr ? (udb.universityNameAr || udb.universityNameEn) : (udb.universityNameEn || udb.universityNameAr);
+    const chosenCollege = isAr ? (udb.collegeNameAr || udb.collegeNameEn) : (udb.collegeNameEn || udb.collegeNameAr);
+
+    // 1. Update Settings
+    const updatedSettings: Partial<UserSettings> = {
+      university: chosenUni,
+      college: chosenCollege,
+      totalYears: udb.totalYears || 4,
+      semestersPerYear: udb.semestersPerYear || 2,
+      universityDatabaseId: udb.id,
+      gradingScale: udb.gradingScale && udb.gradingScale.length > 0 ? udb.gradingScale : settings.gradingScale
+    };
+
+    // Generate basic semesters if needed
+    if (!settings.semesters || settings.semesters.length === 0) {
+      const newSemesters: any[] = [];
+      for (let y = 1; y <= (udb.totalYears || 4); y++) {
+        for (let s = 1; s <= (udb.semestersPerYear || 2); s++) {
+          newSemesters.push({
+            id: uuidv4(),
+            yearIndex: y,
+            semesterIndex: s,
+            startDate: '',
+            endDate: '',
+            isCurrent: y === 1 && s === 1
+          });
+        }
+      }
+      updatedSettings.semesters = newSemesters;
+    }
+
+    set(state => ({ settings: { ...state.settings, ...updatedSettings } }));
+    db.upsertSettings(userId, updatedSettings).catch(console.error);
+
+    // 2. Clone and import Subjects
+    if (udb.subjects && udb.subjects.length > 0) {
+      const importedSubjects: Subject[] = udb.subjects.map(s => ({
+        id: uuidv4(),
+        code: s.code || `SUB-${Math.floor(100 + Math.random() * 900)}`,
+        name: s.name,
+        creditHours: Number(s.creditHours || 3),
+        totalMarks: Number(s.totalMarks || 100),
+        yearIndex: Number(s.yearIndex || 1),
+        semesterIndex: Number(s.semesterIndex || 1),
+        distributions: (s.distributions || []).map((d: any) => ({
+          id: uuidv4(),
+          name: d.name,
+          maxMarks: Number(d.maxMarks || 0),
+          achievedMarks: null,
+          status: 'current'
+        })),
+        status: s.status || 'current',
+        includeInGpa: s.includeInGpa !== false
+      }));
+
+      for (const subj of importedSubjects) {
+        db.addSubject(userId, subj).catch(console.error);
+      }
+      set(state => ({
+        subjects: [...state.subjects, ...importedSubjects]
+      }));
+    }
+
+    // 3. Clone and import Drive Files
+    if (options?.importDrive !== false && udb.driveFiles && udb.driveFiles.length > 0) {
+      const idMap = new Map<string, string>();
+      const clonedFiles: DriveFile[] = [];
+      const sortedFiles = [...udb.driveFiles].sort((a, b) => (a.type === 'folder' ? -1 : 1));
+
+      for (const file of sortedFiles) {
+        const newId = uuidv4();
+        idMap.set(file.id, newId);
+        const newParentId = file.parentId ? idMap.get(file.parentId) || null : null;
+
+        const cloned: DriveFile = {
+          id: newId,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          parentId: newParentId,
+          createdAt: new Date().toISOString(),
+          url: file.url,
+          b2FileId: file.b2FileId
+        };
+        clonedFiles.push(cloned);
+        db.addDriveFile(userId, cloned).catch(console.error);
+      }
+
+      set(state => ({
+        files: [...state.files, ...clonedFiles]
+      }));
+    }
   }
 }));
+
+async function checkAndNotifySourceUpdate(
+  userId: string,
+  userEmail: string | null,
+  userName: string | undefined,
+  type: 'add_subject' | 'update_subject' | 'delete_subject' | 'add_file' | 'delete_file',
+  description: string,
+  data: any
+) {
+  try {
+    const uniDbs = await db.getUniversityDatabases();
+    const matchingDb = uniDbs.find(u => u.sourceUserId === userId);
+    if (matchingDb) {
+      await db.recordPendingUpdate({
+        id: uuidv4(),
+        universityDatabaseId: matchingDb.id,
+        universityName: matchingDb.universityNameAr || matchingDb.universityNameEn,
+        collegeName: matchingDb.collegeNameAr || matchingDb.collegeNameEn,
+        sourceUserId: userId,
+        sourceUserEmail: userEmail || '',
+        sourceUserName: userName || '',
+        type,
+        description,
+        data,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      });
+    }
+  } catch (e) {
+    console.warn('Error in checkAndNotifySourceUpdate:', e);
+  }
+}

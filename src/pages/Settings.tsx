@@ -7,13 +7,16 @@ import { SemestersManager } from '../components/settings/SemestersManager';
 import { UserFeedbackSection } from '../components/settings/UserFeedbackSection';
 import { defaultGraduationScale } from '../store/useAppStore';
 import { supabase } from '../lib/supabase';
-import { Lock, Eye, EyeOff, KeyRound, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { UniversityRestoreModal } from '../components/settings/UniversityRestoreModal';
+import { Lock, Eye, EyeOff, KeyRound, CheckCircle2, AlertTriangle, ShieldCheck, Building2, Sparkles } from 'lucide-react';
 
 export function Settings() {
   const { t, i18n } = useTranslation();
   const { settings, updateSettings, userEmail } = useAppStore();
   const isAr = i18n.language === 'ar' || settings.language === 'ar';
   
+  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
+
   const [formData, setFormData] = useState({
     name: settings.name,
     university: settings.university,
@@ -31,6 +34,19 @@ export function Settings() {
     enableGraduationScale: settings.enableGraduationScale ?? false,
     graduationGradingScale: settings.graduationGradingScale && settings.graduationGradingScale.length > 0 ? settings.graduationGradingScale : defaultGraduationScale
   });
+
+  // Sync state if settings changed via database restore
+  useEffect(() => {
+    setFormData(prev => ({
+      ...prev,
+      university: settings.university,
+      college: settings.college,
+      totalYears: settings.totalYears,
+      semestersPerYear: settings.semestersPerYear,
+      semesters: settings.semesters,
+      gradingScale: settings.gradingScale
+    }));
+  }, [settings.university, settings.college, settings.totalYears, settings.semestersPerYear, settings.semesters]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -138,7 +154,24 @@ export function Settings() {
       )}
       
       <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-6">
-        <h2 className="text-xl font-semibold border-b border-zinc-100 dark:border-zinc-800 pb-4">{t('profile_settings')}</h2>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-4">
+          <div>
+            <h2 className="text-xl font-semibold">{t('profile_settings')}</h2>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              {isAr ? 'يمكنك إدخال بياناتك وموادك يدوياً أو استيرادها مباشرة من قواعد بيانات الجامعات' : 'Enter your info manually or import from University Database'}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsRestoreModalOpen(true)}
+            className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-500/20 transition-all cursor-pointer"
+          >
+            <Building2 size={16} />
+            <Sparkles size={14} className="text-amber-300" />
+            <span>{isAr ? 'استرداد من قاعدة بيانات الجامعات' : 'Restore from University Database'}</span>
+          </button>
+        </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
@@ -367,11 +400,16 @@ export function Settings() {
       <div className="flex justify-end">
         <button 
           onClick={handleSave}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-xl shadow-sm transition-colors"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-xl shadow-sm transition-colors cursor-pointer"
         >
           {isAr ? 'حفظ إعدادات الملف الشخصي' : 'Save Profile Settings'}
         </button>
       </div>
+
+      <UniversityRestoreModal
+        isOpen={isRestoreModalOpen}
+        onClose={() => setIsRestoreModalOpen(false)}
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, DatabaseBackup, EmailBackupConfig } from '../types';
+import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, DatabaseBackup, EmailBackupConfig, UniversityDatabase, UniversityPendingUpdate } from '../types';
 
 export const db = {
   // --- Settings ---
@@ -624,6 +624,182 @@ export const db = {
     } catch (e) {}
   },
 
+  // --- University Databases ---
+  async getUniversityDatabases(): Promise<UniversityDatabase[]> {
+    try {
+      const { data, error } = await supabase.from('university_databases').select('*').order('created_at', { ascending: false });
+      if (!error && data && data.length > 0) {
+        return data.map(d => mapUniversityDatabaseFromDB(d));
+      }
+    } catch (e) {
+      console.warn('Supabase getUniversityDatabases warning:', e);
+    }
+    try {
+      const local = localStorage.getItem('unistudent_university_databases');
+      return local ? JSON.parse(local) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async getUniversityDatabase(id: string): Promise<UniversityDatabase | null> {
+    const list = await this.getUniversityDatabases();
+    return list.find(u => u.id === id) || null;
+  },
+
+  async createUniversityDatabase(dbData: UniversityDatabase): Promise<void> {
+    // 1. Local storage cache
+    try {
+      const current = await this.getUniversityDatabases();
+      const updated = [dbData, ...current.filter(u => u.id !== dbData.id)];
+      localStorage.setItem('unistudent_university_databases', JSON.stringify(updated));
+    } catch (e) {
+      console.warn('LocalStorage error in createUniversityDatabase:', e);
+    }
+
+    // 2. Supabase insert/upsert
+    try {
+      const payload = {
+        id: dbData.id,
+        university_name_ar: dbData.universityNameAr,
+        university_name_en: dbData.universityNameEn,
+        college_name_ar: dbData.collegeNameAr,
+        college_name_en: dbData.collegeNameEn,
+        source_user_id: dbData.sourceUserId,
+        source_user_email: dbData.sourceUserEmail || '',
+        source_user_name: dbData.sourceUserName || '',
+        total_years: dbData.totalYears,
+        semesters_per_year: dbData.semestersPerYear,
+        subjects: dbData.subjects,
+        drive_files: dbData.driveFiles,
+        grading_scale: dbData.gradingScale || [],
+        created_at: dbData.createdAt,
+        updated_at: dbData.updatedAt
+      };
+      const { error } = await supabase.from('university_databases').upsert(payload);
+      if (error) console.warn('Supabase createUniversityDatabase error:', error);
+    } catch (e) {
+      console.warn('Supabase createUniversityDatabase failed:', e);
+    }
+  },
+
+  async updateUniversityDatabase(id: string, partialData: Partial<UniversityDatabase>): Promise<void> {
+    // 1. Local storage update
+    try {
+      const current = await this.getUniversityDatabases();
+      const updated = current.map(u => u.id === id ? { ...u, ...partialData, updatedAt: new Date().toISOString() } : u);
+      localStorage.setItem('unistudent_university_databases', JSON.stringify(updated));
+    } catch (e) {
+      console.warn('LocalStorage error in updateUniversityDatabase:', e);
+    }
+
+    // 2. Supabase update
+    try {
+      const payload: any = { updated_at: new Date().toISOString() };
+      if (partialData.universityNameAr !== undefined) payload.university_name_ar = partialData.universityNameAr;
+      if (partialData.universityNameEn !== undefined) payload.university_name_en = partialData.universityNameEn;
+      if (partialData.collegeNameAr !== undefined) payload.college_name_ar = partialData.collegeNameAr;
+      if (partialData.collegeNameEn !== undefined) payload.college_name_en = partialData.collegeNameEn;
+      if (partialData.totalYears !== undefined) payload.total_years = partialData.totalYears;
+      if (partialData.semestersPerYear !== undefined) payload.semesters_per_year = partialData.semestersPerYear;
+      if (partialData.subjects !== undefined) payload.subjects = partialData.subjects;
+      if (partialData.driveFiles !== undefined) payload.drive_files = partialData.driveFiles;
+      if (partialData.gradingScale !== undefined) payload.grading_scale = partialData.gradingScale;
+
+      const { error } = await supabase.from('university_databases').update(payload).eq('id', id);
+      if (error) console.warn('Supabase updateUniversityDatabase error:', error);
+    } catch (e) {
+      console.warn('Supabase updateUniversityDatabase failed:', e);
+    }
+  },
+
+  async deleteUniversityDatabase(id: string): Promise<void> {
+    try {
+      const current = await this.getUniversityDatabases();
+      localStorage.setItem('unistudent_university_databases', JSON.stringify(current.filter(u => u.id !== id)));
+    } catch {}
+
+    try {
+      await supabase.from('university_databases').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Supabase deleteUniversityDatabase failed:', e);
+    }
+  },
+
+  // --- Pending Updates for University Databases ---
+  async getPendingUpdates(universityDbId?: string): Promise<UniversityPendingUpdate[]> {
+    try {
+      let query = supabase.from('university_pending_updates').select('*').order('created_at', { ascending: false });
+      if (universityDbId) {
+        query = query.eq('university_database_id', universityDbId);
+      }
+      const { data, error } = await query;
+      if (!error && data && data.length > 0) {
+        return data.map(d => mapPendingUpdateFromDB(d));
+      }
+    } catch (e) {
+      console.warn('Supabase getPendingUpdates warning:', e);
+    }
+    try {
+      const local = localStorage.getItem('unistudent_pending_updates');
+      const all: UniversityPendingUpdate[] = local ? JSON.parse(local) : [];
+      return universityDbId ? all.filter(p => p.universityDatabaseId === universityDbId) : all;
+    } catch {
+      return [];
+    }
+  },
+
+  async recordPendingUpdate(update: UniversityPendingUpdate): Promise<void> {
+    try {
+      const current = await this.getPendingUpdates();
+      const updated = [update, ...current.filter(u => u.id !== update.id)];
+      localStorage.setItem('unistudent_pending_updates', JSON.stringify(updated.slice(0, 100)));
+    } catch {}
+
+    try {
+      const payload = {
+        id: update.id,
+        university_database_id: update.universityDatabaseId,
+        source_user_id: update.sourceUserId,
+        source_user_email: update.sourceUserEmail || '',
+        source_user_name: update.sourceUserName || '',
+        type: update.type,
+        description: update.description,
+        data: update.data,
+        status: update.status,
+        created_at: update.createdAt
+      };
+      await supabase.from('university_pending_updates').upsert(payload);
+    } catch (e) {
+      console.warn('Supabase recordPendingUpdate error:', e);
+    }
+  },
+
+  async respondToPendingUpdate(id: string, status: 'approved' | 'rejected', applyAction?: (db: UniversityDatabase) => UniversityDatabase): Promise<void> {
+    const pendingList = await this.getPendingUpdates();
+    const target = pendingList.find(p => p.id === id);
+    if (!target) return;
+
+    target.status = status;
+    target.resolvedAt = new Date().toISOString();
+
+    try {
+      localStorage.setItem('unistudent_pending_updates', JSON.stringify(pendingList));
+    } catch {}
+
+    try {
+      await supabase.from('university_pending_updates').update({ status, resolved_at: target.resolvedAt }).eq('id', id);
+    } catch {}
+
+    if (status === 'approved' && applyAction && target.universityDatabaseId) {
+      const udb = await this.getUniversityDatabase(target.universityDatabaseId);
+      if (udb) {
+        const updatedDb = applyAction(udb);
+        await this.updateUniversityDatabase(udb.id, updatedDb);
+      }
+    }
+  },
+
   // --- Admin All Platform Data ---
   async getAdminAllData() {
     let rawSettings: any[] = [];
@@ -1239,5 +1415,61 @@ function mapDriveFileFromDB(row: any): DriveFile {
     createdAt: row.upload_date,
     parentId: row.parent_id,
     b2FileId: row.b2_file_id
+  };
+}
+
+function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
+  return {
+    id: row.id,
+    universityNameAr: row.university_name_ar || '',
+    universityNameEn: row.university_name_en || '',
+    collegeNameAr: row.college_name_ar || '',
+    collegeNameEn: row.college_name_en || '',
+    sourceUserId: row.source_user_id,
+    sourceUserEmail: row.source_user_email || '',
+    sourceUserName: row.source_user_name || '',
+    totalYears: row.total_years || 4,
+    semestersPerYear: row.semesters_per_year || 2,
+    subjects: (row.subjects || []).map((s: any) => ({
+      id: s.id,
+      code: s.code || '',
+      name: s.name || '',
+      creditHours: Number(s.creditHours || s.credit_hours || 3),
+      totalMarks: Number(s.totalMarks || s.total_marks || 100),
+      yearIndex: Number(s.yearIndex || s.year_index || 1),
+      semesterIndex: Number(s.semesterIndex || s.semester_index || 1),
+      distributions: s.distributions || [],
+      status: s.status || 'current',
+      includeInGpa: s.includeInGpa !== false
+    })),
+    driveFiles: (row.drive_files || []).map((f: any) => ({
+      id: f.id,
+      name: f.name || '',
+      size: Number(f.size || 0),
+      type: f.type || 'file',
+      parentId: f.parentId || f.parent_id || null,
+      createdAt: f.createdAt || f.upload_date || new Date().toISOString(),
+      url: f.url || '',
+      b2FileId: f.b2FileId || f.b2_file_id
+    })),
+    gradingScale: row.grading_scale || [],
+    createdAt: row.created_at || new Date().toISOString(),
+    updatedAt: row.updated_at || new Date().toISOString()
+  };
+}
+
+function mapPendingUpdateFromDB(row: any): UniversityPendingUpdate {
+  return {
+    id: row.id,
+    universityDatabaseId: row.university_database_id,
+    sourceUserId: row.source_user_id,
+    sourceUserEmail: row.source_user_email || '',
+    sourceUserName: row.source_user_name || '',
+    type: row.type,
+    description: row.description || '',
+    data: row.data || {},
+    status: row.status || 'pending',
+    createdAt: row.created_at || new Date().toISOString(),
+    resolvedAt: row.resolved_at
   };
 }
