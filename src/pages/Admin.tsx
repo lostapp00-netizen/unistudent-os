@@ -51,7 +51,8 @@ import {
   ChevronRight,
   ChevronLeft,
   BellRing,
-  Bell
+  Bell,
+  Plus
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { db } from '../lib/db';
