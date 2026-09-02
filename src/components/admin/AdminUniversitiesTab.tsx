@@ -465,6 +465,20 @@ export function AdminUniversitiesTab({
   const handleSwitchSourceStudent = async (newStudent: any) => {
     if (!selectedCollegeDb) return;
     try {
+      // 1. Immediate local state update for instant UI feedback
+      setDatabases(prev => prev.map(dbItem => {
+        if (dbItem.id === selectedCollegeDb.id) {
+          return {
+            ...dbItem,
+            sourceUserId: newStudent.id,
+            sourceUserName: newStudent.name || '',
+            sourceUserEmail: newStudent.email || ''
+          };
+        }
+        return dbItem;
+      }));
+
+      // 2. Persist to DB
       await db.updateUniversityDatabase(selectedCollegeDb.id, {
         sourceUserId: newStudent.id,
         sourceUserName: newStudent.name || '',
@@ -1060,18 +1074,30 @@ export function AdminUniversitiesTab({
             <div className="space-y-6 animate-in fade-in">
               
               {/* Breadcrumbs Bar */}
-              <div className="flex items-center justify-between bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xs">
-                <button
-                  onClick={() => setSelectedUniversityKey(null)}
-                  className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
-                >
-                  <BackIcon size={16} />
-                  <span>{isAr ? 'العودة لقائمة الجامعات' : 'Back to Universities'}</span>
-                </button>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white dark:bg-zinc-900 p-4 sm:p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setSelectedUniversityKey(null)}
+                    className="inline-flex items-center gap-2 text-xs sm:text-sm font-black text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                  >
+                    <BackIcon size={16} />
+                    <span>{isAr ? 'العودة لقائمة الجامعات' : 'Back to Universities'}</span>
+                  </button>
 
-                <span className="text-xs font-black text-zinc-900 dark:text-white">
-                  {currentUniversityGroup.nameAr} ({currentUniversityGroup.nameEn})
-                </span>
+                  <span className="text-zinc-400">/</span>
+
+                  <span className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white">
+                    {currentUniversityGroup.nameAr} ({currentUniversityGroup.nameEn})
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shadow-md shadow-indigo-500/25 transition-all cursor-pointer shrink-0"
+                >
+                  <Plus size={16} />
+                  <span>{isAr ? 'إنشاء قاعدة بيانات لجامعة/كلية جديدة' : 'Add University/College'}</span>
+                </button>
               </div>
 
               {/* Summary Stats Grid */}
@@ -1916,91 +1942,154 @@ export function AdminUniversitiesTab({
         </div>
       )}
 
-      {/* --- SWITCH SOURCE STUDENT MODAL (With Full Card Layout) --- */}
+      {/* --- SWITCH SOURCE STUDENT MODAL (Rich Card Grid Layout) --- */}
       {isSourceModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-2xl max-h-[90vh] p-6 sm:p-7 space-y-4 border border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col">
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
-              <h3 className="font-black text-base text-zinc-900 dark:text-white">
-                {isAr ? 'تغيير الطالب المصدر المعتمد لقالب الكلية' : 'Switch Source Student'}
-              </h3>
-              <button onClick={() => setIsSourceModalOpen(false)} className="p-1.5 text-zinc-400 hover:text-zinc-600 cursor-pointer">
-                <X size={18} />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-4xl max-h-[88vh] shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+            
+            {/* Modal Header */}
+            <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20">
+                  <UserCheck size={20} />
+                </div>
+                <div>
+                  <h3 className="font-black text-base sm:text-lg text-zinc-900 dark:text-white">
+                    {isAr ? 'تغيير الطالب المصدر المعتمد لقالب الكلية' : 'Switch Source Student'}
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    {isAr 
+                      ? `اختر طالباً ليكون هو المرجع المعتمد لكلية ${selectedCollegeDb?.collegeNameAr || ''}` 
+                      : `Select a student to become the reference template for ${selectedCollegeDb?.collegeNameEn || ''}`}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setIsSourceModalOpen(false)} className="p-2 text-zinc-400 hover:text-zinc-600 cursor-pointer">
+                <X size={20} />
               </button>
             </div>
 
-            <div className="relative">
-              <Search className="absolute left-3.5 rtl:left-auto rtl:right-3.5 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-              <input
-                type="text"
-                value={sourceSearchQuery}
-                onChange={(e) => setSourceSearchQuery(e.target.value)}
-                placeholder={isAr ? 'ابحث بالاسم، الإيميل، الجامعة، أو الكلية...' : 'Search student by name, email, university...'}
-                className="w-full pl-10 rtl:pl-4 rtl:pr-10 pr-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold outline-none"
-              />
+            {/* Search Bar */}
+            <div className="p-4 sm:p-5 border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 shrink-0">
+              <div className="relative">
+                <Search className="absolute left-4 rtl:left-auto rtl:right-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                <input
+                  type="text"
+                  value={sourceSearchQuery}
+                  onChange={(e) => setSourceSearchQuery(e.target.value)}
+                  placeholder={isAr ? 'ابحث باسم الطالب، البريد الإلكتروني، الجامعة، أو الكلية...' : 'Search student by name, email, university, or college...'}
+                  className="w-full pl-11 rtl:pl-4 rtl:pr-11 pr-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
             </div>
 
-            {/* Rich Student Cards */}
-            <div className="flex-1 overflow-y-auto space-y-2 max-h-[320px] p-1 border border-zinc-200 dark:border-zinc-800 rounded-2xl bg-zinc-50/50 dark:bg-zinc-800/20">
-              {filteredStudentsForSource.map(st => {
-                const isSelected = selectedCollegeDb?.sourceUserId === st.id;
-                const subjsCount = st.subjects?.length || st.subjectsCount || 0;
-                const filesCount = st.files?.length || st.filesCount || 0;
+            {/* Rich Student Cards Grid */}
+            <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {filteredStudentsForSource.map(st => {
+                  const isSelected = selectedCollegeDb?.sourceUserId === st.id;
+                  const subjsCount = st.subjects?.length || st.subjectsCount || 0;
+                  const filesCount = st.files?.length || st.filesCount || 0;
 
-                return (
-                  <button
-                    key={st.id}
-                    type="button"
-                    onClick={() => handleSwitchSourceStudent(st)}
-                    className={`w-full p-3 rounded-xl border text-left rtl:text-right transition-all flex items-center justify-between gap-3 cursor-pointer ${
-                      isSelected
-                        ? 'bg-purple-50 dark:bg-purple-950/80 border-purple-500 shadow-xs'
-                        : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-purple-400'
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <p className="font-black text-xs text-zinc-900 dark:text-white truncate">{st.name}</p>
-                      <p className="text-[11px] text-zinc-400 truncate">{st.email} • {st.university || 'غير محدد'} / {st.college || 'غير محدد'}</p>
+                  return (
+                    <div
+                      key={st.id}
+                      className={`p-4 sm:p-5 rounded-3xl border transition-all flex flex-col justify-between gap-4 ${
+                        isSelected
+                          ? 'bg-purple-50/70 dark:bg-purple-950/40 border-purple-500 ring-2 ring-purple-500/20 shadow-md'
+                          : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-purple-300 dark:hover:border-purple-800/60 shadow-xs'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
+                          {st.name ? st.name.charAt(0).toUpperCase() : 'S'}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white truncate">
+                              {st.name}
+                            </h4>
+                            {isSelected && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-600 text-white">
+                                {isAr ? 'المصدر الحالي' : 'Current'}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5 font-medium">
+                            {st.email}
+                          </p>
+
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[11px] font-bold">
+                              🏛️ {st.university && st.university !== 'غير محدد' ? st.university : (isAr ? 'غير محدد' : 'No uni')}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[11px] font-bold">
+                              🎓 {st.college && st.college !== 'غير محدد' ? st.college : (isAr ? 'غير محدد' : 'No col')}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2 text-xs font-bold text-zinc-600 dark:text-zinc-300">
+                          <span className="px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold">
+                            📚 {subjsCount} {isAr ? 'مواد' : 'subjs'}
+                          </span>
+                          <span className="px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 text-xs font-bold">
+                            📁 {filesCount} {isAr ? 'ملفات' : 'files'}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchSourceStudent(st)}
+                          className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
+                            isSelected
+                              ? 'bg-purple-600 text-white shadow-purple-500/20'
+                              : 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-purple-600 dark:hover:bg-purple-600 dark:hover:text-white'
+                          }`}
+                        >
+                          {isSelected ? <Check size={14} /> : <UserCheck size={14} />}
+                          <span>{isSelected ? (isAr ? 'المصدر الحالي للقالب' : 'Current Source') : (isAr ? 'تعيين كطالب مصدر' : 'Set as Source')}</span>
+                        </button>
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
-                        {subjsCount} {isAr ? 'مادة' : 'subjects'}
-                      </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
-                        {filesCount} {isAr ? 'ملف' : 'files'}
-                      </span>
-                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-purple-600 text-white">
-                        {isSelected ? (isAr ? 'الطالب الحالي' : 'Current') : (isAr ? 'تعيين كمصدر' : 'Select')}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
+              {filteredStudentsForSource.length === 0 && (
+                <div className="py-12 text-center text-zinc-400">
+                  {isAr ? 'لم يتم العثور على أي طلاب مطابقين للبحث.' : 'No students match your search.'}
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center gap-2 pt-2">
-              <input
-                type="checkbox"
-                id="notifySourceCheck"
-                checked={notifySourceStudent}
-                onChange={(e) => setNotifySourceStudent(e.target.checked)}
-                className="rounded text-purple-600 focus:ring-purple-500"
-              />
-              <label htmlFor="notifySourceCheck" className="text-xs font-bold text-zinc-600 dark:text-zinc-400 cursor-pointer">
-                {isAr ? 'إرسال إشعار فوري وتنبيه داخل الموقع للطالب المختار' : 'Send in-app notification to student'}
-              </label>
-            </div>
+            {/* Modal Footer */}
+            <div className="p-4 sm:p-5 border-t border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="notifySourceCheck"
+                  checked={notifySourceStudent}
+                  onChange={(e) => setNotifySourceStudent(e.target.checked)}
+                  className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
+                />
+                <label htmlFor="notifySourceCheck" className="text-xs font-bold text-zinc-700 dark:text-zinc-300 cursor-pointer">
+                  {isAr ? 'إرسال إشعار فوري وتنبيه داخل الموقع للطالب المختار' : 'Send in-app notification to student'}
+                </label>
+              </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
               <button
                 type="button"
                 onClick={() => setIsSourceModalOpen(false)}
-                className="px-4 py-2 text-xs font-bold text-zinc-500"
+                className="px-5 py-2 text-xs sm:text-sm font-bold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer self-end sm:self-auto"
               >
-                {isAr ? 'إلغاء' : 'Cancel'}
+                {isAr ? 'إغلاق' : 'Close'}
               </button>
             </div>
+
           </div>
         </div>
       )}

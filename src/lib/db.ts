@@ -700,6 +700,9 @@ export const db = {
       if (partialData.universityNameEn !== undefined) payload.university_name_en = partialData.universityNameEn;
       if (partialData.collegeNameAr !== undefined) payload.college_name_ar = partialData.collegeNameAr;
       if (partialData.collegeNameEn !== undefined) payload.college_name_en = partialData.collegeNameEn;
+      if (partialData.sourceUserId !== undefined) payload.source_user_id = partialData.sourceUserId;
+      if (partialData.sourceUserName !== undefined) payload.source_user_name = partialData.sourceUserName;
+      if (partialData.sourceUserEmail !== undefined) payload.source_user_email = partialData.sourceUserEmail;
       if (partialData.totalYears !== undefined) payload.total_years = partialData.totalYears;
       if (partialData.semestersPerYear !== undefined) payload.semesters_per_year = partialData.semestersPerYear;
       if (partialData.subjects !== undefined) payload.subjects = partialData.subjects;
