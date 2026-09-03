@@ -168,6 +168,8 @@ export function AdminUniversitiesTab({
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [dbToDelete, setDbToDelete] = useState<UniversityDatabase | null>(null);
+  const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null);
+  const [driveItemToDelete, setDriveItemToDelete] = useState<DriveFile | null>(null);
 
   // College Academic Structure Modal State
   const [isStructureModalOpen, setIsStructureModalOpen] = useState(false);
@@ -989,11 +991,11 @@ export function AdminUniversitiesTab({
     }
   };
 
-  // Delete Subject from College Database
-  const handleDeleteSubject = async (subjectId: string) => {
-    if (!selectedCollegeDb) return;
-    if (!confirm(isAr ? 'هل أنت متأكد من حذف هذه المادة من قالب الكلية؟' : 'Delete subject from template?')) return;
+  // Delete Subject from College Database (Trigger In-App Modal)
+  const handleConfirmDeleteSubject = async () => {
+    if (!selectedCollegeDb || !subjectToDelete) return;
     try {
+      const subjectId = subjectToDelete.id;
       const targetSubj = selectedCollegeDb.subjects.find(s => s.id === subjectId);
       const updatedSubjects = selectedCollegeDb.subjects.filter(s => s.id !== subjectId);
       await db.updateUniversityDatabase(selectedCollegeDb.id, { subjects: updatedSubjects });
@@ -1005,6 +1007,7 @@ export function AdminUniversitiesTab({
         subject: targetSubj
       });
 
+      setSubjectToDelete(null);
       await loadUniData();
     } catch (e) {
       console.error('Error deleting subject:', e);
@@ -1055,13 +1058,14 @@ export function AdminUniversitiesTab({
     }
   };
 
-  // Delete Drive Item
-  const handleDeleteDriveItem = async (fileId: string) => {
-    if (!selectedCollegeDb) return;
-    if (!confirm(isAr ? 'هل أنت متأكد من حذف هذا الملف/المجلد من درايف الكلية؟' : 'Delete file from drive?')) return;
+  // Delete Drive Item (Trigger In-App Modal)
+  const handleConfirmDeleteDriveItem = async () => {
+    if (!selectedCollegeDb || !driveItemToDelete) return;
     try {
+      const fileId = driveItemToDelete.id;
       const updatedFiles = selectedCollegeDb.driveFiles.filter(f => f.id !== fileId && f.parentId !== fileId);
       await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
+      setDriveItemToDelete(null);
       await loadUniData();
     } catch (e) {
       console.error('Error deleting file:', e);
@@ -1172,6 +1176,30 @@ export function AdminUniversitiesTab({
             return {
               ...targetDb,
               subjects: targetDb.subjects.filter(s => s.id !== upd.id && s.name !== upd.name)
+            };
+          } else if (update.type === 'add_file' && update.data) {
+            const file = update.data;
+            const newFile: DriveFile = {
+              id: file.id || uuidv4(),
+              name: file.name,
+              size: Number(file.size || 0),
+              type: file.type || 'file',
+              parentId: file.parentId || null,
+              createdAt: file.createdAt || new Date().toISOString(),
+              url: file.url || '',
+              b2FileId: file.b2FileId || file.b2_file_id
+            };
+            const filteredFiles = (targetDb.driveFiles || []).filter(f => f.id !== newFile.id && f.name !== newFile.name);
+            return {
+              ...targetDb,
+              driveFiles: [...filteredFiles, newFile]
+            };
+          } else if (update.type === 'delete_file' && update.data) {
+            const targetId = update.data.id;
+            const targetName = update.data.name;
+            return {
+              ...targetDb,
+              driveFiles: (targetDb.driveFiles || []).filter(f => f.id !== targetId && f.name !== targetName)
             };
           }
           return targetDb;
@@ -2160,7 +2188,7 @@ export function AdminUniversitiesTab({
                                       <Edit2 size={15} />
                                     </button>
                                     <button
-                                      onClick={() => handleDeleteSubject(subj.id)}
+                                      onClick={() => setSubjectToDelete(subj)}
                                       className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950 transition-colors cursor-pointer"
                                       title={isAr ? 'حذف المادة' : 'Delete Subject'}
                                     >
@@ -2323,7 +2351,7 @@ export function AdminUniversitiesTab({
 
                               {/* Delete Button */}
                               <button
-                                onClick={() => handleDeleteDriveItem(file.id)}
+                                onClick={() => setDriveItemToDelete(file)}
                                 className="p-2 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all rounded-xl shadow-2xs cursor-pointer"
                                 title={isAr ? 'حذف' : 'Delete'}
                               >
@@ -3750,6 +3778,34 @@ export function AdminUniversitiesTab({
           </div>
         </div>
       )}
+
+      {/* --- CONFIRM DELETE SUBJECT IN COLLEGE TEMPLATE MODAL --- */}
+      <ConfirmModal
+        isOpen={!!subjectToDelete}
+        title={isAr ? 'حذف المادة من قالب الكلية' : 'Delete Subject from Template'}
+        message={isAr 
+          ? `هل أنت متأكد من حذف مادة (${subjectToDelete?.name}) من الخطة الدراسية لقالب الكلية؟ سيتم مزامنة هذا الحذف تلقائياً للطلاب المستردين.`
+          : `Are you sure you want to delete (${subjectToDelete?.name}) from this college template?`}
+        confirmText={isAr ? 'نعم، احذف المادة' : 'Yes, Delete Subject'}
+        cancelText={isAr ? 'تراجع' : 'Cancel'}
+        variant="danger"
+        onConfirm={handleConfirmDeleteSubject}
+        onCancel={() => setSubjectToDelete(null)}
+      />
+
+      {/* --- CONFIRM DELETE DRIVE ITEM MODAL --- */}
+      <ConfirmModal
+        isOpen={!!driveItemToDelete}
+        title={isAr ? (driveItemToDelete?.type === 'folder' ? 'حذف المجلد من الدرايف' : 'حذف الملف من الدرايف') : 'Delete Drive Item'}
+        message={isAr 
+          ? `هل أنت متأكد من حذف (${driveItemToDelete?.name}) من درايف الكلية؟ سيتم إزالته أيضاً من درايف الطلاب المستردين للقاعدة.`
+          : `Are you sure you want to delete (${driveItemToDelete?.name})?`}
+        confirmText={isAr ? 'نعم، احذف' : 'Yes, Delete'}
+        cancelText={isAr ? 'تراجع' : 'Cancel'}
+        variant="danger"
+        onConfirm={handleConfirmDeleteDriveItem}
+        onCancel={() => setDriveItemToDelete(null)}
+      />
 
     </div>
   );

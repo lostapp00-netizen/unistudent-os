@@ -7,6 +7,7 @@ import { calculateSubjectGrade } from '../../lib/academic';
 import { Subject } from '../../types';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
 import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../../components/ui/UnifiedSemesterFilter';
+import { ConfirmModal } from '../../components/ui/CustomModal';
 
 export function AcademicSubjects() {
   const { t } = useTranslation();
@@ -18,6 +19,7 @@ export function AcademicSubjects() {
   const [filterSemesters, setFilterSemesters] = useState<number[]>(currentSemester ? [currentSemester.semesterIndex] : []);
   const [showModal, setShowModal] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null);
 
   const [formData, setFormData] = useState({
     code: '',
@@ -55,11 +57,9 @@ export function AcademicSubjects() {
     setShowModal(true);
   };
 
-  const handleDeleteSubject = (e: React.MouseEvent, id: string) => {
+  const handleDeleteSubject = (e: React.MouseEvent, subject: Subject) => {
     e.stopPropagation();
-    if (window.confirm(isAr ? 'هل أنت متأكد من حذف هذه المادة؟' : 'Are you sure you want to delete this subject?')) {
-      deleteSubject(id);
-    }
+    setSubjectToDelete(subject);
   };
 
   const [formError, setFormError] = useState<string | null>(null);
@@ -196,8 +196,8 @@ export function AcademicSubjects() {
                           <Edit2 size={15} />
                         </button>
                         <button
-                          onClick={(e) => handleDeleteSubject(e, subject.id)}
-                          className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs"
+                          onClick={(e) => handleDeleteSubject(e, subject)}
+                          className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs cursor-pointer"
                           title={isAr ? 'حذف المادة' : 'Delete Subject'}
                         >
                           <Trash2 size={15} />
@@ -323,6 +323,23 @@ export function AcademicSubjects() {
           </div>
         </div>
       )}
+
+      {/* In-app confirmation modal for deleting subject */}
+      <ConfirmModal
+        isOpen={!!subjectToDelete}
+        title={isAr ? 'حذف المادة الدراسية' : 'Delete Subject'}
+        message={isAr ? `هل أنت متأكد من حذف مادة (${subjectToDelete?.name})؟ سيتم إزالتها نهائياً مع كافة تقييماتها ودرجاتها.` : `Are you sure you want to delete (${subjectToDelete?.name})? All associated marks will be removed.`}
+        confirmText={isAr ? 'نعم، احذف المادة' : 'Yes, Delete'}
+        cancelText={isAr ? 'تراجع' : 'Cancel'}
+        variant="danger"
+        onConfirm={() => {
+          if (subjectToDelete) {
+            deleteSubject(subjectToDelete.id);
+            setSubjectToDelete(null);
+          }
+        }}
+        onCancel={() => setSubjectToDelete(null)}
+      />
     </div>
   );
 }

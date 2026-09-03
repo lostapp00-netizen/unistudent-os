@@ -82,6 +82,42 @@ export function App() {
     return () => subscription.unsubscribe();
   }, [initialize, clearData]);
 
+  // Real-time & periodic synchronization for students linked to a university database
+  useEffect(() => {
+    if (!session?.user?.id || !settings.universityDatabaseId) return;
+
+    const handleFocus = () => {
+      useAppStore.getState().syncWithUniversityDatabase();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    const interval = setInterval(() => {
+      useAppStore.getState().syncWithUniversityDatabase();
+    }, 15000);
+
+    const channel = supabase
+      .channel(`university_sync_${settings.universityDatabaseId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'university_databases',
+          filter: `id=eq.${settings.universityDatabaseId}`
+        },
+        () => {
+          useAppStore.getState().syncWithUniversityDatabase();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, [session?.user?.id, settings.universityDatabaseId]);
+
   const isAdminPath = window.location.pathname.startsWith('/admin');
 
   if (loading || (session && !isInitialized && !isAdminPath)) {

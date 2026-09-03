@@ -8,6 +8,7 @@ import { calculateSubjectGrade } from '../lib/academic';
 import { GradeDistributionItem } from '../types';
 import { DistributionItemCard } from '../components/academic/DistributionItemCard';
 import { DistributionDefinitionRow } from '../components/academic/DistributionDefinitionRow';
+import { ConfirmModal } from '../components/ui/CustomModal';
 
 export function SubjectDetails() {
   const { id } = useParams<{ id: string }>();
@@ -20,6 +21,7 @@ export function SubjectDetails() {
   const [newDistName, setNewDistName] = useState('');
   const [newDistMarks, setNewDistMarks] = useState<number | ''>('');
   const [showEditModal, setShowEditModal] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({
     name: '',
     code: '',
@@ -181,13 +183,8 @@ export function SubjectDetails() {
           </button>
 
           <button
-            onClick={() => {
-              if (window.confirm(isRtl ? 'هل أنت متأكد من حذف هذه المادة؟' : 'Are you sure you want to delete this subject?')) {
-                deleteSubject(subject.id);
-                navigate('/academic/subjects');
-              }
-            }}
-            className="p-2 sm:p-2.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs flex items-center gap-1.5 text-xs sm:text-sm font-bold"
+            onClick={() => setIsDeleteModalOpen(true)}
+            className="p-2 sm:p-2.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs flex items-center gap-1.5 text-xs sm:text-sm font-bold cursor-pointer"
             title={isRtl ? 'حذف المادة' : 'Delete Subject'}
           >
             <Trash2 size={16} />
@@ -450,6 +447,24 @@ export function SubjectDetails() {
           </div>
         </div>
       )}
+
+      {/* In-app confirmation modal for deleting subject */}
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        title={isRtl ? 'حذف المادة الدراسية' : 'Delete Subject'}
+        message={isRtl ? `هل أنت متأكد من حذف مادة (${subject?.name})؟ سيتم حذف كافة التقييمات والدرجات المرتبطة بها والعودة لقائمة المواد.` : `Are you sure you want to delete (${subject?.name})? All marks will be removed.`}
+        confirmText={isRtl ? 'نعم، احذف المادة' : 'Yes, Delete'}
+        cancelText={isRtl ? 'تراجع' : 'Cancel'}
+        variant="danger"
+        onConfirm={() => {
+          if (subject) {
+            deleteSubject(subject.id);
+            setIsDeleteModalOpen(false);
+            navigate('/academic/subjects');
+          }
+        }}
+        onCancel={() => setIsDeleteModalOpen(false)}
+      />
     </div>
   );
 }

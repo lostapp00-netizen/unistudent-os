@@ -94,6 +94,7 @@ export interface AppState {
   deleteGroup: (id: string) => void;
   importFromUniversityDatabase: (universityDbId: string, options?: { importDrive?: boolean }) => Promise<void>;
   unlinkUniversityDatabase: () => Promise<void>;
+  syncWithUniversityDatabase: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -296,6 +297,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         groups: finalGroups,
         files: files || []
       });
+
+      if (mergedSettings.universityDatabaseId) {
+        get().syncWithUniversityDatabase().catch(console.warn);
+      }
     } catch (err) {
       console.error('Error during initialize:', err);
       set({
@@ -794,6 +799,175 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
 
     await db.upsertSettings(userId, updatedSettings);
+  },
+
+  // Live synchronization for students who restored a university database
+  syncWithUniversityDatabase: async () => {
+    const { userId, settings } = get();
+    if (!userId || !settings.universityDatabaseId) return;
+
+    try {
+      const matchedDb = await db.getUniversityDatabase(settings.universityDatabaseId);
+      if (!matchedDb) return;
+
+      let hasSubjectChanges = false;
+      let hasFileChanges = false;
+      let currentSubjects = [...get().subjects];
+      let currentFiles = [...get().files];
+
+      // 1. Sync Grading Scale
+      if (matchedDb.gradingScale && matchedDb.gradingScale.length > 0) {
+        const curScaleStr = JSON.stringify(settings.gradingScale || []);
+        const tmplScaleStr = JSON.stringify(matchedDb.gradingScale);
+        if (curScaleStr !== tmplScaleStr) {
+          set(state => ({ settings: { ...state.settings, gradingScale: matchedDb.gradingScale } }));
+          db.upsertSettings(userId, { gradingScale: matchedDb.gradingScale }).catch(() => {});
+        }
+      }
+
+      // 2. Sync Subjects
+      if (matchedDb.subjects && Array.isArray(matchedDb.subjects)) {
+        const templateSubjs = matchedDb.subjects;
+        const existingByName = new Map(currentSubjects.map(s => [s.name.trim().toLowerCase(), s]));
+        const deletedNames = new Set((settings.deletedSubjectNames || []).map(n => n.trim().toLowerCase()));
+        const templateNames = new Set(templateSubjs.map(s => s.name.trim().toLowerCase()));
+
+        // A. Add newly approved/added subjects from template
+        for (const tSub of templateSubjs) {
+          const tName = tSub.name.trim().toLowerCase();
+          if (!existingByName.has(tName) && !deletedNames.has(tName)) {
+            const tYear = Number(tSub.yearIndex !== undefined ? tSub.yearIndex : ((tSub as any).year_index !== undefined ? (tSub as any).year_index : 1));
+            const tSem = Number(tSub.semesterIndex !== undefined ? tSub.semesterIndex : ((tSub as any).semester_index !== undefined ? (tSub as any).semester_index : 1));
+            const tHours = Number(tSub.creditHours !== undefined ? tSub.creditHours : ((tSub as any).credit_hours !== undefined ? (tSub as any).credit_hours : 3));
+            const tMarks = Number(tSub.totalMarks !== undefined ? tSub.totalMarks : ((tSub as any).total_marks !== undefined ? (tSub as any).total_marks : 100));
+
+            const newS: Subject = {
+              id: uuidv4(),
+              code: (tSub.code || '').trim(),
+              name: tSub.name,
+              creditHours: tHours,
+              totalMarks: tMarks,
+              yearIndex: tYear,
+              semesterIndex: tSem,
+              distributions: (tSub.distributions || []).map((d: any) => ({
+                id: uuidv4(),
+                name: d.name,
+                maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : ((d as any).max_marks !== undefined ? (d as any).max_marks : 0)),
+                achievedMarks: null,
+                status: 'current' as const
+              })),
+              status: 'current',
+              includeInGpa: tSub.includeInGpa !== false && (tSub as any).include_in_gpa !== false
+            };
+
+            currentSubjects.push(newS);
+            existingByName.set(tName, newS);
+            await db.addSubject(userId, newS);
+            hasSubjectChanges = true;
+          }
+        }
+
+        // B. Update existing subjects (if changed in template)
+        const templateSubjsByName = new Map(templateSubjs.map(s => [s.name.trim().toLowerCase(), s]));
+        for (let i = 0; i < currentSubjects.length; i++) {
+          const existing = currentSubjects[i];
+          const template = templateSubjsByName.get(existing.name.trim().toLowerCase());
+          if (template) {
+            const tYear = Number(template.yearIndex !== undefined ? template.yearIndex : ((template as any).year_index !== undefined ? (template as any).year_index : 1));
+            const tSem = Number(template.semesterIndex !== undefined ? template.semesterIndex : ((template as any).semester_index !== undefined ? (template as any).semester_index : 1));
+            const tHours = Number(template.creditHours !== undefined ? template.creditHours : ((template as any).credit_hours !== undefined ? (template as any).credit_hours : 3));
+            const tMarks = Number(template.totalMarks !== undefined ? template.totalMarks : ((template as any).total_marks !== undefined ? (template as any).total_marks : 100));
+
+            const hasChanged =
+              existing.yearIndex !== tYear ||
+              existing.semesterIndex !== tSem ||
+              existing.creditHours !== tHours ||
+              existing.totalMarks !== tMarks;
+
+            if (hasChanged) {
+              const updated = {
+                ...existing,
+                yearIndex: tYear,
+                semesterIndex: tSem,
+                creditHours: tHours,
+                totalMarks: tMarks,
+                code: template.code || existing.code
+              };
+              currentSubjects[i] = updated;
+              await db.updateSubject(userId, existing.id, updated);
+              hasSubjectChanges = true;
+            }
+          }
+        }
+
+        // C. Remove subjects that the admin deleted from the template
+        const remainingSubjects: Subject[] = [];
+        for (const existing of currentSubjects) {
+          const nameLower = existing.name.trim().toLowerCase();
+          if (templateSubjs.length > 0 && !templateNames.has(nameLower)) {
+            await db.deleteSubject(userId, existing.id);
+            hasSubjectChanges = true;
+          } else {
+            remainingSubjects.push(existing);
+          }
+        }
+        if (hasSubjectChanges) {
+          currentSubjects = remainingSubjects;
+        }
+      }
+
+      // 3. Sync Drive Files
+      if (matchedDb.driveFiles && Array.isArray(matchedDb.driveFiles)) {
+        const templateFiles = matchedDb.driveFiles;
+        const existingNames = new Set(currentFiles.map(f => f.name.trim().toLowerCase()));
+        const templateNames = new Set(templateFiles.map(f => f.name.trim().toLowerCase()));
+
+        // A. Add new drive files from template
+        for (const tFile of templateFiles) {
+          const tName = tFile.name.trim().toLowerCase();
+          if (!existingNames.has(tName)) {
+            const newF: DriveFile = {
+              id: uuidv4(),
+              name: tFile.name,
+              size: Number(tFile.size || 0),
+              type: tFile.type || 'file',
+              parentId: null,
+              createdAt: tFile.createdAt || new Date().toISOString(),
+              url: tFile.url || '',
+              b2FileId: tFile.b2FileId
+            };
+            currentFiles.push(newF);
+            existingNames.add(tName);
+            await db.addDriveFile(userId, newF);
+            hasFileChanges = true;
+          }
+        }
+
+        // B. Remove drive files that were deleted from template
+        const remainingFiles: DriveFile[] = [];
+        for (const f of currentFiles) {
+          const fName = f.name.trim().toLowerCase();
+          if (f.url && !templateNames.has(fName)) {
+            await db.deleteDriveFile(userId, f.id);
+            hasFileChanges = true;
+          } else {
+            remainingFiles.push(f);
+          }
+        }
+        if (hasFileChanges) {
+          currentFiles = remainingFiles;
+        }
+      }
+
+      if (hasSubjectChanges) {
+        set({ subjects: currentSubjects });
+      }
+      if (hasFileChanges) {
+        set({ files: currentFiles });
+      }
+    } catch (e) {
+      console.warn('syncWithUniversityDatabase error:', e);
+    }
   }
 }));
 
