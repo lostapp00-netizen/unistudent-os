@@ -204,7 +204,47 @@ export const useAppStore = create<AppState>((set, get) => ({
               }
             }
 
-            // 2. Safely sync changes to EXISTING subjects only (never re-add deleted subjects!)
+            // 2. Check for newly approved/added subjects in the university curriculum template
+            const existingNames = new Set(finalSubjects.map(s => s.name.trim().toLowerCase()));
+            const deletedNames = new Set((mergedSettings.deletedSubjectNames || []).map(n => n.trim().toLowerCase()));
+            const newSubjectsToAdd: Subject[] = [];
+
+            matchedDb.subjects.forEach(tSub => {
+              const tName = tSub.name.trim().toLowerCase();
+              if (!existingNames.has(tName) && !deletedNames.has(tName)) {
+                const tYear = Number(tSub.yearIndex !== undefined ? tSub.yearIndex : ((tSub as any).year_index !== undefined ? (tSub as any).year_index : 1));
+                const tSem = Number(tSub.semesterIndex !== undefined ? tSub.semesterIndex : ((tSub as any).semester_index !== undefined ? (tSub as any).semester_index : 1));
+                const tHours = Number(tSub.creditHours !== undefined ? tSub.creditHours : ((tSub as any).credit_hours !== undefined ? (tSub as any).credit_hours : 3));
+                const tMarks = Number(tSub.totalMarks !== undefined ? tSub.totalMarks : ((tSub as any).total_marks !== undefined ? (tSub as any).total_marks : 100));
+
+                const newS: Subject = {
+                  id: uuidv4(),
+                  code: (tSub.code || '').trim(),
+                  name: tSub.name,
+                  creditHours: tHours,
+                  totalMarks: tMarks,
+                  yearIndex: tYear,
+                  semesterIndex: tSem,
+                  distributions: (tSub.distributions || []).map((d: any) => ({
+                    id: uuidv4(),
+                    name: d.name,
+                    maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : ((d as any).max_marks !== undefined ? (d as any).max_marks : 0)),
+                    achievedMarks: null,
+                    status: 'current' as const
+                  })),
+                  status: 'current',
+                  includeInGpa: tSub.includeInGpa !== false && (tSub as any).include_in_gpa !== false
+                };
+                newSubjectsToAdd.push(newS);
+                db.addSubject(userId, newS).catch(() => {});
+              }
+            });
+
+            if (newSubjectsToAdd.length > 0) {
+              finalSubjects = [...finalSubjects, ...newSubjectsToAdd];
+            }
+
+            // 3. Safely sync changes to EXISTING subjects (credit hours, total marks, year, semester)
             const templateSubjsByName = new Map(matchedDb.subjects.map(s => [s.name.trim().toLowerCase(), s]));
 
             finalSubjects.forEach(existing => {
@@ -354,6 +394,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     db.deleteSubject(userId, id);
 
     if (old) {
+      const deletedName = old.name.trim().toLowerCase();
+      const currentDeleted = settings.deletedSubjectNames || [];
+      if (!currentDeleted.includes(deletedName)) {
+        const updatedDeleted = [...currentDeleted, deletedName];
+        set(state => ({ settings: { ...state.settings, deletedSubjectNames: updatedDeleted } }));
+        db.upsertSettings(userId, { deletedSubjectNames: updatedDeleted }).catch(() => {});
+      }
       checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'delete_subject', `حذف مادة: ${old.name}`, { id, name: old.name });
     }
   },
@@ -616,6 +663,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       totalYears: udb.totalYears || 4,
       semestersPerYear: udb.semestersPerYear || 2,
       universityDatabaseId: udb.id,
+      deletedSubjectNames: [],
       gradingScale: udb.gradingScale && udb.gradingScale.length > 0 ? udb.gradingScale : settings.gradingScale
     };
 
@@ -735,6 +783,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       universityDatabaseId: undefined,
       university: 'غير محدد',
       college: 'غير محدد',
+      deletedSubjectNames: [],
       gradingScale: defaultScale
     };
 

@@ -126,6 +126,7 @@ export type UserSettings = {
   enableGraduationScale?: boolean;
   graduationGradingScale?: GraduationGradeRule[];
   universityDatabaseId?: string;
+  deletedSubjectNames?: string[];
 };
 
 export type Appointment = {
@@ -217,8 +218,17 @@ export type UniversityDatabase = {
   subjects: Subject[];
   driveFiles: DriveFile[];
   gradingScale?: GradeRule[];
+  isVisible?: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+export type RegisteredUniversity = {
+  key: string;
+  nameAr: string;
+  nameEn: string;
+  isVisible?: boolean;
+  createdAt: string;
 };
 
 export type UniversityPendingUpdate = {

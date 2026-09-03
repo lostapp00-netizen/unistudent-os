@@ -95,3 +95,10 @@ ADD COLUMN IF NOT EXISTS distributions JSONB DEFAULT '[]'::jsonb,
 ADD COLUMN IF NOT EXISTS include_in_gpa BOOLEAN DEFAULT true,
 ADD COLUMN IF NOT EXISTS final_grade_letter TEXT;
 
+-- 6. إضافة عمود الرؤية والظهور (مرئي / غير مرئي) للجامعات والكليات
+ALTER TABLE public.registered_universities 
+ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT true;
+
+ALTER TABLE public.university_databases 
+ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT true;
+

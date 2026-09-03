@@ -44,7 +44,8 @@ import {
   UserCheck,
   Move,
   Award,
-  Save
+  Save,
+  EyeOff
 } from 'lucide-react';
 import { db } from '../../lib/db';
 import { UniversityDatabase, UniversityPendingUpdate, Subject, DriveFile, GradeDistributionItem, GradeRule } from '../../types';
@@ -279,6 +280,7 @@ export function AdminUniversitiesTab({
       key: string;
       nameAr: string;
       nameEn: string;
+      isVisible: boolean;
       colleges: UniversityDatabase[];
       totalStudents: number;
       totalSubjects: number;
@@ -295,12 +297,17 @@ export function AdminUniversitiesTab({
           key,
           nameAr: r.nameAr || key,
           nameEn: r.nameEn || key,
+          isVisible: r.isVisible !== false,
           colleges: [],
           totalStudents: 0,
           totalSubjects: 0,
           totalDriveFiles: 0,
           pendingUpdatesCount: 0
         };
+      } else {
+        if (r.isVisible !== undefined) {
+          map[key].isVisible = r.isVisible !== false;
+        }
       }
     });
 
@@ -312,6 +319,7 @@ export function AdminUniversitiesTab({
           key,
           nameAr: dbItem.universityNameAr || key,
           nameEn: dbItem.universityNameEn || key,
+          isVisible: dbItem.isVisible !== false,
           colleges: [],
           totalStudents: 0,
           totalSubjects: 0,
@@ -349,6 +357,7 @@ export function AdminUniversitiesTab({
       key: selectedUniversityKey,
       nameAr: selectedUniversityKey,
       nameEn: selectedUniversityKey,
+      isVisible: true,
       colleges: [],
       totalStudents: 0,
       totalSubjects: 0,
@@ -779,6 +788,46 @@ export function AdminUniversitiesTab({
       alert(isAr ? 'حدث خطأ أثناء حذف الجامعة.' : 'Error deleting university.');
     } finally {
       setDeletingUni(false);
+    }
+  };
+
+  // Toggle University Visibility (for students)
+  const handleToggleUniversityVisibility = async (uniKey: string, newVisibility: boolean) => {
+    try {
+      await db.toggleRegisteredUniversityVisibility(uniKey, newVisibility);
+
+      // Also update visibility for all colleges under this university
+      const toUpdate = databases.filter(d => 
+        d.universityNameAr === uniKey || d.universityNameEn === uniKey ||
+        d.universityNameAr?.trim() === uniKey.trim() || d.universityNameEn?.trim() === uniKey.trim()
+      );
+
+      for (const col of toUpdate) {
+        await db.toggleCollegeDatabaseVisibility(col.id, newVisibility);
+      }
+
+      setDatabases(prev => prev.map(d => {
+        if (d.universityNameAr === uniKey || d.universityNameEn === uniKey ||
+            d.universityNameAr?.trim() === uniKey.trim() || d.universityNameEn?.trim() === uniKey.trim()) {
+          return { ...d, isVisible: newVisibility };
+        }
+        return d;
+      }));
+
+      await loadUniData();
+    } catch (e) {
+      console.error('Error toggling university visibility:', e);
+    }
+  };
+
+  // Toggle Single College Visibility (for students)
+  const handleToggleCollegeVisibility = async (collegeId: string, newVisibility: boolean) => {
+    try {
+      await db.toggleCollegeDatabaseVisibility(collegeId, newVisibility);
+      setDatabases(prev => prev.map(d => d.id === collegeId ? { ...d, isVisible: newVisibility } : d));
+      await loadUniData();
+    } catch (e) {
+      console.error('Error toggling college visibility:', e);
     }
   };
 
@@ -1555,6 +1604,23 @@ export function AdminUniversitiesTab({
                           <td className="py-4 px-6 text-center">
                             <div className="flex items-center justify-center gap-2">
                               <button
+                                type="button"
+                                onClick={() => handleToggleUniversityVisibility(group.key, !group.isVisible)}
+                                className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                                  group.isVisible !== false
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100'
+                                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200'
+                                }`}
+                                title={
+                                  group.isVisible !== false 
+                                    ? (isAr ? 'الجامعة مرئية للطلاب (اضغط للإخفاء)' : 'Visible to students (Click to hide)')
+                                    : (isAr ? 'الجامعة مخفية عن الطلاب (اضغط للإظهار)' : 'Hidden from students (Click to show)')
+                                }
+                              >
+                                {group.isVisible !== false ? <Eye size={14} /> : <EyeOff size={14} />}
+                                <span>{group.isVisible !== false ? (isAr ? 'مرئي' : 'Visible') : (isAr ? 'مخفي' : 'Hidden')}</span>
+                              </button>
+                              <button
                                 onClick={() => setSelectedUniversityKey(group.key)}
                                 className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
                               >
@@ -1630,24 +1696,44 @@ export function AdminUniversitiesTab({
                   </span>
                 </div>
 
-                <button
-                  onClick={() => {
-                    setCreateCollegeForm({
-                      collegeNameAr: '',
-                      collegeNameEn: '',
-                      sourceUserId: '',
-                      customYears: 4,
-                      customSemesters: 2
-                    });
-                    setShowAllStudentsForCollege(false);
-                    setCollegeStudentSearchQuery('');
-                    setIsCreateCollegeModalOpen(true);
-                  }}
-                  className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shadow-md shadow-indigo-500/25 transition-all cursor-pointer shrink-0"
-                >
-                  <Plus size={16} />
-                  <span>{isAr ? 'إضافة كلية للجامعة' : 'Add College to University'}</span>
-                </button>
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleUniversityVisibility(currentUniversityGroup.key, !currentUniversityGroup.isVisible)}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl text-xs font-bold border transition-all cursor-pointer ${
+                      currentUniversityGroup.isVisible !== false
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200'
+                    }`}
+                    title={isAr ? 'تغيير ظهور الجامعة للطلاب' : 'Toggle University Visibility'}
+                  >
+                    {currentUniversityGroup.isVisible !== false ? <Eye size={15} /> : <EyeOff size={15} />}
+                    <span>
+                      {currentUniversityGroup.isVisible !== false 
+                        ? (isAr ? 'الجامعة مرئية للطلاب' : 'University Visible') 
+                        : (isAr ? 'الجامعة مخفية عن الطلاب' : 'University Hidden')}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setCreateCollegeForm({
+                        collegeNameAr: '',
+                        collegeNameEn: '',
+                        sourceUserId: '',
+                        customYears: 4,
+                        customSemesters: 2
+                      });
+                      setShowAllStudentsForCollege(false);
+                      setCollegeStudentSearchQuery('');
+                      setIsCreateCollegeModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shadow-md shadow-indigo-500/25 transition-all cursor-pointer shrink-0"
+                  >
+                    <Plus size={16} />
+                    <span>{isAr ? 'إضافة كلية للجامعة' : 'Add College to University'}</span>
+                  </button>
+                </div>
               </div>
 
               {/* Summary Stats Grid */}
@@ -1750,6 +1836,23 @@ export function AdminUniversitiesTab({
                             <td className="py-4 px-6 text-center">
                               <div className="flex items-center justify-center gap-2">
                                 <button
+                                  type="button"
+                                  onClick={() => handleToggleCollegeVisibility(collegeDb.id, !(collegeDb.isVisible !== false))}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                                    collegeDb.isVisible !== false
+                                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100'
+                                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200'
+                                  }`}
+                                  title={
+                                    collegeDb.isVisible !== false 
+                                      ? (isAr ? 'الكلية مرئية للطلاب (اضغط للإخفاء)' : 'Visible to students (Click to hide)')
+                                      : (isAr ? 'الكلية مخفية عن الطلاب (اضغط للإظهار)' : 'Hidden from students (Click to show)')
+                                  }
+                                >
+                                  {collegeDb.isVisible !== false ? <Eye size={14} /> : <EyeOff size={14} />}
+                                  <span>{collegeDb.isVisible !== false ? (isAr ? 'مرئي' : 'Visible') : (isAr ? 'مخفي' : 'Hidden')}</span>
+                                </button>
+                                <button
                                   onClick={() => {
                                     setSelectedCollegeId(collegeDb.id);
                                     setSelectedYearIndex(1);
@@ -1836,6 +1939,24 @@ export function AdminUniversitiesTab({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleCollegeVisibility(selectedCollegeDb.id, !(selectedCollegeDb.isVisible !== false))}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      selectedCollegeDb.isVisible !== false
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200'
+                    }`}
+                    title={isAr ? 'تغيير ظهور الكلية للطلاب' : 'Toggle College Visibility'}
+                  >
+                    {selectedCollegeDb.isVisible !== false ? <Eye size={14} /> : <EyeOff size={14} />}
+                    <span>
+                      {selectedCollegeDb.isVisible !== false 
+                        ? (isAr ? 'الكلية مرئية للطلاب' : 'College Visible') 
+                        : (isAr ? 'الكلية مخفية عن الطلاب' : 'College Hidden')}
+                    </span>
+                  </button>
+
                   <button
                     onClick={() => {
                       setStructureForm({

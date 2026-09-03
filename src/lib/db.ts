@@ -694,6 +694,7 @@ export const db = {
         subjects: dbData.subjects,
         drive_files: dbData.driveFiles,
         grading_scale: dbData.gradingScale || [],
+        is_visible: dbData.isVisible !== false,
         created_at: dbData.createdAt,
         updated_at: dbData.updatedAt
       };
@@ -729,6 +730,7 @@ export const db = {
       if (partialData.subjects !== undefined) payload.subjects = partialData.subjects;
       if (partialData.driveFiles !== undefined) payload.drive_files = partialData.driveFiles;
       if (partialData.gradingScale !== undefined) payload.grading_scale = partialData.gradingScale;
+      if (partialData.isVisible !== undefined) payload.is_visible = partialData.isVisible;
 
       const { error } = await supabase.from('university_databases').update(payload).eq('id', id);
       if (error) console.warn('Supabase updateUniversityDatabase error:', error);
@@ -847,7 +849,7 @@ export const db = {
   },
 
   // --- Standalone Universities Registry ---
-  getRegisteredUniversities(): { key: string; nameAr: string; nameEn: string; createdAt: string }[] {
+  getRegisteredUniversities(): { key: string; nameAr: string; nameEn: string; isVisible?: boolean; createdAt: string }[] {
     try {
       const saved = localStorage.getItem('unistudent_registered_universities');
       return saved ? JSON.parse(saved) : [];
@@ -856,7 +858,7 @@ export const db = {
     }
   },
 
-  registerUniversity(nameAr: string, nameEn?: string): void {
+  registerUniversity(nameAr: string, nameEn?: string, isVisible: boolean = true): void {
     try {
       const current = this.getRegisteredUniversities();
       const trimmedAr = (nameAr || '').trim();
@@ -868,10 +870,23 @@ export const db = {
           key,
           nameAr: trimmedAr,
           nameEn: trimmedEn,
+          isVisible: isVisible !== false,
           createdAt: new Date().toISOString()
         });
         localStorage.setItem('unistudent_registered_universities', JSON.stringify(current));
       }
+    } catch {}
+
+    try {
+      const trimmedAr = (nameAr || '').trim();
+      const trimmedEn = (nameEn || '').trim() || trimmedAr;
+      const key = trimmedAr || trimmedEn;
+      supabase.from('registered_universities').upsert({
+        key,
+        name_ar: trimmedAr,
+        name_en: trimmedEn,
+        is_visible: isVisible !== false
+      }).then();
     } catch {}
   },
 
@@ -881,9 +896,13 @@ export const db = {
       const filtered = current.filter(u => u.key !== key && u.nameAr !== key && u.nameEn !== key);
       localStorage.setItem('unistudent_registered_universities', JSON.stringify(filtered));
     } catch {}
+
+    try {
+      supabase.from('registered_universities').delete().eq('key', key).then();
+    } catch {}
   },
 
-  updateRegisteredUniversity(oldKey: string, nameAr: string, nameEn: string): void {
+  updateRegisteredUniversity(oldKey: string, nameAr: string, nameEn: string, isVisible?: boolean): void {
     try {
       const current = this.getRegisteredUniversities();
       const updated = current.map(u => {
@@ -892,13 +911,44 @@ export const db = {
             ...u,
             key: nameAr.trim() || nameEn.trim(),
             nameAr: nameAr.trim(),
-            nameEn: nameEn.trim()
+            nameEn: nameEn.trim(),
+            isVisible: isVisible !== undefined ? isVisible : (u.isVisible !== false)
           };
         }
         return u;
       });
       localStorage.setItem('unistudent_registered_universities', JSON.stringify(updated));
     } catch {}
+
+    try {
+      const payload: any = {
+        name_ar: nameAr.trim(),
+        name_en: nameEn.trim()
+      };
+      if (isVisible !== undefined) payload.is_visible = isVisible;
+      supabase.from('registered_universities').update(payload).eq('key', oldKey).then();
+    } catch {}
+  },
+
+  async toggleRegisteredUniversityVisibility(key: string, isVisible: boolean): Promise<void> {
+    try {
+      const current = this.getRegisteredUniversities();
+      const updated = current.map(u => {
+        if (u.key === key || u.nameAr === key || u.nameEn === key) {
+          return { ...u, isVisible };
+        }
+        return u;
+      });
+      localStorage.setItem('unistudent_registered_universities', JSON.stringify(updated));
+    } catch {}
+
+    try {
+      await supabase.from('registered_universities').update({ is_visible: isVisible }).eq('key', key);
+    } catch {}
+  },
+
+  async toggleCollegeDatabaseVisibility(id: string, isVisible: boolean): Promise<void> {
+    await this.updateUniversityDatabase(id, { isVisible });
   },
 
   // --- Student Database Changes Synchronization ---
@@ -1812,6 +1862,7 @@ function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
     sourceUserName: row.source_user_name || '',
     totalYears: row.total_years || 4,
     semestersPerYear: row.semesters_per_year || 2,
+    isVisible: row.is_visible !== false && row.isVisible !== false,
     subjects: (row.subjects || []).map((s: any) => ({
       id: s.id,
       code: s.code || '',
