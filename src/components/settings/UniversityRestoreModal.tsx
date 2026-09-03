@@ -68,13 +68,16 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   // Group databases by unique university name (AR or EN)
-  const registered = useMemo(() => db.getRegisteredUniversities(), [isOpen]);
+  const registered = useMemo(() => {
+    if (!isOpen) return [];
+    return db.getRegisteredUniversities();
+  }, [isOpen]);
+
   const regMap = useMemo(() => new Map(registered.map(r => [r.key.trim(), r])), [registered]);
 
   const groupedUniversities = useMemo(() => {
+    if (!isOpen) return {};
     return databases.reduce((acc, current) => {
       // If college is hidden by admin, do not show to students
       if (current.isVisible === false || (current as any).is_visible === false) {
@@ -102,19 +105,22 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
       acc[key].databases.push(current);
       return acc;
     }, {} as Record<string, { key: string; nameAr: string; nameEn: string; databases: UniversityDatabase[] }>);
-  }, [databases, regMap]);
+  }, [databases, regMap, isOpen]);
 
   // Filter universities by search
-  const filteredUniversities = Object.values(groupedUniversities).filter(group => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase().trim();
-    const matchAr = group.nameAr?.toLowerCase().includes(q);
-    const matchEn = group.nameEn?.toLowerCase().includes(q);
-    const matchColleges = group.databases.some(
-      d => d.collegeNameAr?.toLowerCase().includes(q) || d.collegeNameEn?.toLowerCase().includes(q)
-    );
-    return matchAr || matchEn || matchColleges;
-  });
+  const filteredUniversities = useMemo(() => {
+    if (!isOpen) return [];
+    return Object.values(groupedUniversities).filter(group => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase().trim();
+      const matchAr = group.nameAr?.toLowerCase().includes(q);
+      const matchEn = group.nameEn?.toLowerCase().includes(q);
+      const matchColleges = group.databases.some(
+        d => d.collegeNameAr?.toLowerCase().includes(q) || d.collegeNameEn?.toLowerCase().includes(q)
+      );
+      return matchAr || matchEn || matchColleges;
+    });
+  }, [groupedUniversities, searchQuery, isOpen]);
 
   const handleToggleExpand = (key: string) => {
     setExpandedUniKey(prev => prev === key ? null : key);
@@ -143,6 +149,8 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
       setImporting(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
