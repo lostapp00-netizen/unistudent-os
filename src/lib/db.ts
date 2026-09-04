@@ -737,18 +737,22 @@ export const db = {
   },
 
   async updateUniversityDatabase(id: string, partialData: Partial<UniversityDatabase>): Promise<void> {
-    // 1. Local storage update
-    try {
-      const current = await this.getUniversityDatabases();
-      const updated = current.map(u => u.id === id ? { ...u, ...partialData, updatedAt: new Date().toISOString() } : u);
-      localStorage.setItem('unistudent_university_databases', JSON.stringify(updated));
-    } catch (e) {
-      console.warn('LocalStorage error in updateUniversityDatabase:', e);
-    }
+    const updatedAt = new Date().toISOString();
+    let cachedDatabases: UniversityDatabase[] = [];
 
-    // 2. Supabase update with upsert to guarantee persistence
     try {
-      const payload: any = { id, updated_at: new Date().toISOString() };
+      cachedDatabases = await this.getUniversityDatabases();
+      const existing = cachedDatabases.find(database => database.id === id);
+      if (!existing) {
+        throw new Error('لم يتم العثور على قاعدة بيانات الجامعة المطلوب تحديثها.');
+      }
+
+      // Use UPDATE, not UPSERT. An UPSERT containing only `id` and the changed
+      // fields fails on this table because university_name_ar and
+      // college_name_ar are required on INSERT. The old code hid that error by
+      // updating localStorage first, so the admin saw the new material while
+      // every restored student kept reading the old remote database.
+      const payload: any = { updated_at: updatedAt };
       if (partialData.universityNameAr !== undefined) payload.university_name_ar = partialData.universityNameAr;
       if (partialData.universityNameEn !== undefined) payload.university_name_en = partialData.universityNameEn;
       if (partialData.collegeNameAr !== undefined) payload.college_name_ar = partialData.collegeNameAr;
@@ -763,13 +767,29 @@ export const db = {
       if (partialData.gradingScale !== undefined) payload.grading_scale = partialData.gradingScale;
       if (partialData.isVisible !== undefined) payload.is_visible = partialData.isVisible;
 
-      const { error } = await supabase.from('university_databases').upsert(payload, { onConflict: 'id' });
-      if (error) console.warn('Supabase updateUniversityDatabase error:', error);
+      const { data, error } = await supabase
+        .from('university_databases')
+        .update(payload)
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) {
+        throw new Error('قاعدة بيانات الجامعة غير موجودة على الخادم.');
+      }
+
+      // Update the cache only after the central database confirms the update.
+      const updated = cachedDatabases.map(database =>
+        database.id === id ? { ...database, ...partialData, updatedAt } : database
+      );
+      localStorage.setItem('unistudent_university_databases', JSON.stringify(updated));
     } catch (e) {
-      console.warn('Supabase updateUniversityDatabase failed:', e);
+      console.error('Supabase updateUniversityDatabase failed:', e);
+      throw e;
     }
 
-    // 3. Broadcast real-time change to all active students
+    // Broadcast only after Supabase has the approved, shared version.
     try {
       supabase.channel('university_global_sync').send({
         type: 'broadcast',
@@ -866,30 +886,34 @@ export const db = {
     const target = pendingList.find(p => p.id === id);
     if (!target) return;
 
+    const resolvedAt = new Date().toISOString();
+    if (status === 'approved' && applyAction && target.universityDatabaseId) {
+      const udb = await this.getUniversityDatabase(target.universityDatabaseId);
+      if (!udb) throw new Error('قاعدة بيانات الجامعة المرتبطة بهذا التحديث غير موجودة.');
+
+      const updatedDb = applyAction(udb);
+      // Persist the master database before approving the request. This guarantees
+      // that every restored student reads the same approved version.
+      await this.updateUniversityDatabase(udb.id, updatedDb);
+      await this.syncUniversityDatabaseChangesToStudents(udb.id, {
+        type: (target.type as any) || 'full_sync',
+        subject: target.data,
+        updatedDb
+      });
+    }
+
     target.status = status;
-    target.resolvedAt = new Date().toISOString();
+    target.resolvedAt = resolvedAt;
 
     try {
       localStorage.setItem('unistudent_pending_updates', JSON.stringify(pendingList));
     } catch {}
 
-    try {
-      await supabase.from('university_pending_updates').update({ status, resolved_at: target.resolvedAt }).eq('id', id);
-    } catch {}
-
-    if (status === 'approved' && applyAction && target.universityDatabaseId) {
-      const udb = await this.getUniversityDatabase(target.universityDatabaseId);
-      if (udb) {
-        const updatedDb = applyAction(udb);
-        await this.updateUniversityDatabase(udb.id, updatedDb);
-        // Sync to all students who imported this database
-        await this.syncUniversityDatabaseChangesToStudents(udb.id, {
-          type: (target.type as any) || 'full_sync',
-          subject: target.data,
-          updatedDb
-        });
-      }
-    }
+    const { error } = await supabase
+      .from('university_pending_updates')
+      .update({ status, resolved_at: resolvedAt })
+      .eq('id', id);
+    if (error) throw error;
   },
 
   // --- Standalone Universities Registry ---
