@@ -68,8 +68,22 @@ export const db = {
   // --- Subjects ---
   async getSubjects(userId: string): Promise<Subject[]> {
     let dbSubjects: Subject[] = [];
+    let readFromLiveSharedView = false;
     try {
-      const { data, error } = await supabase.from('subjects').select('*').eq('user_id', userId);
+      // A restored academic database stays linked to its original owner.  This is
+      // intentionally a live read, rather than a one-time copy, so an approved
+      // update to the source database is visible to every student who restored it.
+      // The RPC also returns the current user's own subjects when there is no link.
+      const { data: sharedData, error: sharedError } = await supabase
+        .rpc('get_visible_subjects_for_current_user');
+
+      // Keep the previous query as a backwards-compatible fallback while older
+      // installations are waiting for the database migration to be applied.
+      const { data, error } = sharedError
+        ? await supabase.from('subjects').select('*').eq('user_id', userId)
+        : { data: sharedData, error: null };
+
+      readFromLiveSharedView = !sharedError;
       if (error) console.error('Error fetching subjects:', error);
       if (data && data.length > 0) {
         dbSubjects = data.map(mapSubjectFromDB);
@@ -81,6 +95,13 @@ export const db = {
     try {
       const cached = localStorage.getItem(`unistudent_subjects_${userId}`);
       if (cached) {
+        // The linked-source query is authoritative. Merging cache-only rows here
+        // would make a source deletion (or a reverted approved update) reappear.
+        if (readFromLiveSharedView) {
+          localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(dbSubjects));
+          return dbSubjects;
+        }
+
         const localList: Subject[] = JSON.parse(cached);
         if (dbSubjects.length === 0) return localList;
         // Merge with local changes if any
@@ -869,6 +890,60 @@ export const db = {
 
     const { settings = [], subjects = [], tasks = [], notes = [], appointments = [], schedule_items = [], groups = [], drive_files = [], suggestions = [] } = backup.data;
     const errors: string[] = [];
+
+    /*
+     * A student restoring another student's academic database must not receive a
+     * detached snapshot.  The old implementation restored rows with the source
+     * user's id, while every student screen queries by the current user's id.
+     * That made the restored data invisible and prevented later approved changes
+     * from reaching the restoring student.
+     *
+     * For a single-owner backup restored by a student, store a subscription to
+     * that source instead. `get_visible_subjects_for_current_user` then supplies
+     * the source's current approved subjects on every refresh. Admin imports keep
+     * their existing full-database behaviour.
+     */
+    const sourceOwnerIds = new Set<string>();
+    [settings, subjects].forEach(rows => {
+      rows.forEach((row: any) => {
+        if (row?.user_id) sourceOwnerIds.add(row.user_id);
+      });
+    });
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const restoringUserId = sessionData.session?.user?.id;
+      const isAdminRestore = sessionStorage.getItem('unistudent_admin_auth') === 'true';
+      const sourceUserId = sourceOwnerIds.size === 1 ? Array.from(sourceOwnerIds)[0] : null;
+
+      if (restoringUserId && sourceUserId && sourceUserId !== restoringUserId && !isAdminRestore) {
+        const { error: linkError } = await supabase
+          .from('database_restore_links')
+          .upsert(
+            { subscriber_id: restoringUserId, source_owner_id: sourceUserId },
+            { onConflict: 'subscriber_id' }
+          );
+
+        if (linkError) throw linkError;
+
+        // A stale local cache must never mask a newly linked live database.
+        try {
+          localStorage.removeItem(`unistudent_subjects_${restoringUserId}`);
+        } catch {}
+
+        return {
+          success: true,
+          message: 'تم ربط النسخة المستعادة بالمصدر المعتمد. ستظهر أي مواد أو تحديثات معتمدة تلقائياً.',
+          details: {
+            linkedToSource: true,
+            sourceUserId,
+            restoredCount: { subjects: subjects.length }
+          }
+        };
+      }
+    } catch (err: any) {
+      errors.push(`Shared database link: ${err.message || String(err)}`);
+    }
 
     // 1. Settings
     if (settings.length > 0) {

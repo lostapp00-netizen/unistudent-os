@@ -34,6 +34,7 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const isInitialized = useAppStore(state => state.isInitialized);
   const initialize = useAppStore(state => state.initialize);
+  const refreshSubjects = useAppStore(state => state.refreshSubjects);
   const clearData = useAppStore(state => state.clearData);
 
   const settings = useAppStore(state => state.settings);
@@ -81,6 +82,31 @@ export function App() {
 
     return () => subscription.unsubscribe();
   }, [initialize, clearData]);
+
+  // Shared/restored university databases are refreshed while the student is
+  // using the app and immediately when they return to the tab. The server-side
+  // query resolves the current approved source, so this also covers additions
+  // made after the initial restore.
+  useEffect(() => {
+    if (!session?.user?.id) return;
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        refreshSubjects();
+      }
+    };
+
+    refreshWhenVisible();
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    const intervalId = window.setInterval(refreshWhenVisible, 30000);
+
+    return () => {
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.clearInterval(intervalId);
+    };
+  }, [session?.user?.id, refreshSubjects]);
 
   const isAdminPath = window.location.pathname.startsWith('/admin');
 
@@ -139,4 +165,3 @@ export function App() {
     </BrowserRouter>
   );
 }
-
