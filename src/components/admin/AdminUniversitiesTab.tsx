@@ -48,9 +48,10 @@ import {
   EyeOff
 } from 'lucide-react';
 import { db } from '../../lib/db';
+import { supabase } from '../../lib/supabase';
 import { UniversityDatabase, UniversityPendingUpdate, Subject, DriveFile, GradeDistributionItem, GradeRule } from '../../types';
 import { ConfirmModal } from '../ui/CustomModal';
-import { autoTranslateUniversity, autoTranslateCollege } from '../../lib/academicTranslation';
+import { autoTranslateUniversity, autoTranslateCollege, normalizeSubjectName } from '../../lib/academicTranslation';
 import { previewFile, downloadFile } from '../../lib/backblaze';
 
 interface AdminUniversitiesTabProps {
@@ -1139,55 +1140,63 @@ export function AdminUniversitiesTab({
         await db.respondToPendingUpdate(update.id, status, (targetDb) => {
           if (update.type === 'add_subject' && update.data) {
             const subjectId = update.data.id || uuidv4();
+            const subjectName = (update.data.name || '').trim();
             const newSubj: Subject = {
               id: subjectId,
               code: (update.data.code || '').trim(),
-              name: update.data.name,
+              name: subjectName,
               creditHours: Number(update.data.creditHours || update.data.credit_hours || 3),
               totalMarks: Number(update.data.totalMarks || update.data.total_marks || 100),
               yearIndex: Number(update.data.yearIndex || update.data.year_index || 1),
               semesterIndex: Number(update.data.semesterIndex || update.data.semester_index || 1),
               distributions: (update.data.distributions || []).map((d: any) => ({
                 id: d.id || uuidv4(),
-                name: d.name,
-                maxMarks: Number(d.maxMarks || d.max_marks || 0),
+                name: (d.name || '').trim(),
+                maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : (d.max_marks !== undefined ? d.max_marks : 0)),
                 achievedMarks: null,
                 status: 'current' as const
               })),
               status: 'current',
-              includeInGpa: update.data.includeInGpa !== false
+              includeInGpa: update.data.includeInGpa !== false && update.data.include_in_gpa !== false
             };
-            const filtered = targetDb.subjects.filter(s => s.id !== subjectId && !(s.name === newSubj.name && s.yearIndex === newSubj.yearIndex && s.semesterIndex === newSubj.semesterIndex));
+            const normNew = normalizeSubjectName(newSubj.name);
+            const filtered = targetDb.subjects.filter(s => 
+              s.id !== subjectId && 
+              !(normalizeSubjectName(s.name) === normNew && s.yearIndex === newSubj.yearIndex && s.semesterIndex === newSubj.semesterIndex)
+            );
             return { ...targetDb, subjects: [...filtered, newSubj] };
           } else if (update.type === 'update_subject' && update.data) {
             const upd = update.data;
             const updatedDistributions = upd.distributions
               ? upd.distributions.map((d: any) => ({
                   id: d.id || uuidv4(),
-                  name: d.name,
-                  maxMarks: Number(d.maxMarks || d.max_marks || 0),
+                  name: (d.name || '').trim(),
+                  maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : (d.max_marks !== undefined ? d.max_marks : 0)),
                   achievedMarks: null,
                   status: 'current' as const
                 }))
               : undefined;
 
+            const normUpd = normalizeSubjectName(upd.name || '');
             return {
               ...targetDb,
               subjects: targetDb.subjects.map(s => {
-                const isMatch = s.id === upd.id || (upd.name && s.name === upd.name && s.yearIndex === upd.yearIndex && s.semesterIndex === upd.semesterIndex);
+                const isMatch = s.id === upd.id || (normUpd && normalizeSubjectName(s.name) === normUpd && s.yearIndex === upd.yearIndex && s.semesterIndex === upd.semesterIndex);
                 if (!isMatch) return s;
                 return {
                   ...s,
                   ...upd,
+                  name: (upd.name || s.name || '').trim(),
                   distributions: updatedDistributions !== undefined ? updatedDistributions : s.distributions
                 };
               })
             };
           } else if (update.type === 'delete_subject' && update.data) {
             const upd = update.data;
+            const normUpd = normalizeSubjectName(upd.name || '');
             return {
               ...targetDb,
-              subjects: targetDb.subjects.filter(s => s.id !== upd.id && s.name !== upd.name)
+              subjects: targetDb.subjects.filter(s => s.id !== upd.id && normalizeSubjectName(s.name) !== normUpd)
             };
           } else if (update.type === 'add_file' && update.data) {
             const file = update.data;
@@ -1218,11 +1227,13 @@ export function AdminUniversitiesTab({
         });
       }
       try {
-        supabase.channel('university_global_sync').send({
-          type: 'broadcast',
-          event: 'university_db_updated',
-          payload: { id: update.universityDatabaseId, timestamp: Date.now() }
-        }).catch(() => {});
+        if (supabase) {
+          supabase.channel('university_global_sync').send({
+            type: 'broadcast',
+            event: 'university_db_updated',
+            payload: { id: update.universityDatabaseId, timestamp: Date.now() }
+          }).catch(() => {});
+        }
       } catch {}
       await loadUniData();
     } catch (e) {

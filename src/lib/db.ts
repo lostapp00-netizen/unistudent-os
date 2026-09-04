@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, DatabaseBackup, EmailBackupConfig, UniversityDatabase, UniversityPendingUpdate, GradeRule, GradeDistributionItem } from '../types';
+import { normalizeSubjectName } from './academicTranslation';
 
 export const db = {
   // --- Settings ---
@@ -745,9 +746,9 @@ export const db = {
       console.warn('LocalStorage error in updateUniversityDatabase:', e);
     }
 
-    // 2. Supabase update
+    // 2. Supabase update with upsert to guarantee persistence
     try {
-      const payload: any = { updated_at: new Date().toISOString() };
+      const payload: any = { id, updated_at: new Date().toISOString() };
       if (partialData.universityNameAr !== undefined) payload.university_name_ar = partialData.universityNameAr;
       if (partialData.universityNameEn !== undefined) payload.university_name_en = partialData.universityNameEn;
       if (partialData.collegeNameAr !== undefined) payload.college_name_ar = partialData.collegeNameAr;
@@ -762,7 +763,7 @@ export const db = {
       if (partialData.gradingScale !== undefined) payload.grading_scale = partialData.gradingScale;
       if (partialData.isVisible !== undefined) payload.is_visible = partialData.isVisible;
 
-      const { error } = await supabase.from('university_databases').update(payload).eq('id', id);
+      const { error } = await supabase.from('university_databases').upsert(payload, { onConflict: 'id' });
       if (error) console.warn('Supabase updateUniversityDatabase error:', error);
     } catch (e) {
       console.warn('Supabase updateUniversityDatabase failed:', e);
@@ -882,7 +883,11 @@ export const db = {
         const updatedDb = applyAction(udb);
         await this.updateUniversityDatabase(udb.id, updatedDb);
         // Sync to all students who imported this database
-        await this.syncUniversityDatabaseChangesToStudents(udb.id, { type: 'full_sync', updatedDb });
+        await this.syncUniversityDatabaseChangesToStudents(udb.id, {
+          type: (target.type as any) || 'full_sync',
+          subject: target.data,
+          updatedDb
+        });
       }
     }
   },
@@ -1005,7 +1010,7 @@ export const db = {
       const udb = action.updatedDb || (await this.getUniversityDatabase(universityDbId));
       if (!udb) return;
 
-      const norm = (str?: string) => (str || '').trim().toLowerCase();
+      const norm = (str?: string) => normalizeSubjectName(str);
       const matchUni = (sUni?: string) => norm(sUni) && (norm(sUni) === norm(udb.universityNameAr) || norm(sUni) === norm(udb.universityNameEn));
       const matchCollege = (sCol?: string) => norm(sCol) && (norm(sCol) === norm(udb.collegeNameAr) || norm(sCol) === norm(udb.collegeNameEn));
 
@@ -1044,104 +1049,44 @@ export const db = {
         }
       }
 
-      // Process each enrolled student
-      for (const uid of studentUserIds) {
-        try {
-          if (action.type === 'update_subject' && action.subject) {
-            const upd = action.subject;
-            const userSubjs = await this.getSubjects(uid);
-            const target = userSubjs.find(s => s.id === upd.id || norm(s.name) === norm(upd.name));
-            if (target) {
-              const curDistsByName = new Map<string, GradeDistributionItem>((target.distributions || []).map(d => [norm(d.name), d]));
-              const syncedDists = (upd.distributions || []).map(ud => {
-                const prev = curDistsByName.get(norm(ud.name));
-                return {
-                  id: prev?.id || ud.id || (Math.random() + 1).toString(36).substring(7),
-                  name: ud.name,
-                  maxMarks: Number(ud.maxMarks || 0),
-                  achievedMarks: prev ? prev.achievedMarks : null,
-                  status: prev ? prev.status : ('current' as const)
-                };
-              });
-
-              await this.updateSubject(uid, target.id, {
-                name: upd.name,
-                code: upd.code,
-                creditHours: upd.creditHours,
-                totalMarks: upd.totalMarks,
-                yearIndex: upd.yearIndex,
-                semesterIndex: upd.semesterIndex,
-                distributions: syncedDists.length > 0 ? syncedDists : target.distributions
-              });
-            }
-          } else if (action.type === 'add_subject' && action.subject) {
-            const newS = action.subject;
-            const userSubjs = await this.getSubjects(uid);
-            const exists = userSubjs.some(s => s.id === newS.id || norm(s.name) === norm(newS.name));
-            if (!exists) {
-              const createdSubj: Subject = {
-                ...newS,
-                id: (await import('uuid')).v4(),
-                status: 'current',
-                includeInGpa: true,
-                distributions: (newS.distributions || []).map(d => ({ ...d, id: (Math.random() + 1).toString(36).substring(7), achievedMarks: null, status: 'current' }))
-              };
-              await this.addSubject(uid, createdSubj);
-            }
-          } else if (action.type === 'delete_subject' && (action.subjectId || action.subject?.id)) {
-            const targetId = action.subjectId || action.subject?.id;
-            const subName = action.subject?.name;
-            const userSubjs = await this.getSubjects(uid);
-            const target = userSubjs.find(s => s.id === targetId || (subName && norm(s.name) === norm(subName)));
-            if (target) {
-              await this.deleteSubject(uid, target.id);
-            }
-          } else if (action.type === 'update_grading_scale' && action.gradingScale) {
-            await this.upsertSettings(uid, { gradingScale: action.gradingScale });
-          } else if (action.type === 'full_sync') {
-            const userSubjs = await this.getSubjects(uid);
-            const templateSubjs = udb.subjects || [];
-            
-            // Sync/update existing subjects
-            for (const tSub of templateSubjs) {
-              const matched = userSubjs.find(s => s.id === tSub.id || norm(s.name) === norm(tSub.name));
-              if (matched) {
-                const curDistsByName = new Map<string, GradeDistributionItem>((matched.distributions || []).map(d => [norm(d.name), d]));
-                const syncedDists = (tSub.distributions || []).map(td => {
-                  const prev = curDistsByName.get(norm(td.name));
-                  return {
-                    id: prev?.id || td.id || (Math.random() + 1).toString(36).substring(7),
-                    name: td.name,
-                    maxMarks: Number(td.maxMarks || 0),
-                    achievedMarks: prev ? prev.achievedMarks : null,
-                    status: prev ? prev.status : ('current' as const)
-                  };
-                });
-
-                await this.updateSubject(uid, matched.id, {
-                  yearIndex: tSub.yearIndex,
-                  semesterIndex: tSub.semesterIndex,
-                  creditHours: tSub.creditHours,
-                  totalMarks: tSub.totalMarks,
-                  code: tSub.code || matched.code,
-                  distributions: syncedDists.length > 0 ? syncedDists : matched.distributions
-                });
-              } else {
-                const createdSubj: Subject = {
-                  ...tSub,
-                  id: (await import('uuid')).v4(),
-                  status: 'current',
-                  includeInGpa: true,
-                  distributions: (tSub.distributions || []).map(d => ({ ...d, id: (Math.random() + 1).toString(36).substring(7), achievedMarks: null, status: 'current' }))
-                };
-                await this.addSubject(uid, createdSubj);
-              }
-            }
-          }
-        } catch (stErr) {
-          console.warn(`Sync failed for student ${uid}:`, stErr);
+      // 1. If grading scale was updated, apply to students' settings
+      if (action.type === 'update_grading_scale' && action.gradingScale) {
+        for (const uid of studentUserIds) {
+          await this.upsertSettings(uid, { gradingScale: action.gradingScale }).catch(() => {});
         }
       }
+
+      // 2. Notify students of approved changes (In-App notifications)
+      const notifTitle = action.type === 'add_subject'
+        ? `مادة جديدة مضافة للخطة: ${action.subject?.name || ''}`
+        : action.type === 'update_subject'
+        ? `تحديث في بيانات مادة: ${action.subject?.name || ''}`
+        : action.type === 'delete_subject'
+        ? `حذف مادة من الخطة: ${action.subject?.name || ''}`
+        : action.type === 'update_grading_scale'
+        ? 'تحديث لائحة التقديرات المعتمدة لكليتك'
+        : 'تحديث معتمد في الخطة الدراسية لقاعدة بيانات كليتك';
+
+      const notifMessage = action.type === 'add_subject'
+        ? `تم اعتماد إضافة مادة "${action.subject?.name || ''}" للخطة الدراسية من قِبل الإدارة.`
+        : 'تم اعتماد وتحديث الخطة الدراسية لكليتك. سيتم تطبيق التغييرات تلقائياً في حسابك.';
+
+      for (const uid of studentUserIds) {
+        await this.sendStudentNotification(uid, {
+          title: notifTitle,
+          message: notifMessage,
+          type: 'update'
+        }).catch(() => {});
+      }
+
+      // 3. Broadcast real-time sync event so each active student's client syncs their own subjects cleanly
+      try {
+        supabase.channel('university_global_sync').send({
+          type: 'broadcast',
+          event: 'university_db_updated',
+          payload: { id: universityDbId, timestamp: Date.now() }
+        }).catch(() => {});
+      } catch {}
     } catch (e) {
       console.warn('Error in syncUniversityDatabaseChangesToStudents:', e);
     }

@@ -236,3 +236,19 @@ export function autoTranslateCollege(text: string): string {
 
   return `Faculty of ${transliterateArabic(clean)}`;
 }
+
+/**
+ * Standardized Arabic & English string normalization for academic subjects.
+ * Strips Arabic tashkeel / harakat, tatweel, unifies all alif forms, taa marbuta, and alif maqsura.
+ */
+export function normalizeSubjectName(str?: string): string {
+  if (!str) return '';
+  return str
+    .trim()
+    .toLowerCase()
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '') // remove Arabic tashkeel / harakat & tatweel
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/[ىي]/g, 'ي')
+    .replace(/\s+/g, ' ');
+}
