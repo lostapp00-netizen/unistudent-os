@@ -22,7 +22,14 @@ export function SubjectDetails() {
   const [newDistMarks, setNewDistMarks] = useState<number | ''>('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<{
+    name: string;
+    code: string;
+    creditHours: number | '';
+    totalMarks: number | '';
+    yearIndex: number;
+    semesterIndex: number;
+  }>({
     name: '',
     code: '',
     creditHours: 3,
@@ -46,23 +53,29 @@ export function SubjectDetails() {
   const gradeInfo = calculateSubjectGrade(subject, settings.gradingScale);
 
   const handleAddDistribution = () => {
-    if (!newDistName || !newDistMarks || newDistMarks <= 0) return;
-    if (newDistMarks > remainingMarks) {
-      alert(`الدرجات المتبقية هي ${remainingMarks} فقط.`);
+    if (!newDistName.trim()) {
+      alert(isRtl ? 'يرجى إدخال اسم بند التقييم.' : 'Please enter item name.');
       return;
     }
-    
+    if (newDistMarks === '' || isNaN(Number(newDistMarks)) || Number(newDistMarks) <= 0) {
+      alert(isRtl ? 'يرجى إدخال درجة صحيحة للبند (أكبر من 0).' : 'Please enter valid marks.');
+      return;
+    }
+    if (Number(newDistMarks) > remainingMarks) {
+      alert(isRtl ? `الدرجات المتبقية المتاحة هي ${remainingMarks} فقط.` : `Only ${remainingMarks} marks available.`);
+      return;
+    }
+
+    const newItem: GradeDistributionItem = {
+      id: uuidv4(),
+      name: newDistName.trim(),
+      maxMarks: Number(newDistMarks),
+      achievedMarks: null,
+      status: 'current'
+    };
+
     updateSubject(subject.id, {
-      distributions: [
-        ...subject.distributions,
-        {
-          id: uuidv4(),
-          name: newDistName,
-          maxMarks: Number(newDistMarks),
-          achievedMarks: null,
-          status: 'current'
-        }
-      ]
+      distributions: [...subject.distributions, newItem]
     });
     
     setNewDistName('');
@@ -113,7 +126,18 @@ export function SubjectDetails() {
   };
 
   const handleSaveEditSubject = () => {
-    if (!editForm.name.trim() || !editForm.code.trim()) return;
+    if (!editForm.name.trim() || !editForm.code.trim()) {
+      alert(isRtl ? 'يرجى إدخال اسم المادة وكود المادة.' : 'Please enter subject name and code.');
+      return;
+    }
+    if (editForm.creditHours === '' || isNaN(Number(editForm.creditHours)) || Number(editForm.creditHours) <= 0) {
+      alert(isRtl ? 'يرجى إدخال عدد الساعات المعتمدة بشكل صحيح (أكبر من 0).' : 'Please enter valid credit hours.');
+      return;
+    }
+    if (editForm.totalMarks === '' || isNaN(Number(editForm.totalMarks)) || Number(editForm.totalMarks) <= 0) {
+      alert(isRtl ? 'يرجى إدخال الدرجة الكلية للمادة بشكل صحيح (أكبر من 0).' : 'Please enter valid total marks.');
+      return;
+    }
     updateSubject(subject.id, {
       name: editForm.name.trim(),
       code: editForm.code.trim(),
@@ -413,8 +437,8 @@ export function SubjectDetails() {
                   <input 
                     type="number" 
                     min="1" 
-                    value={editForm.creditHours} 
-                    onChange={e => setEditForm({...editForm, creditHours: Number(e.target.value)})} 
+                    value={editForm.creditHours === '' ? '' : editForm.creditHours} 
+                    onChange={e => setEditForm({...editForm, creditHours: e.target.value === '' ? '' : Number(e.target.value)})} 
                     className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
                   />
                 </div>
@@ -423,8 +447,8 @@ export function SubjectDetails() {
                   <input 
                     type="number" 
                     min="1" 
-                    value={editForm.totalMarks} 
-                    onChange={e => setEditForm({...editForm, totalMarks: Number(e.target.value)})} 
+                    value={editForm.totalMarks === '' ? '' : editForm.totalMarks} 
+                    onChange={e => setEditForm({...editForm, totalMarks: e.target.value === '' ? '' : Number(e.target.value)})} 
                     className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
                   />
                 </div>

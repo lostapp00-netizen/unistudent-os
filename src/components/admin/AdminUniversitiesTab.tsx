@@ -99,7 +99,7 @@ export function AdminUniversitiesTab({
   // College Grading Scale State
   const [isGradeModalOpen, setIsGradeModalOpen] = useState(false);
   const [editingGrade, setEditingGrade] = useState<GradeRule | null>(null);
-  const [gradeForm, setGradeForm] = useState<GradeRule>({
+  const [gradeForm, setGradeForm] = useState<GradeRule | any>({
     id: '',
     letter: 'A',
     nameAr: 'ممتاز',
@@ -173,7 +173,7 @@ export function AdminUniversitiesTab({
 
   // College Academic Structure Modal State
   const [isStructureModalOpen, setIsStructureModalOpen] = useState(false);
-  const [structureForm, setStructureForm] = useState({ totalYears: 4, semestersPerYear: 2 });
+  const [structureForm, setStructureForm] = useState<{ totalYears: number | ''; semestersPerYear: number | '' }>({ totalYears: 4, semestersPerYear: 2 });
 
   // Switch Source Student Modal State
   const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
@@ -187,11 +187,11 @@ export function AdminUniversitiesTab({
     id?: string;
     name: string;
     code: string;
-    creditHours: number;
-    totalMarks: number;
-    yearIndex: number;
-    semesterIndex: number;
-    distributions: GradeDistributionItem[];
+    creditHours: number | '';
+    totalMarks: number | '';
+    yearIndex: number | '';
+    semesterIndex: number | '';
+    distributions: (GradeDistributionItem | { id: string; name: string; maxMarks: number | ''; achievedMarks: number | null; status: 'current' })[];
   }>({
     name: '',
     code: '',
@@ -238,7 +238,13 @@ export function AdminUniversitiesTab({
 
   // --- Step 2: Create College in University Modal State ---
   const [isCreateCollegeModalOpen, setIsCreateCollegeModalOpen] = useState(false);
-  const [createCollegeForm, setCreateCollegeForm] = useState({
+  const [createCollegeForm, setCreateCollegeForm] = useState<{
+    collegeNameAr: string;
+    collegeNameEn: string;
+    sourceUserId: string;
+    customYears: number | '';
+    customSemesters: number | '';
+  }>({
     collegeNameAr: '',
     collegeNameEn: '',
     sourceUserId: '',
@@ -587,8 +593,8 @@ export function AdminUniversitiesTab({
         sourceUserId: source ? source.id : createCollegeForm.sourceUserId,
         sourceUserEmail: source?.email || '',
         sourceUserName: source?.name || '',
-        totalYears: createCollegeForm.customYears || source?.totalYears || 4,
-        semestersPerYear: createCollegeForm.customSemesters || source?.semestersPerYear || 2,
+        totalYears: Number(createCollegeForm.customYears) || source?.totalYears || 4,
+        semestersPerYear: Number(createCollegeForm.customSemesters) || source?.semestersPerYear || 2,
         subjects: clonedSubjects,
         driveFiles: clonedDrive,
         gradingScale: (source?.gradingScale && source.gradingScale.length > 0) ? source.gradingScale : (source?.raw?.settings?.grading_scale || []),
@@ -634,8 +640,8 @@ export function AdminUniversitiesTab({
     if (!selectedCollegeDb) return;
     try {
       await db.updateUniversityDatabase(selectedCollegeDb.id, {
-        totalYears: structureForm.totalYears,
-        semestersPerYear: structureForm.semestersPerYear
+        totalYears: Number(structureForm.totalYears || 4),
+        semestersPerYear: Number(structureForm.semestersPerYear || 2)
       });
       setIsStructureModalOpen(false);
       await loadUniData();
@@ -879,10 +885,16 @@ export function AdminUniversitiesTab({
     if (!selectedCollegeDb) return;
     const currentScale = selectedCollegeDb.gradingScale || [];
     let updatedScale: GradeRule[];
+    const cleanGrade: GradeRule = {
+      ...gradeForm,
+      minPercentage: Number(gradeForm.minPercentage || 0),
+      maxPercentage: Number(gradeForm.maxPercentage || 100),
+      points: Number(gradeForm.points || 0)
+    };
     if (editingGrade) {
-      updatedScale = currentScale.map(g => g.id === editingGrade.id ? gradeForm : g);
+      updatedScale = currentScale.map(g => g.id === editingGrade.id ? cleanGrade : g);
     } else {
-      updatedScale = [...currentScale, { ...gradeForm, id: gradeForm.id || uuidv4() }];
+      updatedScale = [...currentScale, { ...cleanGrade, id: cleanGrade.id || uuidv4() }];
     }
     await handleSaveGradingScale(updatedScale);
     setIsGradeModalOpen(false);
@@ -2864,8 +2876,8 @@ export function AdminUniversitiesTab({
                     type="number"
                     min={1}
                     max={7}
-                    value={createCollegeForm.customYears}
-                    onChange={(e) => setCreateCollegeForm(prev => ({ ...prev, customYears: Number(e.target.value) }))}
+                    value={createCollegeForm.customYears === '' ? '' : createCollegeForm.customYears}
+                    onChange={(e) => setCreateCollegeForm(prev => ({ ...prev, customYears: e.target.value === '' ? '' : Number(e.target.value) }))}
                     className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -2877,8 +2889,8 @@ export function AdminUniversitiesTab({
                     type="number"
                     min={1}
                     max={4}
-                    value={createCollegeForm.customSemesters}
-                    onChange={(e) => setCreateCollegeForm(prev => ({ ...prev, customSemesters: Number(e.target.value) }))}
+                    value={createCollegeForm.customSemesters === '' ? '' : createCollegeForm.customSemesters}
+                    onChange={(e) => setCreateCollegeForm(prev => ({ ...prev, customSemesters: e.target.value === '' ? '' : Number(e.target.value) }))}
                     className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -2926,8 +2938,8 @@ export function AdminUniversitiesTab({
                   type="number"
                   min={1}
                   max={7}
-                  value={structureForm.totalYears}
-                  onChange={(e) => setStructureForm({ ...structureForm, totalYears: Number(e.target.value) })}
+                  value={structureForm.totalYears === '' ? '' : structureForm.totalYears}
+                  onChange={(e) => setStructureForm({ ...structureForm, totalYears: e.target.value === '' ? '' : Number(e.target.value) })}
                   className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold"
                 />
               </div>
@@ -2940,8 +2952,8 @@ export function AdminUniversitiesTab({
                   type="number"
                   min={1}
                   max={4}
-                  value={structureForm.semestersPerYear}
-                  onChange={(e) => setStructureForm({ ...structureForm, semestersPerYear: Number(e.target.value) })}
+                  value={structureForm.semestersPerYear === '' ? '' : structureForm.semestersPerYear}
+                  onChange={(e) => setStructureForm({ ...structureForm, semestersPerYear: e.target.value === '' ? '' : Number(e.target.value) })}
                   className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold"
                 />
               </div>
@@ -3171,8 +3183,8 @@ export function AdminUniversitiesTab({
                     type="number"
                     min={1}
                     max={12}
-                    value={subjectForm.creditHours}
-                    onChange={(e) => setSubjectForm({ ...subjectForm, creditHours: Number(e.target.value) })}
+                    value={subjectForm.creditHours === '' ? '' : subjectForm.creditHours}
+                    onChange={(e) => setSubjectForm({ ...subjectForm, creditHours: e.target.value === '' ? '' : Number(e.target.value) })}
                     className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -3185,8 +3197,8 @@ export function AdminUniversitiesTab({
                   </label>
                   <input
                     type="number"
-                    value={subjectForm.totalMarks}
-                    onChange={(e) => setSubjectForm({ ...subjectForm, totalMarks: Number(e.target.value) })}
+                    value={subjectForm.totalMarks === '' ? '' : subjectForm.totalMarks}
+                    onChange={(e) => setSubjectForm({ ...subjectForm, totalMarks: e.target.value === '' ? '' : Number(e.target.value) })}
                     className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -3198,8 +3210,8 @@ export function AdminUniversitiesTab({
                     type="number"
                     min={1}
                     max={selectedCollegeDb?.totalYears || 4}
-                    value={subjectForm.yearIndex}
-                    onChange={(e) => setSubjectForm({ ...subjectForm, yearIndex: Number(e.target.value) })}
+                    value={subjectForm.yearIndex === '' ? '' : subjectForm.yearIndex}
+                    onChange={(e) => setSubjectForm({ ...subjectForm, yearIndex: e.target.value === '' ? '' : Number(e.target.value) })}
                     className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -3211,8 +3223,8 @@ export function AdminUniversitiesTab({
                     type="number"
                     min={1}
                     max={selectedCollegeDb?.semestersPerYear || 2}
-                    value={subjectForm.semesterIndex}
-                    onChange={(e) => setSubjectForm({ ...subjectForm, semesterIndex: Number(e.target.value) })}
+                    value={subjectForm.semesterIndex === '' ? '' : subjectForm.semesterIndex}
+                    onChange={(e) => setSubjectForm({ ...subjectForm, semesterIndex: e.target.value === '' ? '' : Number(e.target.value) })}
                     className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -3258,10 +3270,10 @@ export function AdminUniversitiesTab({
                       />
                       <input
                         type="number"
-                        value={item.maxMarks}
+                        value={item.maxMarks === '' ? '' : item.maxMarks}
                         onChange={(e) => {
                           const updated = [...subjectForm.distributions];
-                          updated[idx].maxMarks = Number(e.target.value);
+                          updated[idx].maxMarks = e.target.value === '' ? ('' as any) : Number(e.target.value);
                           setSubjectForm({ ...subjectForm, distributions: updated });
                         }}
                         placeholder="20"
@@ -3600,8 +3612,8 @@ export function AdminUniversitiesTab({
                   </label>
                   <input
                     type="number"
-                    value={gradeForm.minPercentage}
-                    onChange={(e) => setGradeForm({ ...gradeForm, minPercentage: Number(e.target.value) })}
+                    value={gradeForm.minPercentage === '' ? '' : gradeForm.minPercentage}
+                    onChange={(e) => setGradeForm({ ...gradeForm, minPercentage: e.target.value === '' ? '' : Number(e.target.value) })}
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold"
                   />
                 </div>
@@ -3612,8 +3624,8 @@ export function AdminUniversitiesTab({
                   <input
                     type="number"
                     step="0.05"
-                    value={gradeForm.points}
-                    onChange={(e) => setGradeForm({ ...gradeForm, points: Number(e.target.value) })}
+                    value={gradeForm.points === '' ? '' : gradeForm.points}
+                    onChange={(e) => setGradeForm({ ...gradeForm, points: e.target.value === '' ? '' : Number(e.target.value) })}
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold"
                   />
                 </div>
@@ -3634,8 +3646,8 @@ export function AdminUniversitiesTab({
                   </select>
                   <input
                     type="number"
-                    value={gradeForm.maxPercentage}
-                    onChange={(e) => setGradeForm({ ...gradeForm, maxPercentage: Number(e.target.value) })}
+                    value={gradeForm.maxPercentage === '' ? '' : gradeForm.maxPercentage}
+                    onChange={(e) => setGradeForm({ ...gradeForm, maxPercentage: e.target.value === '' ? '' : Number(e.target.value) })}
                     className="w-1/2 px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold"
                   />
                 </div>

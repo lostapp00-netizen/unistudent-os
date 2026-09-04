@@ -8,7 +8,7 @@ import { UserFeedbackSection } from '../components/settings/UserFeedbackSection'
 import { defaultGraduationScale } from '../store/useAppStore';
 import { supabase } from '../lib/supabase';
 import { UniversityRestoreModal } from '../components/settings/UniversityRestoreModal';
-import { Lock, Eye, EyeOff, KeyRound, CheckCircle2, AlertTriangle, ShieldCheck, Building2, Sparkles, Unlink, Trash2, Loader2 } from 'lucide-react';
+import { Lock, Eye, EyeOff, KeyRound, CheckCircle2, AlertTriangle, ShieldCheck, Building2, Sparkles, Unlink, Trash2, Loader2, Save, AlertCircle } from 'lucide-react';
 
 export function Settings() {
   const { t, i18n } = useTranslation();
@@ -19,7 +19,23 @@ export function Settings() {
   const [isUnlinkModalOpen, setIsUnlinkModalOpen] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    name: string;
+    university: string;
+    college: string;
+    enrollmentDate: string;
+    totalYears: number | '';
+    semestersPerYear: number | '';
+    gradingScale: typeof settings.gradingScale;
+    semesters: typeof settings.semesters;
+    initialCumulativeGpa: number | null;
+    initialCompletedCreditHours: number | null;
+    setupMode: 'initial_gpa' | 'manual_subjects';
+    warningGradeLetter?: string;
+    warningGpaPoints?: number;
+    enableGraduationScale?: boolean;
+    graduationGradingScale?: typeof defaultGraduationScale;
+  }>({
     name: settings.name,
     university: settings.university,
     college: settings.college,
@@ -51,9 +67,15 @@ export function Settings() {
   }, [settings.university, settings.college, settings.totalYears, settings.semestersPerYear, settings.semesters]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const { name, value, type } = e.target;
+    if (type === 'number') {
+      setFormData(prev => ({ ...prev, [name]: value === '' ? '' : Number(value) }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
+
+  const [saving, setSaving] = useState(false);
 
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
@@ -71,70 +93,64 @@ export function Settings() {
         type: 'success',
         message: isAr ? 'تم إلغاء استخدام قاعدة البيانات وحذف المواد والدرايف وإعادة تعيين جدول التقديرات بنجاح.' : 'Database unlinked and curriculum reset successfully.'
       });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       setTimeout(() => setSaveStatus(null), 5000);
     } catch (e) {
-      console.error('Error unlinking database:', e);
-      alert(isAr ? 'حدث خطأ أثناء إلغاء قاعدة البيانات.' : 'Error unlinking database.');
+      setSaveStatus({
+        type: 'error',
+        message: isAr ? 'حدث خطأ أثناء إلغاء استخدام قاعدة البيانات.' : 'Error disconnecting database.'
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setUnlinking(false);
     }
   };
 
-  // Password Change State
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordStatus, setPasswordStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [passwordLoading, setPasswordLoading] = useState(false);
 
-  const handlePasswordChange = async (e: React.FormEvent) => {
+  const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordStatus(null);
 
-    const p1 = newPassword.trim();
-    const p2 = confirmPassword.trim();
-
-    if (!p1) {
+    if (newPassword.length < 6) {
       setPasswordStatus({
         type: 'error',
-        message: isAr ? 'يرجى إدخال كلمة المرور الجديدة.' : 'Please enter your new password.'
+        message: isAr ? 'كلمة المرور الجديدة يجب ألا تقل عن 6 أحرف.' : 'New password must be at least 6 characters.'
       });
       return;
     }
 
-    if (p1.length < 6) {
+    if (newPassword !== confirmPassword) {
       setPasswordStatus({
         type: 'error',
-        message: isAr ? 'يجب أن تتكون كلمة المرور من 6 أحرف/أرقام على الأقل.' : 'Password must be at least 6 characters.'
+        message: isAr ? 'كلمة المرور الجديدة وتأكيدها غير متطابقين.' : 'Passwords do not match.'
       });
       return;
     }
 
-    if (p1 !== p2) {
-      setPasswordStatus({
-        type: 'error',
-        message: isAr ? 'كلمتا المرور غير متطابقتين. يرجى التأكد من تطابق كلمة المرور وتأكيدها.' : 'Passwords do not match. Please verify.'
-      });
-      return;
-    }
-
+    setPasswordLoading(true);
     try {
-      setPasswordLoading(true);
-      const { data, error } = await supabase.auth.updateUser({ password: p1 });
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
 
       setPasswordStatus({
         type: 'success',
-        message: isAr ? 'تم تحديث كلمة المرور الخاصة بحسابك بنجاح!' : 'Your account password has been updated successfully!'
+        message: isAr ? 'تم تحديث كلمة المرور بنجاح!' : 'Password updated successfully!'
       });
+      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      setTimeout(() => setPasswordStatus(null), 5000);
     } catch (err: any) {
-      console.error('Password update error:', err);
       setPasswordStatus({
         type: 'error',
-        message: err.message || (isAr ? 'حدث خطأ أثناء تحديث كلمة المرور، يرجى المحاولة لاحقاً.' : 'Failed to update password. Please try again.')
+        message: err.message || (isAr ? 'حدث خطأ أثناء تحديث كلمة المرور.' : 'Failed to update password.')
       });
     } finally {
       setPasswordLoading(false);
@@ -143,14 +159,61 @@ export function Settings() {
 
   const handleSave = async () => {
     try {
+      setSaving(true);
       setSaveStatus(null);
+
+      if (formData.totalYears === '' || isNaN(Number(formData.totalYears)) || Number(formData.totalYears) < 1 || Number(formData.totalYears) > 10) {
+        setSaveStatus({
+          type: 'error',
+          message: isAr ? 'يرجى إدخال عدد السنوات الدراسية بشكل صحيح بين 1 و 10 (لا يمكن ترك الحقل فارغاً).' : 'Please enter valid total years between 1 and 10.'
+        });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setSaving(false);
+        return;
+      }
+
+      if (formData.semestersPerYear === '' || isNaN(Number(formData.semestersPerYear)) || Number(formData.semestersPerYear) < 1 || Number(formData.semestersPerYear) > 4) {
+        setSaveStatus({
+          type: 'error',
+          message: isAr ? 'يرجى إدخال عدد الفصول في السنة بشكل صحيح بين 1 و 4 (لا يمكن ترك الحقل فارغاً).' : 'Please enter valid semesters per year between 1 and 4.'
+        });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setSaving(false);
+        return;
+      }
+
+      if (formData.initialCumulativeGpa !== null && formData.initialCumulativeGpa !== ('' as any)) {
+        const gpaNum = Number(formData.initialCumulativeGpa);
+        if (isNaN(gpaNum) || gpaNum < 0 || gpaNum > 4) {
+          setSaveStatus({
+            type: 'error',
+            message: isAr ? 'المعدل التراكمي السابق يجب أن يكون رقماً بين 0 و 4.' : 'Initial cumulative GPA must be between 0 and 4.'
+          });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          setSaving(false);
+          return;
+        }
+      }
+
+      if (formData.initialCompletedCreditHours !== null && formData.initialCompletedCreditHours !== ('' as any)) {
+        const creditsNum = Number(formData.initialCompletedCreditHours);
+        if (isNaN(creditsNum) || creditsNum < 0) {
+          setSaveStatus({
+            type: 'error',
+            message: isAr ? 'الساعات المكتسبة السابقة يجب أن تكون رقماً أكبر أو يساوي 0.' : 'Initial completed credit hours must be >= 0.'
+          });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          setSaving(false);
+          return;
+        }
+      }
       
       const newSettings = {
         ...formData,
         totalYears: Number(formData.totalYears),
         semestersPerYear: Number(formData.semestersPerYear),
-        initialCumulativeGpa: formData.initialCumulativeGpa != null ? Number(formData.initialCumulativeGpa) : null,
-        initialCompletedCreditHours: formData.initialCompletedCreditHours != null ? Number(formData.initialCompletedCreditHours) : null,
+        initialCumulativeGpa: (formData.initialCumulativeGpa != null && formData.initialCumulativeGpa !== ('' as any)) ? Number(formData.initialCumulativeGpa) : null,
+        initialCompletedCreditHours: (formData.initialCompletedCreditHours != null && formData.initialCompletedCreditHours !== ('' as any)) ? Number(formData.initialCompletedCreditHours) : null,
       };
       
       const { userId } = useAppStore.getState();
@@ -160,9 +223,17 @@ export function Settings() {
       }
       
       updateSettings(newSettings);
-      setSaveStatus({ type: 'success', message: 'تم حفظ الإعدادات بنجاح!' });
+      setSaveStatus({
+        type: 'success',
+        message: isAr ? 'تم حفظ وتطبيق إعدادات الملف الشخصي بنجاح!' : 'Profile settings saved successfully!'
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setTimeout(() => setSaveStatus(null), 6000);
     } catch (err: any) {
       setSaveStatus({ type: 'error', message: 'حدث خطأ: ' + err.message });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -173,8 +244,24 @@ export function Settings() {
       </header>
       
       {saveStatus && (
-        <div className={`p-4 rounded-xl font-medium ${saveStatus.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-          {saveStatus.message}
+        <div className={`p-4 sm:p-5 rounded-2xl font-bold text-sm flex items-center gap-3 transition-all animate-in fade-in shadow-sm ${
+          saveStatus.type === 'success'
+            ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60'
+            : 'bg-rose-50 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60'
+        }`}>
+          {saveStatus.type === 'success' ? (
+            <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <CheckCircle2 size={20} />
+            </div>
+          ) : (
+            <div className="w-9 h-9 rounded-xl bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <AlertCircle size={20} />
+            </div>
+          )}
+          <div className="flex-1">
+            <p className="font-extrabold">{saveStatus.type === 'success' ? (isAr ? 'تم بنجاح!' : 'Success!') : (isAr ? 'تنبيه' : 'Alert')}</p>
+            <p className="text-xs font-medium opacity-90">{saveStatus.message}</p>
+          </div>
         </div>
       )}
       
@@ -390,7 +477,7 @@ export function Settings() {
           </div>
         )}
 
-        <form onSubmit={handlePasswordChange} className="space-y-4 max-w-xl">
+        <form onSubmit={handleUpdatePassword} className="space-y-4 max-w-xl">
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
               <span>{isAr ? 'كلمة المرور الجديدة' : 'New Password'}</span>
@@ -469,12 +556,29 @@ export function Settings() {
         </form>
       </section>
 
-      <div className="flex justify-end">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 sm:p-5 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+        <div className="flex items-center gap-2">
+          {saveStatus?.type === 'success' && (
+            <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-emerald-600 dark:text-emerald-400 animate-in fade-in">
+              <CheckCircle2 size={18} />
+              <span>{isAr ? 'تم حفظ وتطبيق التعديلات بنجاح' : 'Changes saved successfully'}</span>
+            </div>
+          )}
+          {saveStatus?.type === 'error' && (
+            <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-rose-600 dark:text-rose-400 animate-in fade-in">
+              <AlertCircle size={18} />
+              <span>{saveStatus.message}</span>
+            </div>
+          )}
+        </div>
+
         <button 
           onClick={handleSave}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-xl shadow-sm transition-colors cursor-pointer"
+          disabled={saving}
+          className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold px-7 py-3 rounded-2xl shadow-md shadow-indigo-500/20 transition-all cursor-pointer flex items-center justify-center gap-2"
         >
-          {isAr ? 'حفظ إعدادات الملف الشخصي' : 'Save Profile Settings'}
+          {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+          <span>{saving ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ إعدادات الملف الشخصي' : 'Save Profile Settings')}</span>
         </button>
       </div>
 

@@ -21,7 +21,14 @@ export function Academic() {
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    code: string;
+    name: string;
+    creditHours: number | '';
+    totalMarks: number | '';
+    yearIndex: number;
+    semesterIndex: number;
+  }>({
     code: '',
     name: '',
     creditHours: 3,
@@ -63,7 +70,18 @@ export function Academic() {
   };
 
   const handleSaveSubject = () => {
-    if (!formData.name.trim() || !formData.code.trim()) return;
+    if (!formData.name.trim() || !formData.code.trim()) {
+      alert(isAr ? 'يرجى إدخال اسم المادة وكود المادة.' : 'Please enter subject name and code.');
+      return;
+    }
+    if (formData.creditHours === '' || isNaN(Number(formData.creditHours)) || Number(formData.creditHours) <= 0) {
+      alert(isAr ? 'يرجى إدخال عدد الساعات المعتمدة بشكل صحيح (أكبر من 0).' : 'Please enter valid credit hours.');
+      return;
+    }
+    if (formData.totalMarks === '' || isNaN(Number(formData.totalMarks)) || Number(formData.totalMarks) <= 0) {
+      alert(isAr ? 'يرجى إدخال الدرجة الكلية للمادة بشكل صحيح (أكبر من 0).' : 'Please enter valid total marks.');
+      return;
+    }
     
     if (editingSubject) {
       updateSubject(editingSubject.id, {
@@ -317,8 +335,8 @@ export function Academic() {
                   <input 
                     type="number" 
                     min="1" 
-                    value={formData.creditHours} 
-                    onChange={e => setFormData({...formData, creditHours: Number(e.target.value)})} 
+                    value={formData.creditHours === '' ? '' : formData.creditHours} 
+                    onChange={e => setFormData({...formData, creditHours: e.target.value === '' ? '' : Number(e.target.value)})} 
                     className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
                   />
                 </div>
@@ -327,8 +345,8 @@ export function Academic() {
                   <input 
                     type="number" 
                     min="1" 
-                    value={formData.totalMarks} 
-                    onChange={e => setFormData({...formData, totalMarks: Number(e.target.value)})} 
+                    value={formData.totalMarks === '' ? '' : formData.totalMarks} 
+                    onChange={e => setFormData({...formData, totalMarks: e.target.value === '' ? '' : Number(e.target.value)})} 
                     className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
                   />
                 </div>

@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, DatabaseBackup, EmailBackupConfig, UniversityDatabase, UniversityPendingUpdate } from '../types';
+import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, DatabaseBackup, EmailBackupConfig, UniversityDatabase, UniversityPendingUpdate, GradeRule, GradeDistributionItem } from '../types';
 
 export const db = {
   // --- Settings ---
@@ -36,6 +36,10 @@ export const db = {
     if (settings.setupMode !== undefined) payload.setup_mode = settings.setupMode;
     if (settings.warningGradeLetter !== undefined) payload.warning_grade_letter = settings.warningGradeLetter;
     if (settings.warningGpaPoints !== undefined) payload.warning_gpa_points = settings.warningGpaPoints;
+    if ('universityDatabaseId' in settings) payload.university_database_id = settings.universityDatabaseId || null;
+    if ('deletedSubjectNames' in settings) payload.deleted_subject_names = settings.deletedSubjectNames || [];
+    if ('enableGraduationScale' in settings) payload.enable_graduation_scale = settings.enableGraduationScale;
+    if ('graduationGradingScale' in settings) payload.graduation_grading_scale = settings.graduationGradingScale;
 
     try {
       const existingRaw = localStorage.getItem(`unistudent_settings_${userId}`);
@@ -43,8 +47,10 @@ export const db = {
       localStorage.setItem(`unistudent_settings_${userId}`, JSON.stringify({
         ...existingObj,
         ...settings,
-        enableGraduationScale: settings.enableGraduationScale !== undefined ? settings.enableGraduationScale : existingObj.enableGraduationScale,
-        graduationGradingScale: settings.graduationGradingScale !== undefined ? settings.graduationGradingScale : existingObj.graduationGradingScale
+        universityDatabaseId: 'universityDatabaseId' in settings ? (settings.universityDatabaseId || null) : existingObj.universityDatabaseId,
+        deletedSubjectNames: 'deletedSubjectNames' in settings ? (settings.deletedSubjectNames || []) : (existingObj.deletedSubjectNames || []),
+        enableGraduationScale: 'enableGraduationScale' in settings ? settings.enableGraduationScale : existingObj.enableGraduationScale,
+        graduationGradingScale: 'graduationGradingScale' in settings ? settings.graduationGradingScale : existingObj.graduationGradingScale
       }));
     } catch {}
 
@@ -58,6 +64,10 @@ export const db = {
         delete payload.warning_grade_letter;
         delete payload.warning_gpa_points;
         delete payload.email;
+        delete payload.university_database_id;
+        delete payload.deleted_subject_names;
+        delete payload.enable_graduation_scale;
+        delete payload.graduation_grading_scale;
         await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
       } else {
         console.error('Error upserting settings:', error);
@@ -650,7 +660,11 @@ export const db = {
     try {
       const { data, error } = await supabase.from('university_databases').select('*').order('created_at', { ascending: false });
       if (!error && data && data.length > 0) {
-        return data.map(d => mapUniversityDatabaseFromDB(d));
+        const mapped = data.map(d => mapUniversityDatabaseFromDB(d));
+        try {
+          localStorage.setItem('unistudent_university_databases', JSON.stringify(mapped));
+        } catch {}
+        return mapped;
       }
     } catch (e) {
       console.warn('Supabase getUniversityDatabases warning:', e);
@@ -966,6 +980,10 @@ export const db = {
       const udb = action.updatedDb || (await this.getUniversityDatabase(universityDbId));
       if (!udb) return;
 
+      const norm = (str?: string) => (str || '').trim().toLowerCase();
+      const matchUni = (sUni?: string) => norm(sUni) && (norm(sUni) === norm(udb.universityNameAr) || norm(sUni) === norm(udb.universityNameEn));
+      const matchCollege = (sCol?: string) => norm(sCol) && (norm(sCol) === norm(udb.collegeNameAr) || norm(sCol) === norm(udb.collegeNameEn));
+
       // Find all students in Supabase settings or localStorage
       const studentUserIds: string[] = [];
       try {
@@ -974,8 +992,7 @@ export const db = {
           dbSettings.forEach(s => {
             if (
               s.university_database_id === universityDbId ||
-              (s.university === udb.universityNameAr && s.college === udb.collegeNameAr) ||
-              (s.university === udb.universityNameEn && s.college === udb.collegeNameEn)
+              (matchUni(s.university) && matchCollege(s.college))
             ) {
               if (s.user_id && !studentUserIds.includes(s.user_id)) {
                 studentUserIds.push(s.user_id);
@@ -994,8 +1011,7 @@ export const db = {
             const st = JSON.parse(localStorage.getItem(key) || '{}');
             if (
               st.universityDatabaseId === universityDbId ||
-              (st.university === udb.universityNameAr && st.college === udb.collegeNameAr) ||
-              (st.university === udb.universityNameEn && st.college === udb.collegeNameEn)
+              (matchUni(st.university) && matchCollege(st.college))
             ) {
               if (!studentUserIds.includes(uid)) studentUserIds.push(uid);
             }
@@ -1009,8 +1025,20 @@ export const db = {
           if (action.type === 'update_subject' && action.subject) {
             const upd = action.subject;
             const userSubjs = await this.getSubjects(uid);
-            const target = userSubjs.find(s => s.id === upd.id || s.name.trim().toLowerCase() === upd.name.trim().toLowerCase());
+            const target = userSubjs.find(s => s.id === upd.id || norm(s.name) === norm(upd.name));
             if (target) {
+              const curDistsByName = new Map<string, GradeDistributionItem>((target.distributions || []).map(d => [norm(d.name), d]));
+              const syncedDists = (upd.distributions || []).map(ud => {
+                const prev = curDistsByName.get(norm(ud.name));
+                return {
+                  id: prev?.id || ud.id || (Math.random() + 1).toString(36).substring(7),
+                  name: ud.name,
+                  maxMarks: Number(ud.maxMarks || 0),
+                  achievedMarks: prev ? prev.achievedMarks : null,
+                  status: prev ? prev.status : ('current' as const)
+                };
+              });
+
               await this.updateSubject(uid, target.id, {
                 name: upd.name,
                 code: upd.code,
@@ -1018,13 +1046,13 @@ export const db = {
                 totalMarks: upd.totalMarks,
                 yearIndex: upd.yearIndex,
                 semesterIndex: upd.semesterIndex,
-                distributions: upd.distributions
+                distributions: syncedDists.length > 0 ? syncedDists : target.distributions
               });
             }
           } else if (action.type === 'add_subject' && action.subject) {
             const newS = action.subject;
             const userSubjs = await this.getSubjects(uid);
-            const exists = userSubjs.some(s => s.id === newS.id || s.name.trim().toLowerCase() === newS.name.trim().toLowerCase());
+            const exists = userSubjs.some(s => s.id === newS.id || norm(s.name) === norm(newS.name));
             if (!exists) {
               const createdSubj: Subject = {
                 ...newS,
@@ -1039,7 +1067,7 @@ export const db = {
             const targetId = action.subjectId || action.subject?.id;
             const subName = action.subject?.name;
             const userSubjs = await this.getSubjects(uid);
-            const target = userSubjs.find(s => s.id === targetId || (subName && s.name.trim().toLowerCase() === subName.trim().toLowerCase()));
+            const target = userSubjs.find(s => s.id === targetId || (subName && norm(s.name) === norm(subName)));
             if (target) {
               await this.deleteSubject(uid, target.id);
             }
@@ -1051,22 +1079,28 @@ export const db = {
             
             // Sync/update existing subjects
             for (const tSub of templateSubjs) {
-              const matched = userSubjs.find(s => s.id === tSub.id || s.name.trim().toLowerCase() === tSub.name.trim().toLowerCase());
+              const matched = userSubjs.find(s => s.id === tSub.id || norm(s.name) === norm(tSub.name));
               if (matched) {
-                if (
-                  matched.yearIndex !== tSub.yearIndex ||
-                  matched.semesterIndex !== tSub.semesterIndex ||
-                  matched.creditHours !== tSub.creditHours ||
-                  matched.totalMarks !== tSub.totalMarks
-                ) {
-                  await this.updateSubject(uid, matched.id, {
-                    yearIndex: tSub.yearIndex,
-                    semesterIndex: tSub.semesterIndex,
-                    creditHours: tSub.creditHours,
-                    totalMarks: tSub.totalMarks,
-                    code: tSub.code || matched.code
-                  });
-                }
+                const curDistsByName = new Map<string, GradeDistributionItem>((matched.distributions || []).map(d => [norm(d.name), d]));
+                const syncedDists = (tSub.distributions || []).map(td => {
+                  const prev = curDistsByName.get(norm(td.name));
+                  return {
+                    id: prev?.id || td.id || (Math.random() + 1).toString(36).substring(7),
+                    name: td.name,
+                    maxMarks: Number(td.maxMarks || 0),
+                    achievedMarks: prev ? prev.achievedMarks : null,
+                    status: prev ? prev.status : ('current' as const)
+                  };
+                });
+
+                await this.updateSubject(uid, matched.id, {
+                  yearIndex: tSub.yearIndex,
+                  semesterIndex: tSub.semesterIndex,
+                  creditHours: tSub.creditHours,
+                  totalMarks: tSub.totalMarks,
+                  code: tSub.code || matched.code,
+                  distributions: syncedDists.length > 0 ? syncedDists : matched.distributions
+                });
               } else {
                 const createdSubj: Subject = {
                   ...tSub,
@@ -1079,6 +1113,12 @@ export const db = {
               }
             }
           }
+
+          // Send in-app notification to student
+          this.sendStudentNotification(uid, {
+            title: 'تحديث معتمد في المقررات الدراسية',
+            message: `تم تحديث خطة ومقررات ${udb.collegeNameAr || udb.collegeNameEn || 'الكلية'} لحسابك تلقائياً وفقاً لآخر التحديثات المعتمدة.`
+          }).catch(() => {});
         } catch (stErr) {
           console.warn(`Sync failed for student ${uid}:`, stErr);
         }
@@ -1660,7 +1700,9 @@ function mapSettingsFromDB(row: any): UserSettings {
     warningGradeLetter: row.warning_grade_letter !== undefined ? row.warning_grade_letter : (localExtra.warningGradeLetter ?? 'C'),
     warningGpaPoints: row.warning_gpa_points !== undefined ? Number(row.warning_gpa_points) : (localExtra.warningGpaPoints !== undefined ? Number(localExtra.warningGpaPoints) : 2.0),
     enableGraduationScale: row.enable_graduation_scale !== undefined ? row.enable_graduation_scale : (localExtra.enableGraduationScale ?? false),
-    graduationGradingScale: row.graduation_grading_scale || localExtra.graduationGradingScale || []
+    graduationGradingScale: row.graduation_grading_scale || localExtra.graduationGradingScale || [],
+    universityDatabaseId: row.university_database_id !== undefined ? (row.university_database_id || undefined) : (localExtra.universityDatabaseId || undefined),
+    deletedSubjectNames: row.deleted_subject_names || localExtra.deletedSubjectNames || []
   };
 }
 

@@ -84,39 +84,51 @@ export function App() {
 
   // Real-time & periodic synchronization for students linked to a university database
   useEffect(() => {
-    if (!session?.user?.id || !settings.universityDatabaseId) return;
+    const hasUniLinked = !!settings.universityDatabaseId || (!!settings.university && settings.university !== 'غير محدد' && !!settings.college && settings.college !== 'غير محدد');
+    if (!session?.user?.id || !hasUniLinked) return;
 
-    const handleFocus = () => {
+    const triggerSync = () => {
       useAppStore.getState().syncWithUniversityDatabase();
     };
-    window.addEventListener('focus', handleFocus);
+
+    window.addEventListener('focus', triggerSync);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        triggerSync();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // Initial check
+    triggerSync();
 
     const interval = setInterval(() => {
-      useAppStore.getState().syncWithUniversityDatabase();
+      triggerSync();
     }, 15000);
 
+    const channelId = settings.universityDatabaseId || 'all_unis';
     const channel = supabase
-      .channel(`university_sync_${settings.universityDatabaseId}`)
+      .channel(`university_sync_${channelId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'university_databases',
-          filter: `id=eq.${settings.universityDatabaseId}`
+          table: 'university_databases'
         },
         () => {
-          useAppStore.getState().syncWithUniversityDatabase();
+          triggerSync();
         }
       )
       .subscribe();
 
     return () => {
-      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('focus', triggerSync);
+      document.removeEventListener('visibilitychange', handleVisibility);
       clearInterval(interval);
       supabase.removeChannel(channel);
     };
-  }, [session?.user?.id, settings.universityDatabaseId]);
+  }, [session?.user?.id, settings.universityDatabaseId, settings.university, settings.college]);
 
   const isAdminPath = window.location.pathname.startsWith('/admin');
 

@@ -152,7 +152,26 @@ function GraduationScaleRow({
   const [tempData, setTempData] = useState({ ...rule });
 
   const handleSave = () => {
-    onUpdate(rule.id, tempData);
+    if (
+      tempData.minPercentage === ('' as any) ||
+      tempData.maxPercentage === ('' as any) ||
+      tempData.minGpa === ('' as any) ||
+      tempData.maxGpa === ('' as any) ||
+      isNaN(Number(tempData.minPercentage)) ||
+      isNaN(Number(tempData.maxPercentage)) ||
+      isNaN(Number(tempData.minGpa)) ||
+      isNaN(Number(tempData.maxGpa))
+    ) {
+      alert('يرجى إدخال جميع النسب والمعدلات بالأرقام بشكل صحيح (لا يمكن ترك الخانة فارغة).');
+      return;
+    }
+    onUpdate(rule.id, {
+      ...tempData,
+      minPercentage: Number(tempData.minPercentage),
+      maxPercentage: Number(tempData.maxPercentage),
+      minGpa: Number(tempData.minGpa),
+      maxGpa: Number(tempData.maxGpa)
+    });
     setIsEditing(false);
   };
 
@@ -192,13 +211,13 @@ function GraduationScaleRow({
           <div className="flex items-center gap-1">
             <input
               type="number"
-              value={tempData.minPercentage}
-              onChange={(e) => setTempData({ ...tempData, minPercentage: Number(e.target.value) })}
+              value={tempData.minPercentage === ('' as any) ? '' : tempData.minPercentage}
+              onChange={(e) => setTempData({ ...tempData, minPercentage: e.target.value === '' ? ('' as any) : Number(e.target.value) })}
               className="w-12 px-1.5 py-1 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 outline-none"
               placeholder="من"
             />
             <select
-              value={tempData.maxOperator || (tempData.maxPercentage >= 100 ? '<=' : '<')}
+              value={tempData.maxOperator || (Number(tempData.maxPercentage) >= 100 ? '<=' : '<')}
               onChange={(e) => setTempData({ ...tempData, maxOperator: e.target.value as '<' | '<=' })}
               className="text-[11px] px-1 py-1 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 outline-none font-bold text-purple-600"
             >
@@ -207,8 +226,8 @@ function GraduationScaleRow({
             </select>
             <input
               type="number"
-              value={tempData.maxPercentage}
-              onChange={(e) => setTempData({ ...tempData, maxPercentage: Number(e.target.value) })}
+              value={tempData.maxPercentage === ('' as any) ? '' : tempData.maxPercentage}
+              onChange={(e) => setTempData({ ...tempData, maxPercentage: e.target.value === '' ? ('' as any) : Number(e.target.value) })}
               className="w-12 px-1.5 py-1 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 outline-none"
               placeholder="إلى"
             />
@@ -219,13 +238,13 @@ function GraduationScaleRow({
             <input
               type="number"
               step="0.01"
-              value={tempData.minGpa !== undefined ? tempData.minGpa : 0}
-              onChange={(e) => setTempData({ ...tempData, minGpa: Number(e.target.value) })}
+              value={tempData.minGpa === ('' as any) ? '' : (tempData.minGpa !== undefined ? tempData.minGpa : '')}
+              onChange={(e) => setTempData({ ...tempData, minGpa: e.target.value === '' ? ('' as any) : Number(e.target.value) })}
               className="w-14 px-1.5 py-1 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 outline-none font-bold"
               placeholder="Min GPA"
             />
             <select
-              value={tempData.gpaOperator || (tempData.maxGpa && tempData.maxGpa >= 4 ? '<=' : '<')}
+              value={tempData.gpaOperator || (Number(tempData.maxGpa) >= 4 ? '<=' : '<')}
               onChange={(e) => setTempData({ ...tempData, gpaOperator: e.target.value as '<' | '<=' })}
               className="text-[11px] px-1 py-1 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 outline-none font-bold text-purple-600"
             >
@@ -235,8 +254,8 @@ function GraduationScaleRow({
             <input
               type="number"
               step="0.01"
-              value={tempData.maxGpa !== undefined ? tempData.maxGpa : 4.0}
-              onChange={(e) => setTempData({ ...tempData, maxGpa: Number(e.target.value) })}
+              value={tempData.maxGpa === ('' as any) ? '' : (tempData.maxGpa !== undefined ? tempData.maxGpa : '')}
+              onChange={(e) => setTempData({ ...tempData, maxGpa: e.target.value === '' ? ('' as any) : Number(e.target.value) })}
               className="w-14 px-1.5 py-1 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 outline-none font-bold"
               placeholder="Max GPA"
             />

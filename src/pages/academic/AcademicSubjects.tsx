@@ -21,7 +21,14 @@ export function AcademicSubjects() {
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    code: string;
+    name: string;
+    creditHours: number | '';
+    totalMarks: number | '';
+    yearIndex: number;
+    semesterIndex: number;
+  }>({
     code: '',
     name: '',
     creditHours: 3,
@@ -32,6 +39,7 @@ export function AcademicSubjects() {
 
   const handleOpenAdd = () => {
     setEditingSubject(null);
+    setFormError(null);
     setFormData({
       code: '',
       name: '',
@@ -46,6 +54,7 @@ export function AcademicSubjects() {
   const handleOpenEdit = (e: React.MouseEvent, subject: Subject) => {
     e.stopPropagation();
     setEditingSubject(subject);
+    setFormError(null);
     setFormData({
       code: subject.code,
       name: subject.name,
@@ -70,13 +79,21 @@ export function AcademicSubjects() {
       setFormError(settings.language === 'ar' ? 'يرجى إدخال اسم المادة الدراسية.' : 'Please enter subject name.');
       return;
     }
+    if (formData.creditHours === '' || isNaN(Number(formData.creditHours)) || Number(formData.creditHours) <= 0) {
+      setFormError(settings.language === 'ar' ? 'يرجى إدخال عدد الساعات المعتمدة بشكل صحيح (أكبر من 0).' : 'Please enter valid credit hours (greater than 0).');
+      return;
+    }
+    if (formData.totalMarks === '' || isNaN(Number(formData.totalMarks)) || Number(formData.totalMarks) <= 0) {
+      setFormError(settings.language === 'ar' ? 'يرجى إدخال الدرجة الكلية للمادة بشكل صحيح (أكبر من 0).' : 'Please enter valid total marks (greater than 0).');
+      return;
+    }
 
     if (editingSubject) {
       updateSubject(editingSubject.id, {
         name: formData.name.trim(),
         code: formData.code.trim(),
-        creditHours: Number(formData.creditHours) || 3,
-        totalMarks: Number(formData.totalMarks) || 100,
+        creditHours: Number(formData.creditHours),
+        totalMarks: Number(formData.totalMarks),
         yearIndex: Number(formData.yearIndex),
         semesterIndex: Number(formData.semesterIndex)
       });
@@ -87,8 +104,8 @@ export function AcademicSubjects() {
         id: newSubId,
         name: formData.name.trim(),
         code: formData.code.trim(),
-        creditHours: Number(formData.creditHours) || 3,
-        totalMarks: Number(formData.totalMarks) || 100,
+        creditHours: Number(formData.creditHours),
+        totalMarks: Number(formData.totalMarks),
         yearIndex: Number(formData.yearIndex),
         semesterIndex: Number(formData.semesterIndex),
         status: 'current',
@@ -289,8 +306,11 @@ export function AcademicSubjects() {
                   <input 
                     type="number" 
                     min="1" 
-                    value={formData.creditHours} 
-                    onChange={e => setFormData({...formData, creditHours: Number(e.target.value)})} 
+                    value={formData.creditHours === '' ? '' : formData.creditHours} 
+                    onChange={e => {
+                      if (formError) setFormError(null);
+                      setFormData({...formData, creditHours: e.target.value === '' ? '' : Number(e.target.value)});
+                    }} 
                     className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
                   />
                 </div>
@@ -299,8 +319,11 @@ export function AcademicSubjects() {
                   <input 
                     type="number" 
                     min="1" 
-                    value={formData.totalMarks} 
-                    onChange={e => setFormData({...formData, totalMarks: Number(e.target.value)})} 
+                    value={formData.totalMarks === '' ? '' : formData.totalMarks} 
+                    onChange={e => {
+                      if (formError) setFormError(null);
+                      setFormData({...formData, totalMarks: e.target.value === '' ? '' : Number(e.target.value)});
+                    }} 
                     className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
                   />
                 </div>

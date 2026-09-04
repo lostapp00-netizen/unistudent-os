@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Edit2, Save, Trash2, CheckCircle, Lock } from 'lucide-react';
+import { Edit2, Save, Trash2, CheckCircle, Lock, X } from 'lucide-react';
 import { GradeDistributionItem } from '../../types';
 
 interface Props {
@@ -24,11 +24,7 @@ export function DistributionItemCard({ distribution, isSubjectFinished, onUpdate
 
   const handleSave = (status: 'current' | 'final') => {
     if (tempMarks.trim() === '') {
-      onUpdate(distribution.id, {
-        achievedMarks: null,
-        status
-      });
-      setIsEditing(false);
+      alert(isRtl ? 'يرجى إدخال الدرجة أولاً قبل الحفظ (لا يمكن ترك الخانة فارغة).' : 'Please enter marks before saving (cannot be empty).');
       return;
     }
 
@@ -42,6 +38,11 @@ export function DistributionItemCard({ distribution, isSubjectFinished, onUpdate
       achievedMarks: parsed,
       status
     });
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setTempMarks(distribution.achievedMarks !== null && distribution.achievedMarks !== undefined ? String(distribution.achievedMarks) : '');
     setIsEditing(false);
   };
 
@@ -85,6 +86,13 @@ export function DistributionItemCard({ distribution, isSubjectFinished, onUpdate
               >
                 <CheckCircle className="w-4 h-4" />
                 <span className="hidden sm:inline">{isRtl ? 'نهائي' : 'Final'}</span>
+              </button>
+              <button
+                onClick={handleCancel}
+                title={isRtl ? 'إلغاء' : 'Cancel'}
+                className="bg-zinc-700/40 hover:bg-zinc-700 text-zinc-400 p-2 rounded-xl transition-colors flex items-center gap-1 text-xs font-bold"
+              >
+                <X className="w-4 h-4" />
               </button>
             </div>
           )}
