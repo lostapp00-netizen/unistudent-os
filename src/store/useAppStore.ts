@@ -103,6 +103,7 @@ export interface AppState {
   
   userEmail: string | null;
   initialize: (userId: string, email?: string) => Promise<void>;
+  refreshSubjects: () => Promise<void>;
   clearData: () => void;
   
   updateSettings: (settings: Partial<UserSettings>) => void;
@@ -290,6 +291,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         userEmail: email || null,
         isInitialized: true
       });
+    }
+  },
+
+  // Refresh just the academic catalogue. This is used for restored shared
+  // databases so approved source changes reach subscribers without a logout.
+  refreshSubjects: async () => {
+    const { userId } = get();
+    if (!userId) return;
+
+    try {
+      const subjects = await db.getSubjects(userId);
+      set({ subjects: subjects || [] });
+    } catch (err) {
+      console.warn('Error refreshing shared subjects:', err);
     }
   },
 

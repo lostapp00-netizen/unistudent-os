@@ -1452,6 +1452,60 @@ export const db = {
     const { settings = [], subjects = [], tasks = [], notes = [], appointments = [], schedule_items = [], groups = [], drive_files = [], suggestions = [] } = backup.data;
     const errors: string[] = [];
 
+    /*
+     * A student restoring another student's academic database must not receive a
+     * detached snapshot.  The old implementation restored rows with the source
+     * user's id, while every student screen queries by the current user's id.
+     * That made the restored data invisible and prevented later approved changes
+     * from reaching the restoring student.
+     *
+     * For a single-owner backup restored by a student, store a subscription to
+     * that source instead. `get_visible_subjects_for_current_user` then supplies
+     * the source's current approved subjects on every refresh. Admin imports keep
+     * their existing full-database behaviour.
+     */
+    const sourceOwnerIds = new Set<string>();
+    [settings, subjects].forEach(rows => {
+      rows.forEach((row: any) => {
+        if (row?.user_id) sourceOwnerIds.add(row.user_id);
+      });
+    });
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const restoringUserId = sessionData.session?.user?.id;
+      const isAdminRestore = sessionStorage.getItem('unistudent_admin_auth') === 'true';
+      const sourceUserId = sourceOwnerIds.size === 1 ? Array.from(sourceOwnerIds)[0] : null;
+
+      if (restoringUserId && sourceUserId && sourceUserId !== restoringUserId && !isAdminRestore) {
+        const { error: linkError } = await supabase
+          .from('database_restore_links')
+          .upsert(
+            { subscriber_id: restoringUserId, source_owner_id: sourceUserId },
+            { onConflict: 'subscriber_id' }
+          );
+
+        if (linkError) throw linkError;
+
+        // A stale local cache must never mask a newly linked live database.
+        try {
+          localStorage.removeItem(`unistudent_subjects_${restoringUserId}`);
+        } catch {}
+
+        return {
+          success: true,
+          message: 'تم ربط النسخة المستعادة بالمصدر المعتمد. ستظهر أي مواد أو تحديثات معتمدة تلقائياً.',
+          details: {
+            linkedToSource: true,
+            sourceUserId,
+            restoredCount: { subjects: subjects.length }
+          }
+        };
+      }
+    } catch (err: any) {
+      errors.push(`Shared database link: ${err.message || String(err)}`);
+    }
+
     // 1. Settings
     if (settings.length > 0) {
       try {

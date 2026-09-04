@@ -194,4 +194,3 @@ export function App() {
     </BrowserRouter>
   );
 }
-
