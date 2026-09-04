@@ -469,11 +469,11 @@ export function UserFeedbackSection() {
         </div>
 
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-2">
-          <div className="flex items-center gap-2 text-xs text-zinc-500">
-            <span>{isAr ? 'المرسل:' : 'Sender:'}</span>
-            <span className="font-bold text-zinc-900 dark:text-zinc-100">{currentName}</span>
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-500 max-w-full min-w-0">
+            <span className="shrink-0">{isAr ? 'المرسل:' : 'Sender:'}</span>
+            <span className="font-bold text-zinc-900 dark:text-zinc-100 shrink-0">{currentName}</span>
             {currentEmail && (
-              <span className="text-[11px] text-purple-600 dark:text-purple-400 font-medium">({currentEmail})</span>
+              <span className="text-[11px] text-purple-600 dark:text-purple-400 font-medium break-all truncate max-w-full">({currentEmail})</span>
             )}
           </div>
 

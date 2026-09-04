@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, DatabaseBackup, EmailBackupConfig } from '../types';
+import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, DatabaseBackup, EmailBackupConfig, UniversityDatabase, UniversityPendingUpdate, GradeRule, GradeDistributionItem } from '../types';
+import { normalizeSubjectName } from './academicTranslation';
 
 export const db = {
   // --- Settings ---
@@ -10,19 +11,17 @@ export const db = {
     return mapSettingsFromDB(data);
   },
   async upsertSettings(userId: string, settings: Partial<UserSettings>) {
-    const payload: any = {
-      user_id: userId,
-      name: settings.name,
-      university: settings.university,
-      college: settings.college,
-      enrollment_date: settings.enrollmentDate,
-      total_years: settings.totalYears,
-      semesters_per_year: settings.semestersPerYear,
-      theme: settings.theme,
-      language: settings.language,
-      grading_scale: settings.gradingScale,
-      semesters: settings.semesters
-    };
+    const payload: any = { user_id: userId };
+    if (settings.name !== undefined) payload.name = settings.name;
+    if (settings.university !== undefined) payload.university = settings.university;
+    if (settings.college !== undefined) payload.college = settings.college;
+    if (settings.enrollmentDate !== undefined) payload.enrollment_date = settings.enrollmentDate;
+    if (settings.totalYears !== undefined) payload.total_years = settings.totalYears;
+    if (settings.semestersPerYear !== undefined) payload.semesters_per_year = settings.semestersPerYear;
+    if (settings.theme !== undefined) payload.theme = settings.theme;
+    if (settings.language !== undefined) payload.language = settings.language;
+    if (settings.gradingScale !== undefined) payload.grading_scale = settings.gradingScale;
+    if (settings.semesters !== undefined) payload.semesters = settings.semesters;
 
     if (settings.email !== undefined && settings.email !== null) {
       payload.email = settings.email;
@@ -36,6 +35,10 @@ export const db = {
     if (settings.setupMode !== undefined) payload.setup_mode = settings.setupMode;
     if (settings.warningGradeLetter !== undefined) payload.warning_grade_letter = settings.warningGradeLetter;
     if (settings.warningGpaPoints !== undefined) payload.warning_gpa_points = settings.warningGpaPoints;
+    if ('universityDatabaseId' in settings) payload.university_database_id = settings.universityDatabaseId || null;
+    if ('deletedSubjectNames' in settings) payload.deleted_subject_names = settings.deletedSubjectNames || [];
+    if ('enableGraduationScale' in settings) payload.enable_graduation_scale = settings.enableGraduationScale;
+    if ('graduationGradingScale' in settings) payload.graduation_grading_scale = settings.graduationGradingScale;
 
     try {
       const existingRaw = localStorage.getItem(`unistudent_settings_${userId}`);
@@ -43,8 +46,10 @@ export const db = {
       localStorage.setItem(`unistudent_settings_${userId}`, JSON.stringify({
         ...existingObj,
         ...settings,
-        enableGraduationScale: settings.enableGraduationScale !== undefined ? settings.enableGraduationScale : existingObj.enableGraduationScale,
-        graduationGradingScale: settings.graduationGradingScale !== undefined ? settings.graduationGradingScale : existingObj.graduationGradingScale
+        universityDatabaseId: 'universityDatabaseId' in settings ? (settings.universityDatabaseId || null) : existingObj.universityDatabaseId,
+        deletedSubjectNames: 'deletedSubjectNames' in settings ? (settings.deletedSubjectNames || []) : (existingObj.deletedSubjectNames || []),
+        enableGraduationScale: 'enableGraduationScale' in settings ? settings.enableGraduationScale : existingObj.enableGraduationScale,
+        graduationGradingScale: 'graduationGradingScale' in settings ? settings.graduationGradingScale : existingObj.graduationGradingScale
       }));
     } catch {}
 
@@ -58,6 +63,10 @@ export const db = {
         delete payload.warning_grade_letter;
         delete payload.warning_gpa_points;
         delete payload.email;
+        delete payload.university_database_id;
+        delete payload.deleted_subject_names;
+        delete payload.enable_graduation_scale;
+        delete payload.graduation_grading_scale;
         await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
       } else {
         console.error('Error upserting settings:', error);
@@ -68,7 +77,7 @@ export const db = {
   // --- Subjects ---
   async getSubjects(userId: string): Promise<Subject[]> {
     let dbSubjects: Subject[] = [];
-    let readFromLiveSharedView = false;
+    let fetchedFromSupabase = false;
     try {
       // A restored academic database stays linked to its original owner.  This is
       // intentionally a live read, rather than a one-time copy, so an approved
@@ -83,38 +92,29 @@ export const db = {
         ? await supabase.from('subjects').select('*').eq('user_id', userId)
         : { data: sharedData, error: null };
 
-      readFromLiveSharedView = !sharedError;
       if (error) console.error('Error fetching subjects:', error);
-      if (data && data.length > 0) {
+      if (!error && data) {
         dbSubjects = data.map(mapSubjectFromDB);
+        fetchedFromSupabase = true;
+      } else if (error) {
+        console.error('Error fetching subjects from Supabase:', error);
       }
     } catch (e) {
       console.warn('Supabase fetch subjects failed, checking cache:', e);
     }
 
     try {
-      const cached = localStorage.getItem(`unistudent_subjects_${userId}`);
-      if (cached) {
-        // The linked-source query is authoritative. Merging cache-only rows here
-        // would make a source deletion (or a reverted approved update) reappear.
-        if (readFromLiveSharedView) {
-          localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(dbSubjects));
-          return dbSubjects;
-        }
+      const cacheKey = `unistudent_subjects_${userId}`;
+      if (fetchedFromSupabase) {
+        // Supabase is authoritative. Keep local cache in sync:
+        localStorage.setItem(cacheKey, JSON.stringify(dbSubjects));
+        return dbSubjects;
+      }
 
-        const localList: Subject[] = JSON.parse(cached);
-        if (dbSubjects.length === 0) return localList;
-        // Merge with local changes if any
-        const mergedMap = new Map<string, Subject>();
-        dbSubjects.forEach(s => mergedMap.set(s.id, s));
-        localList.forEach(s => {
-          if (!mergedMap.has(s.id)) mergedMap.set(s.id, s);
-        });
-        const result = Array.from(mergedMap.values());
-        localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(result));
-        return result;
-      } else if (dbSubjects.length > 0) {
-        localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(dbSubjects));
+      // Only fall back to local storage if Supabase failed to respond (offline)
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
       }
     } catch {}
 
@@ -177,8 +177,30 @@ export const db = {
 
     try {
       const { error } = await supabase.from('subjects').delete().eq('id', id).eq('user_id', userId);
-      if (error) console.error('Error deleting subject:', error);
-    } catch (e) {}
+      if (error) console.error('Error deleting subject in Supabase:', error);
+    } catch (e) {
+      console.error('Error deleting subject:', e);
+    }
+  },
+  async clearAllSubjects(userId: string) {
+    try {
+      localStorage.removeItem(`unistudent_subjects_${userId}`);
+    } catch {}
+    try {
+      await supabase.from('subjects').delete().eq('user_id', userId);
+    } catch (e) {
+      console.warn('Error clearing subjects in Supabase:', e);
+    }
+  },
+  async clearAllDriveFiles(userId: string) {
+    try {
+      localStorage.removeItem(`unistudent_files_${userId}`);
+    } catch {}
+    try {
+      await supabase.from('drive_files').delete().eq('user_id', userId);
+    } catch (e) {
+      console.warn('Error clearing drive files in Supabase:', e);
+    }
   },
 
   // --- Tasks ---
@@ -645,6 +667,528 @@ export const db = {
     } catch (e) {}
   },
 
+  // --- University Databases ---
+  async getUniversityDatabases(): Promise<UniversityDatabase[]> {
+    try {
+      const { data, error } = await supabase.from('university_databases').select('*').order('created_at', { ascending: false });
+      if (!error && data && data.length > 0) {
+        const mapped = data.map(d => mapUniversityDatabaseFromDB(d));
+        try {
+          localStorage.setItem('unistudent_university_databases', JSON.stringify(mapped));
+        } catch {}
+        return mapped;
+      }
+    } catch (e) {
+      console.warn('Supabase getUniversityDatabases warning:', e);
+    }
+    try {
+      const local = localStorage.getItem('unistudent_university_databases');
+      return local ? JSON.parse(local) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async getUniversityDatabase(id: string): Promise<UniversityDatabase | null> {
+    try {
+      const { data, error } = await supabase
+        .from('university_databases')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (!error && data) {
+        const mapped = mapUniversityDatabaseFromDB(data);
+        try {
+          const current = await this.getUniversityDatabases();
+          const updated = [mapped, ...current.filter(u => u.id !== id)];
+          localStorage.setItem('unistudent_university_databases', JSON.stringify(updated));
+        } catch {}
+        return mapped;
+      }
+    } catch (e) {
+      console.warn('Direct fetch getUniversityDatabase failed, falling back:', e);
+    }
+    const list = await this.getUniversityDatabases();
+    return list.find(u => u.id === id) || null;
+  },
+
+  async createUniversityDatabase(dbData: UniversityDatabase): Promise<void> {
+    // 1. Local storage cache
+    try {
+      const current = await this.getUniversityDatabases();
+      const updated = [dbData, ...current.filter(u => u.id !== dbData.id)];
+      localStorage.setItem('unistudent_university_databases', JSON.stringify(updated));
+    } catch (e) {
+      console.warn('LocalStorage error in createUniversityDatabase:', e);
+    }
+
+    // 2. Supabase insert/upsert
+    try {
+      const payload = {
+        id: dbData.id,
+        university_name_ar: dbData.universityNameAr,
+        university_name_en: dbData.universityNameEn,
+        college_name_ar: dbData.collegeNameAr,
+        college_name_en: dbData.collegeNameEn,
+        source_user_id: dbData.sourceUserId,
+        source_user_email: dbData.sourceUserEmail || '',
+        source_user_name: dbData.sourceUserName || '',
+        total_years: dbData.totalYears,
+        semesters_per_year: dbData.semestersPerYear,
+        subjects: dbData.subjects,
+        drive_files: dbData.driveFiles,
+        grading_scale: dbData.gradingScale || [],
+        is_visible: dbData.isVisible !== false,
+        created_at: dbData.createdAt,
+        updated_at: dbData.updatedAt
+      };
+      const { error } = await supabase.from('university_databases').upsert(payload);
+      if (error) console.warn('Supabase createUniversityDatabase error:', error);
+    } catch (e) {
+      console.warn('Supabase createUniversityDatabase failed:', e);
+    }
+  },
+
+  async updateUniversityDatabase(id: string, partialData: Partial<UniversityDatabase>): Promise<void> {
+    const updatedAt = new Date().toISOString();
+    let cachedDatabases: UniversityDatabase[] = [];
+
+    try {
+      cachedDatabases = await this.getUniversityDatabases();
+      const existing = cachedDatabases.find(database => database.id === id);
+      if (!existing) {
+        throw new Error('لم يتم العثور على قاعدة بيانات الجامعة المطلوب تحديثها.');
+      }
+
+      // Use UPDATE, not UPSERT. An UPSERT containing only `id` and the changed
+      // fields fails on this table because university_name_ar and
+      // college_name_ar are required on INSERT. The old code hid that error by
+      // updating localStorage first, so the admin saw the new material while
+      // every restored student kept reading the old remote database.
+      const payload: any = { updated_at: updatedAt };
+      if (partialData.universityNameAr !== undefined) payload.university_name_ar = partialData.universityNameAr;
+      if (partialData.universityNameEn !== undefined) payload.university_name_en = partialData.universityNameEn;
+      if (partialData.collegeNameAr !== undefined) payload.college_name_ar = partialData.collegeNameAr;
+      if (partialData.collegeNameEn !== undefined) payload.college_name_en = partialData.collegeNameEn;
+      if (partialData.sourceUserId !== undefined) payload.source_user_id = partialData.sourceUserId;
+      if (partialData.sourceUserName !== undefined) payload.source_user_name = partialData.sourceUserName;
+      if (partialData.sourceUserEmail !== undefined) payload.source_user_email = partialData.sourceUserEmail;
+      if (partialData.totalYears !== undefined) payload.total_years = partialData.totalYears;
+      if (partialData.semestersPerYear !== undefined) payload.semesters_per_year = partialData.semestersPerYear;
+      if (partialData.subjects !== undefined) payload.subjects = partialData.subjects;
+      if (partialData.driveFiles !== undefined) payload.drive_files = partialData.driveFiles;
+      if (partialData.gradingScale !== undefined) payload.grading_scale = partialData.gradingScale;
+      if (partialData.isVisible !== undefined) payload.is_visible = partialData.isVisible;
+
+      const { data, error } = await supabase
+        .from('university_databases')
+        .update(payload)
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) {
+        throw new Error('قاعدة بيانات الجامعة غير موجودة على الخادم.');
+      }
+
+      // Update the cache only after the central database confirms the update.
+      const updated = cachedDatabases.map(database =>
+        database.id === id ? { ...database, ...partialData, updatedAt } : database
+      );
+      localStorage.setItem('unistudent_university_databases', JSON.stringify(updated));
+    } catch (e) {
+      console.error('Supabase updateUniversityDatabase failed:', e);
+      throw e;
+    }
+
+    // Broadcast only after Supabase has the approved, shared version.
+    try {
+      supabase.channel('university_global_sync').send({
+        type: 'broadcast',
+        event: 'university_db_updated',
+        payload: { id, timestamp: Date.now() }
+      }).catch(() => {});
+    } catch {}
+  },
+
+  async deleteUniversityDatabase(id: string): Promise<void> {
+    try {
+      const current = await this.getUniversityDatabases();
+      localStorage.setItem('unistudent_university_databases', JSON.stringify(current.filter(u => u.id !== id)));
+    } catch {}
+
+    try {
+      await supabase.from('university_databases').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Supabase deleteUniversityDatabase failed:', e);
+    }
+  },
+
+  // --- Pending Updates for University Databases ---
+  async getPendingUpdates(universityDbId?: string): Promise<UniversityPendingUpdate[]> {
+    try {
+      let query = supabase.from('university_pending_updates').select('*').order('created_at', { ascending: true });
+      if (universityDbId) {
+        query = query.eq('university_database_id', universityDbId);
+      }
+      const { data, error } = await query;
+      if (!error && data && data.length > 0) {
+        return data.map(d => mapPendingUpdateFromDB(d));
+      }
+    } catch (e) {
+      console.warn('Supabase getPendingUpdates warning:', e);
+    }
+    try {
+      const local = localStorage.getItem('unistudent_pending_updates');
+      let all: UniversityPendingUpdate[] = local ? JSON.parse(local) : [];
+      all.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      return universityDbId ? all.filter(p => p.universityDatabaseId === universityDbId) : all;
+    } catch {
+      return [];
+    }
+  },
+
+  async updateUniversityName(oldName: string, newNameAr: string, newNameEn: string): Promise<void> {
+    const current = await this.getUniversityDatabases();
+    const toUpdate = current.filter(u => (u.universityNameAr && u.universityNameAr.trim() === oldName.trim()) || (u.universityNameEn && u.universityNameEn.trim() === oldName.trim()));
+    for (const item of toUpdate) {
+      await this.updateUniversityDatabase(item.id, {
+        universityNameAr: newNameAr,
+        universityNameEn: newNameEn
+      });
+    }
+  },
+
+  async deleteUniversity(uniName: string): Promise<void> {
+    const current = await this.getUniversityDatabases();
+    const toDelete = current.filter(u => (u.universityNameAr && u.universityNameAr.trim() === uniName.trim()) || (u.universityNameEn && u.universityNameEn.trim() === uniName.trim()));
+    for (const item of toDelete) {
+      await this.deleteUniversityDatabase(item.id);
+    }
+  },
+
+  async recordPendingUpdate(update: UniversityPendingUpdate): Promise<void> {
+    try {
+      const current = await this.getPendingUpdates();
+      const updated = [update, ...current.filter(u => u.id !== update.id)];
+      localStorage.setItem('unistudent_pending_updates', JSON.stringify(updated.slice(0, 100)));
+    } catch {}
+
+    try {
+      const payload = {
+        id: update.id,
+        university_database_id: update.universityDatabaseId,
+        source_user_id: update.sourceUserId,
+        source_user_email: update.sourceUserEmail || '',
+        source_user_name: update.sourceUserName || '',
+        type: update.type,
+        description: update.description,
+        data: update.data,
+        status: update.status,
+        created_at: update.createdAt
+      };
+      await supabase.from('university_pending_updates').upsert(payload);
+    } catch (e) {
+      console.warn('Supabase recordPendingUpdate error:', e);
+    }
+  },
+
+  async respondToPendingUpdate(id: string, status: 'approved' | 'rejected', applyAction?: (db: UniversityDatabase) => UniversityDatabase): Promise<void> {
+    const pendingList = await this.getPendingUpdates();
+    const target = pendingList.find(p => p.id === id);
+    if (!target) return;
+
+    const resolvedAt = new Date().toISOString();
+    if (status === 'approved' && applyAction && target.universityDatabaseId) {
+      const udb = await this.getUniversityDatabase(target.universityDatabaseId);
+      if (!udb) throw new Error('قاعدة بيانات الجامعة المرتبطة بهذا التحديث غير موجودة.');
+
+      const updatedDb = applyAction(udb);
+      // Persist the master database before approving the request. This guarantees
+      // that every restored student reads the same approved version.
+      await this.updateUniversityDatabase(udb.id, updatedDb);
+      await this.syncUniversityDatabaseChangesToStudents(udb.id, {
+        type: (target.type as any) || 'full_sync',
+        subject: target.data,
+        updatedDb
+      });
+    }
+
+    target.status = status;
+    target.resolvedAt = resolvedAt;
+
+    try {
+      localStorage.setItem('unistudent_pending_updates', JSON.stringify(pendingList));
+    } catch {}
+
+    const { error } = await supabase
+      .from('university_pending_updates')
+      .update({ status, resolved_at: resolvedAt })
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  // --- Standalone Universities Registry ---
+  getRegisteredUniversities(): { key: string; nameAr: string; nameEn: string; isVisible?: boolean; createdAt: string }[] {
+    try {
+      const saved = localStorage.getItem('unistudent_registered_universities');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  registerUniversity(nameAr: string, nameEn?: string, isVisible: boolean = true): void {
+    try {
+      const current = this.getRegisteredUniversities();
+      const trimmedAr = (nameAr || '').trim();
+      const trimmedEn = (nameEn || '').trim() || trimmedAr;
+      const key = trimmedAr || trimmedEn;
+      if (!key) return;
+      if (!current.some(u => u.key === key || u.nameAr === trimmedAr || u.nameEn === trimmedEn)) {
+        current.push({
+          key,
+          nameAr: trimmedAr,
+          nameEn: trimmedEn,
+          isVisible: isVisible !== false,
+          createdAt: new Date().toISOString()
+        });
+        localStorage.setItem('unistudent_registered_universities', JSON.stringify(current));
+      }
+    } catch {}
+
+    try {
+      const trimmedAr = (nameAr || '').trim();
+      const trimmedEn = (nameEn || '').trim() || trimmedAr;
+      const key = trimmedAr || trimmedEn;
+      supabase.from('registered_universities').upsert({
+        key,
+        name_ar: trimmedAr,
+        name_en: trimmedEn,
+        is_visible: isVisible !== false
+      }).then();
+    } catch {}
+  },
+
+  deleteRegisteredUniversity(key: string): void {
+    try {
+      const current = this.getRegisteredUniversities();
+      const filtered = current.filter(u => u.key !== key && u.nameAr !== key && u.nameEn !== key);
+      localStorage.setItem('unistudent_registered_universities', JSON.stringify(filtered));
+    } catch {}
+
+    try {
+      supabase.from('registered_universities').delete().eq('key', key).then();
+    } catch {}
+  },
+
+  updateRegisteredUniversity(oldKey: string, nameAr: string, nameEn: string, isVisible?: boolean): void {
+    try {
+      const current = this.getRegisteredUniversities();
+      const updated = current.map(u => {
+        if (u.key === oldKey || u.nameAr === oldKey || u.nameEn === oldKey) {
+          return {
+            ...u,
+            key: nameAr.trim() || nameEn.trim(),
+            nameAr: nameAr.trim(),
+            nameEn: nameEn.trim(),
+            isVisible: isVisible !== undefined ? isVisible : (u.isVisible !== false)
+          };
+        }
+        return u;
+      });
+      localStorage.setItem('unistudent_registered_universities', JSON.stringify(updated));
+    } catch {}
+
+    try {
+      const payload: any = {
+        name_ar: nameAr.trim(),
+        name_en: nameEn.trim()
+      };
+      if (isVisible !== undefined) payload.is_visible = isVisible;
+      supabase.from('registered_universities').update(payload).eq('key', oldKey).then();
+    } catch {}
+  },
+
+  async toggleRegisteredUniversityVisibility(key: string, isVisible: boolean): Promise<void> {
+    try {
+      const current = this.getRegisteredUniversities();
+      const updated = current.map(u => {
+        if (u.key === key || u.nameAr === key || u.nameEn === key) {
+          return { ...u, isVisible };
+        }
+        return u;
+      });
+      localStorage.setItem('unistudent_registered_universities', JSON.stringify(updated));
+    } catch {}
+
+    try {
+      await supabase.from('registered_universities').update({ is_visible: isVisible }).eq('key', key);
+    } catch {}
+  },
+
+  async toggleCollegeDatabaseVisibility(id: string, isVisible: boolean): Promise<void> {
+    await this.updateUniversityDatabase(id, { isVisible });
+  },
+
+  // --- Student Database Changes Synchronization ---
+  async syncUniversityDatabaseChangesToStudents(
+    universityDbId: string,
+    action: {
+      type: 'add_subject' | 'update_subject' | 'delete_subject' | 'update_grading_scale' | 'full_sync';
+      subject?: Subject;
+      subjectId?: string;
+      gradingScale?: GradeRule[];
+      updatedDb?: UniversityDatabase;
+    }
+  ): Promise<void> {
+    try {
+      const udb = action.updatedDb || (await this.getUniversityDatabase(universityDbId));
+      if (!udb) return;
+
+      const norm = (str?: string) => normalizeSubjectName(str);
+      const matchUni = (sUni?: string) => norm(sUni) && (norm(sUni) === norm(udb.universityNameAr) || norm(sUni) === norm(udb.universityNameEn));
+      const matchCollege = (sCol?: string) => norm(sCol) && (norm(sCol) === norm(udb.collegeNameAr) || norm(sCol) === norm(udb.collegeNameEn));
+
+      // Find all students in Supabase settings or localStorage
+      const studentUserIds: string[] = [];
+      try {
+        const { data: dbSettings } = await supabase.from('settings').select('*');
+        if (dbSettings) {
+          dbSettings.forEach(s => {
+            if (
+              s.university_database_id === universityDbId ||
+              (matchUni(s.university) && matchCollege(s.college))
+            ) {
+              if (s.user_id && !studentUserIds.includes(s.user_id)) {
+                studentUserIds.push(s.user_id);
+              }
+            }
+          });
+        }
+      } catch {}
+
+      // Also check localStorage
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('unistudent_settings_')) {
+          const uid = key.replace('unistudent_settings_', '');
+          try {
+            const st = JSON.parse(localStorage.getItem(key) || '{}');
+            if (
+              st.universityDatabaseId === universityDbId ||
+              (matchUni(st.university) && matchCollege(st.college))
+            ) {
+              if (!studentUserIds.includes(uid)) studentUserIds.push(uid);
+            }
+          } catch {}
+        }
+      }
+
+      // 1. If grading scale was updated, apply to students' settings
+      if (action.type === 'update_grading_scale' && action.gradingScale) {
+        for (const uid of studentUserIds) {
+          await this.upsertSettings(uid, { gradingScale: action.gradingScale }).catch(() => {});
+        }
+      }
+
+      // 2. Notify students of approved changes (In-App notifications)
+      const notifTitle = action.type === 'add_subject'
+        ? `مادة جديدة مضافة للخطة: ${action.subject?.name || ''}`
+        : action.type === 'update_subject'
+        ? `تحديث في بيانات مادة: ${action.subject?.name || ''}`
+        : action.type === 'delete_subject'
+        ? `حذف مادة من الخطة: ${action.subject?.name || ''}`
+        : action.type === 'update_grading_scale'
+        ? 'تحديث لائحة التقديرات المعتمدة لكليتك'
+        : 'تحديث معتمد في الخطة الدراسية لقاعدة بيانات كليتك';
+
+      const notifMessage = action.type === 'add_subject'
+        ? `تم اعتماد إضافة مادة "${action.subject?.name || ''}" للخطة الدراسية من قِبل الإدارة.`
+        : 'تم اعتماد وتحديث الخطة الدراسية لكليتك. سيتم تطبيق التغييرات تلقائياً في حسابك.';
+
+      for (const uid of studentUserIds) {
+        await this.sendStudentNotification(uid, {
+          title: notifTitle,
+          message: notifMessage,
+          type: 'update'
+        }).catch(() => {});
+      }
+
+      // 3. Broadcast real-time sync event so each active student's client syncs their own subjects cleanly
+      try {
+        supabase.channel('university_global_sync').send({
+          type: 'broadcast',
+          event: 'university_db_updated',
+          payload: { id: universityDbId, timestamp: Date.now() }
+        }).catch(() => {});
+      } catch {}
+    } catch (e) {
+      console.warn('Error in syncUniversityDatabaseChangesToStudents:', e);
+    }
+  },
+
+  // --- Student Notifications ---
+  async sendStudentNotification(studentId: string, notification: {
+    id?: string;
+    title: string;
+    message: string;
+    type?: 'info' | 'update' | 'source_alert';
+    date?: string;
+  }): Promise<void> {
+    const notifId = notification.id || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const newNotif = {
+      id: notifId,
+      title: notification.title,
+      message: notification.message,
+      type: notification.type || 'info',
+      date: notification.date || new Date().toISOString(),
+      dismissed: false
+    };
+
+    try {
+      const key = `unistudent_student_notifications_${studentId}`;
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      const filtered = existing.filter((n: any) => n.id !== notifId);
+      localStorage.setItem(key, JSON.stringify([newNotif, ...filtered].slice(0, 50)));
+    } catch {}
+  },
+
+  getStudentNotifications(studentId: string): Array<{
+    id: string;
+    title: string;
+    message: string;
+    type: string;
+    date: string;
+    dismissed: boolean;
+  }> {
+    try {
+      const key = `unistudent_student_notifications_${studentId}`;
+      const saved = JSON.parse(localStorage.getItem(key) || '[]');
+      if (Array.isArray(saved)) {
+        return saved.filter((n: any) => !n.dismissed);
+      }
+    } catch {}
+    return [];
+  },
+
+  dismissStudentNotification(studentId: string, notificationId: string): void {
+    try {
+      const key = `unistudent_student_notifications_${studentId}`;
+      const saved = JSON.parse(localStorage.getItem(key) || '[]');
+      if (Array.isArray(saved)) {
+        const updated = saved.map((n: any) => n.id === notificationId ? { ...n, dismissed: true } : n);
+        localStorage.setItem(key, JSON.stringify(updated));
+      }
+    } catch {}
+  },
+
+  async notifyEnrolledStudentsOfDbUpdate(_universityDatabaseId: string, _message: string): Promise<void> {
+    // Disabled as requested: no update notifications sent to students
+    return;
+  },
+
   // --- Admin All Platform Data ---
   async getAdminAllData() {
     let rawSettings: any[] = [];
@@ -839,6 +1383,60 @@ export const db = {
         }
       }
     } catch {}
+
+    // 3. For all user IDs, merge cached subjects & files if missing from Supabase response
+    userIds.forEach(uid => {
+      try {
+        const cachedSubjs = localStorage.getItem(`unistudent_subjects_${uid}`);
+        if (cachedSubjs) {
+          const parsed = JSON.parse(cachedSubjs);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed.forEach(s => {
+              if (!rawSubjects.some(rs => rs.id === s.id)) {
+                rawSubjects.push({
+                  id: s.id,
+                  user_id: uid,
+                  code: s.code || '',
+                  name: s.name || '',
+                  credit_hours: s.creditHours || 3,
+                  total_marks: s.totalMarks || 100,
+                  year_index: s.yearIndex || 1,
+                  semester_index: s.semesterIndex || 1,
+                  status: s.status || 'current',
+                  distributions: s.distributions || [],
+                  final_grade_letter: s.finalGradeLetter,
+                  include_in_gpa: s.includeInGpa !== false
+                });
+              }
+            });
+          }
+        }
+      } catch {}
+
+      try {
+        const cachedFiles = localStorage.getItem(`unistudent_drive_files_${uid}`);
+        if (cachedFiles) {
+          const parsed = JSON.parse(cachedFiles);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed.forEach(f => {
+              if (!rawFiles.some(rf => rf.id === f.id)) {
+                rawFiles.push({
+                  id: f.id,
+                  user_id: uid,
+                  name: f.name || '',
+                  size: f.size || 0,
+                  type: f.type || 'file',
+                  url: f.url || '',
+                  upload_date: f.createdAt || new Date().toISOString(),
+                  parent_id: f.parentId || null,
+                  b2_file_id: f.b2FileId
+                });
+              }
+            });
+          }
+        }
+      } catch {}
+    });
 
     return {
       userIds: Array.from(userIds),
@@ -1114,57 +1712,69 @@ function mapSettingsFromDB(row: any): UserSettings {
     } catch {}
   }
 
+  const resolvedDbId = (row.university_database_id && row.university_database_id !== 'null')
+    ? row.university_database_id
+    : (localExtra.universityDatabaseId || undefined);
+
   return {
-    name: row.name || '',
-    university: row.university || '',
-    college: row.college || '',
-    enrollmentDate: row.enrollment_date || '',
-    totalYears: row.total_years || 4,
-    semestersPerYear: row.semesters_per_year || 2,
-    theme: row.theme || 'light',
-    language: row.language || 'ar',
-    gradingScale: row.grading_scale || [],
-    semesters: row.semesters || [],
+    name: row.name || localExtra.name || '',
+    university: row.university || localExtra.university || '',
+    college: row.college || localExtra.college || '',
+    enrollmentDate: row.enrollment_date || localExtra.enrollmentDate || '',
+    totalYears: row.total_years || localExtra.totalYears || 4,
+    semestersPerYear: row.semesters_per_year || localExtra.semestersPerYear || 2,
+    theme: row.theme || localExtra.theme || 'light',
+    language: row.language || localExtra.language || 'en',
+    gradingScale: row.grading_scale || localExtra.gradingScale || [],
+    semesters: row.semesters || localExtra.semesters || [],
     initialCumulativeGpa: row.initial_cumulative_gpa !== undefined ? row.initial_cumulative_gpa : (localExtra.initialCumulativeGpa ?? null),
     initialCompletedCreditHours: row.initial_completed_credit_hours !== undefined ? row.initial_completed_credit_hours : (localExtra.initialCompletedCreditHours ?? null),
     setupMode: row.setup_mode || localExtra.setupMode || 'initial_gpa',
     warningGradeLetter: row.warning_grade_letter !== undefined ? row.warning_grade_letter : (localExtra.warningGradeLetter ?? 'C'),
     warningGpaPoints: row.warning_gpa_points !== undefined ? Number(row.warning_gpa_points) : (localExtra.warningGpaPoints !== undefined ? Number(localExtra.warningGpaPoints) : 2.0),
     enableGraduationScale: row.enable_graduation_scale !== undefined ? row.enable_graduation_scale : (localExtra.enableGraduationScale ?? false),
-    graduationGradingScale: row.graduation_grading_scale || localExtra.graduationGradingScale || []
+    graduationGradingScale: row.graduation_grading_scale || localExtra.graduationGradingScale || [],
+    universityDatabaseId: resolvedDbId,
+    deletedSubjectNames: (Array.isArray(row.deleted_subject_names) && row.deleted_subject_names.length > 0)
+      ? row.deleted_subject_names
+      : (localExtra.deletedSubjectNames || [])
   };
 }
 
 function mapSubjectFromDB(row: any): Subject {
+  const y = row.year_index !== undefined && row.year_index !== null ? row.year_index : (row.yearIndex !== undefined ? row.yearIndex : 1);
+  const sem = row.semester_index !== undefined && row.semester_index !== null ? row.semester_index : (row.semesterIndex !== undefined ? row.semesterIndex : 1);
   return {
     id: row.id,
-    code: row.code,
+    code: row.code || '',
     name: row.name,
-    creditHours: row.credit_hours,
-    totalMarks: row.total_marks,
-    yearIndex: row.year_index,
-    semesterIndex: row.semester_index,
-    status: row.status,
+    creditHours: Number(row.credit_hours !== undefined ? row.credit_hours : (row.creditHours !== undefined ? row.creditHours : 3)),
+    totalMarks: Number(row.total_marks !== undefined ? row.total_marks : (row.totalMarks !== undefined ? row.totalMarks : 100)),
+    yearIndex: Number(y || 1),
+    semesterIndex: Number(sem || 1),
+    status: row.status || 'current',
     distributions: (row.distributions || []).map((d: any) => ({ ...d, status: d.status || 'current' })),
-    finalGradeLetter: row.final_grade_letter,
-    includeInGpa: row.include_in_gpa !== false // Defaults to true if null
+    finalGradeLetter: row.final_grade_letter || row.finalGradeLetter,
+    includeInGpa: row.include_in_gpa !== false && row.includeInGpa !== false
   };
 }
 
 function mapSubjectToDB(userId: string, subject: Subject) {
+  const y = subject.yearIndex !== undefined ? subject.yearIndex : ((subject as any).year_index !== undefined ? (subject as any).year_index : 1);
+  const sem = subject.semesterIndex !== undefined ? subject.semesterIndex : ((subject as any).semester_index !== undefined ? (subject as any).semester_index : 1);
   return {
     id: subject.id,
     user_id: userId,
-    code: subject.code,
+    code: subject.code || '',
     name: subject.name,
-    credit_hours: subject.creditHours,
-    total_marks: subject.totalMarks,
-    year_index: subject.yearIndex,
-    semester_index: subject.semesterIndex,
-    status: subject.status,
-    distributions: subject.distributions,
+    credit_hours: Number(subject.creditHours || (subject as any).credit_hours || 3),
+    total_marks: Number(subject.totalMarks || (subject as any).total_marks || 100),
+    year_index: Number(y || 1),
+    semester_index: Number(sem || 1),
+    status: subject.status || 'current',
+    distributions: subject.distributions || [],
     final_grade_letter: subject.finalGradeLetter,
-    include_in_gpa: subject.includeInGpa !== false
+    include_in_gpa: subject.includeInGpa !== false && (subject as any).include_in_gpa !== false
   };
 }
 
@@ -1314,5 +1924,62 @@ function mapDriveFileFromDB(row: any): DriveFile {
     createdAt: row.upload_date,
     parentId: row.parent_id,
     b2FileId: row.b2_file_id
+  };
+}
+
+function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
+  return {
+    id: row.id,
+    universityNameAr: row.university_name_ar || '',
+    universityNameEn: row.university_name_en || '',
+    collegeNameAr: row.college_name_ar || '',
+    collegeNameEn: row.college_name_en || '',
+    sourceUserId: row.source_user_id,
+    sourceUserEmail: row.source_user_email || '',
+    sourceUserName: row.source_user_name || '',
+    totalYears: row.total_years || 4,
+    semestersPerYear: row.semesters_per_year || 2,
+    isVisible: row.is_visible !== false && row.isVisible !== false,
+    subjects: (row.subjects || []).map((s: any) => ({
+      id: s.id,
+      code: s.code || '',
+      name: s.name || '',
+      creditHours: Number(s.creditHours || s.credit_hours || 3),
+      totalMarks: Number(s.totalMarks || s.total_marks || 100),
+      yearIndex: Number(s.yearIndex || s.year_index || 1),
+      semesterIndex: Number(s.semesterIndex || s.semester_index || 1),
+      distributions: s.distributions || [],
+      status: s.status || 'current',
+      includeInGpa: s.includeInGpa !== false
+    })),
+    driveFiles: (row.drive_files || []).map((f: any) => ({
+      id: f.id,
+      name: f.name || '',
+      size: Number(f.size || 0),
+      type: f.type || 'file',
+      parentId: f.parentId || f.parent_id || null,
+      createdAt: f.createdAt || f.upload_date || new Date().toISOString(),
+      url: f.url || '',
+      b2FileId: f.b2FileId || f.b2_file_id
+    })),
+    gradingScale: row.grading_scale || [],
+    createdAt: row.created_at || new Date().toISOString(),
+    updatedAt: row.updated_at || new Date().toISOString()
+  };
+}
+
+function mapPendingUpdateFromDB(row: any): UniversityPendingUpdate {
+  return {
+    id: row.id,
+    universityDatabaseId: row.university_database_id,
+    sourceUserId: row.source_user_id,
+    sourceUserEmail: row.source_user_email || '',
+    sourceUserName: row.source_user_name || '',
+    type: row.type,
+    description: row.description || '',
+    data: row.data || {},
+    status: row.status || 'pending',
+    createdAt: row.created_at || new Date().toISOString(),
+    resolvedAt: row.resolved_at
   };
 }

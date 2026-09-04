@@ -59,7 +59,7 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
 
   return (
     <>
-      <div className="relative z-10 w-full flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
+      <div className="relative z-10 w-full max-w-full min-w-0 shrink-0 flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
         <button
           onClick={() => setActiveGroupId('all')}
           className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl transition-all text-sm font-medium border ${

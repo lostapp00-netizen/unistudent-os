@@ -17,7 +17,14 @@ export function DistributionDefinitionRow({ distribution, isSubjectFinished, rem
   const [tempMarks, setTempMarks] = useState<number | ''>(distribution.maxMarks);
 
   const handleSave = () => {
-    if (!tempName.trim() || tempMarks === '' || tempMarks <= 0) return;
+    if (!tempName.trim()) {
+      alert(isRtl ? 'يرجى إدخال اسم بند التقييم.' : 'Please enter item name.');
+      return;
+    }
+    if (tempMarks === '' || isNaN(Number(tempMarks)) || Number(tempMarks) <= 0) {
+      alert(isRtl ? 'يرجى إدخال درجة التقييم بشكل صحيح (أكبر من 0).' : 'Please enter valid marks (greater than 0).');
+      return;
+    }
     
     // Check if new marks exceed remaining possible marks (considering we are returning our own old maxMarks to the pool)
     const extraNeeded = Number(tempMarks) - distribution.maxMarks;
@@ -26,7 +33,7 @@ export function DistributionDefinitionRow({ distribution, isSubjectFinished, rem
       return;
     }
 
-    onUpdate(distribution.id, tempName, Number(tempMarks));
+    onUpdate(distribution.id, tempName.trim(), Number(tempMarks));
     setIsEditing(false);
   };
 
@@ -44,7 +51,7 @@ export function DistributionDefinitionRow({ distribution, isSubjectFinished, rem
             type="text" 
             value={tempName}
             onChange={e => setTempName(e.target.value)}
-            className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            className="flex-1 min-w-0 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
             placeholder={isRtl ? 'اسم التقييم...' : 'Name...'}
           />
           <input 

@@ -40,7 +40,19 @@ import {
   EyeOff,
   HelpCircle,
   Info,
-  Loader2
+  Loader2,
+  Building2,
+  GraduationCap,
+  Sun,
+  Moon,
+  Globe,
+  ChevronDown,
+  ChevronUp,
+  ChevronRight,
+  ChevronLeft,
+  BellRing,
+  Bell,
+  Plus
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { db } from '../lib/db';
@@ -48,13 +60,25 @@ import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWa
 import { FeedbackSuggestion, EmailBackupConfig, DatabaseBackup } from '../types';
 import { ConfirmModal } from '../components/ui/CustomModal';
 import { formatDateTime, getAcademicEvaluation } from '../lib/utils';
+import { AdminUniversitiesTab } from '../components/admin/AdminUniversitiesTab';
 
 export function Admin() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { settings } = useAppStore();
+  const { settings, updateTheme, updateLanguage } = useAppStore();
   const isAr = i18n.language === 'ar' || settings.language === 'ar';
   const BackIcon = isAr ? ArrowRight : ArrowLeft;
+
+  const toggleTheme = () => {
+    const newTheme = settings.theme === 'dark' ? 'light' : 'dark';
+    updateTheme(newTheme);
+  };
+
+  const toggleLanguage = () => {
+    const newLang = settings.language === 'ar' ? 'en' : 'ar';
+    i18n.changeLanguage(newLang);
+    updateLanguage(newLang);
+  };
 
   // --- Auth & Access State ---
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -62,9 +86,40 @@ export function Admin() {
   });
 
   // --- Sidebar & Tabs ---
-  type TabType = 'overview' | 'students' | 'suggestions' | 'backup';
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  type TabType = 'overview' | 'students' | 'universities' | 'suggestions' | 'backup';
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    try {
+      const saved = sessionStorage.getItem('unistudent_admin_active_tab') as TabType;
+      if (saved && ['overview', 'students', 'universities', 'suggestions', 'backup'].includes(saved)) {
+        return saved;
+      }
+    } catch {}
+    return 'overview';
+  });
+
+  const [universitySubTab, setUniversitySubTab] = useState<'universities' | 'updates'>(() => {
+    try {
+      const saved = sessionStorage.getItem('unistudent_admin_uni_subtab');
+      if (saved === 'updates' || saved === 'universities') return saved as any;
+    } catch {}
+    return 'universities';
+  });
+
+  const [universitiesExpanded, setUniversitiesExpanded] = useState<boolean>(true);
+  const [pendingUniUpdatesCount, setPendingUniUpdatesCount] = useState<number>(0);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('unistudent_admin_active_tab', activeTab);
+    } catch {}
+  }, [activeTab]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('unistudent_admin_uni_subtab', universitySubTab);
+    } catch {}
+  }, [universitySubTab]);
 
   // --- Data State ---
   const [loading, setLoading] = useState(true);
@@ -83,6 +138,8 @@ export function Admin() {
 
   // --- Students Search & Filters ---
   const [searchQuery, setSearchQuery] = useState('');
+  const [studentUniFilter, setStudentUniFilter] = useState('all');
+  const [studentCollegeFilter, setStudentCollegeFilter] = useState('all');
   const [gpaFilter, setGpaFilter] = useState<'all' | 'honor' | 'warning' | 'good'>('all');
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
@@ -110,8 +167,12 @@ export function Admin() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const data = await db.getAdminAllData();
+      const [data, pendingUpdates] = await Promise.all([
+        db.getAdminAllData(),
+        db.getPendingUpdates()
+      ]);
       setAdminData(data);
+      setPendingUniUpdatesCount(pendingUpdates.filter(p => p.status === 'pending').length);
     } catch (e) {
       console.error('Error loading admin data:', e);
     } finally {
@@ -230,6 +291,29 @@ export function Admin() {
         scheduleCount: userSchedule.length,
         filesCount: userFiles.length,
         feedbacksCount: userFeedbacks.length,
+        gradingScale: gradingScale,
+        subjects: userSubjects.map(s => ({
+          id: s.id,
+          code: s.code || '',
+          name: s.name,
+          creditHours: Number(s.credit_hours || s.creditHours || 3),
+          totalMarks: Number(s.total_marks || s.totalMarks || 100),
+          yearIndex: Number(s.year_index || s.yearIndex || 1),
+          semesterIndex: Number(s.semester_index || s.semesterIndex || 1),
+          distributions: s.distributions || [],
+          status: s.status || 'current',
+          includeInGpa: s.include_in_gpa !== false && s.includeInGpa !== false
+        })),
+        files: (adminData.rawFiles.filter(f => f.user_id === uid)).map(f => ({
+          id: f.id,
+          name: f.name,
+          size: Number(f.size || 0),
+          type: f.type || 'file',
+          url: f.url || '',
+          createdAt: f.upload_date || f.created_at || new Date().toISOString(),
+          parentId: f.parent_id || f.parentId || null,
+          b2FileId: f.b2_file_id || f.b2FileId
+        })),
         raw: {
           settings: userSettingsRow,
           subjects: userSubjects,
@@ -244,8 +328,19 @@ export function Admin() {
     });
   }, [adminData, isAr, settings.gradingScale]);
 
+  const availableStudentUnis = React.useMemo(() => {
+    return Array.from(new Set(studentsList.map(s => s.university).filter(u => u && u !== 'غير محدد' && u !== 'Not specified')));
+  }, [studentsList]);
+
+  const availableStudentColleges = React.useMemo(() => {
+    return Array.from(new Set(studentsList.map(s => s.college).filter(c => c && c !== 'غير محدد' && c !== 'Not specified')));
+  }, [studentsList]);
+
   const filteredStudents = React.useMemo(() => {
     return studentsList.filter(student => {
+      if (studentUniFilter !== 'all' && student.university !== studentUniFilter) return false;
+      if (studentCollegeFilter !== 'all' && student.college !== studentCollegeFilter) return false;
+
       const matchesSearch = 
         student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         student.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -260,14 +355,30 @@ export function Admin() {
 
       return true;
     });
-  }, [studentsList, searchQuery, gpaFilter]);
+  }, [studentsList, searchQuery, gpaFilter, studentUniFilter, studentCollegeFilter]);
 
   // Overview Metrics
   const totalStudents = studentsList.length;
   const honorStudents = studentsList.filter(s => s.cgpa >= 3.5).length;
   const warningStudents = studentsList.filter(s => s.warningCount > 0).length;
   const avgCgpa = totalStudents > 0 ? (studentsList.reduce((acc, s) => acc + s.cgpa, 0) / totalStudents).toFixed(2) : '0.00';
-  const totalPlatformStorageBytes = studentsList.reduce((acc, s) => acc + s.totalStorageBytes, 0);
+  const uniquePlatformFiles = React.useMemo(() => {
+    if (!adminData?.rawFiles) return [];
+    const seen = new Set<string>();
+    const unique: any[] = [];
+    adminData.rawFiles.forEach(f => {
+      if (f.type === 'folder') return;
+      const key = f.b2_file_id || f.url || `${f.name}_${f.size}`;
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        unique.push(f);
+      }
+    });
+    return unique;
+  }, [adminData]);
+
+  const totalPlatformStorageBytes = uniquePlatformFiles.reduce((acc, f) => acc + (Number(f.size) || 0), 0);
+  const totalPlatformUniqueFilesCount = uniquePlatformFiles.length;
   
   const formatAdminStorage = (bytes: number) => {
     if (!bytes || bytes === 0) return '0.0 MB';
@@ -481,6 +592,7 @@ export function Admin() {
   const navItems = [
     { id: 'overview' as TabType, label: isAr ? 'الإحصائيات العامة' : 'Overview', icon: BarChart3 },
     { id: 'students' as TabType, label: isAr ? 'سجل الطلاب' : 'Students Directory', icon: Users, badge: studentsList.length },
+    { id: 'universities' as TabType, label: isAr ? 'قواعد بيانات الجامعات' : 'University Databases', icon: Building2 },
     { id: 'suggestions' as TabType, label: isAr ? 'المقترحات والشكاوى' : 'Feedback Hub', icon: MessageSquare, badge: pendingFeedbacks > 0 ? pendingFeedbacks : undefined, badgeColor: 'bg-rose-500 text-white' },
     { id: 'backup' as TabType, label: isAr ? 'النسخ الاحتياطي والأتمتة' : 'Backup & Email', icon: Database },
   ];
@@ -514,13 +626,13 @@ export function Admin() {
         {/* Sidebar Header */}
         <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center font-bold shadow-md shadow-purple-500/20">
+            <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-md shadow-blue-500/20">
               <ShieldCheck size={22} />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-black text-lg text-zinc-900 dark:text-white">Admin OS</span>
-                <span className="px-2 py-0.2 rounded-full text-[10px] font-black bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
+                <span className="px-2 py-0.2 rounded-full text-[10px] font-black bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
                   PRO
                 </span>
               </div>
@@ -535,46 +647,186 @@ export function Admin() {
 
         {/* Navigation Tabs */}
         <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  setIsMobileSidebarOpen(false);
-                }}
-                className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all ${
-                  isActive
-                    ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 shadow-xs border border-purple-200/80 dark:border-purple-800/60 font-black'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-purple-600 dark:text-purple-400' : 'text-zinc-400'}`} />
-                  <span>{item.label}</span>
-                </div>
+          {/* 1. Overview */}
+          <button
+            onClick={() => {
+              setActiveTab('overview');
+              setIsMobileSidebarOpen(false);
+            }}
+            className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'overview'
+                ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 shadow-xs border border-blue-200/80 dark:border-blue-800/60 font-black'
+                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <BarChart3 className={`w-4 h-4 ${activeTab === 'overview' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'}`} />
+              <span>{isAr ? 'الإحصائيات العامة' : 'Overview'}</span>
+            </div>
+          </button>
 
-                {item.badge !== undefined && (
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                    item.badgeColor || 'bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
-                  }`}>
-                    {item.badge}
+          {/* 2. Students Directory */}
+          <button
+            onClick={() => {
+              setActiveTab('students');
+              setIsMobileSidebarOpen(false);
+            }}
+            className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'students'
+                ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 shadow-xs border border-blue-200/80 dark:border-blue-800/60 font-black'
+                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Users className={`w-4 h-4 ${activeTab === 'students' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'}`} />
+              <span>{isAr ? 'سجل الطلاب' : 'Students Directory'}</span>
+            </div>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+              {studentsList.length}
+            </span>
+          </button>
+
+          {/* 3. University Databases Collapsible Dropdown */}
+          <div className="space-y-1">
+            <button
+              onClick={() => {
+                if (activeTab !== 'universities') {
+                  setActiveTab('universities');
+                }
+                setUniversitiesExpanded(!universitiesExpanded);
+                window.dispatchEvent(new CustomEvent('reset-universities-view'));
+              }}
+              className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'universities'
+                  ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 shadow-xs border border-blue-200/80 dark:border-blue-800/60 font-black'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Building2 className={`w-4 h-4 ${activeTab === 'universities' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'}`} />
+                <span>{isAr ? 'قواعد بيانات الجامعات' : 'University Hub'}</span>
+                {pendingUniUpdatesCount > 0 && (
+                  <span className="px-1.5 py-0.2 text-[10px] font-black bg-amber-500 text-white rounded-full animate-pulse">
+                    {pendingUniUpdatesCount}
                   </span>
                 )}
-              </button>
-            );
-          })}
+              </div>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${universitiesExpanded ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Sub-menu items */}
+            {universitiesExpanded && (
+              <div className="mt-1 mr-4 rtl:mr-4 rtl:ml-0 ml-4 border-r-2 rtl:border-r-2 rtl:border-l-0 border-l-2 border-zinc-200 dark:border-zinc-800 pr-3 rtl:pr-3 rtl:pl-0 pl-3 space-y-1">
+                <button
+                  onClick={() => {
+                    setActiveTab('universities');
+                    setUniversitySubTab('universities');
+                    setIsMobileSidebarOpen(false);
+                    window.dispatchEvent(new CustomEvent('reset-universities-view'));
+                  }}
+                  className={`w-full flex items-center gap-2 p-2 rounded-xl text-xs transition-all cursor-pointer ${
+                    activeTab === 'universities' && universitySubTab === 'universities'
+                      ? 'text-blue-600 dark:text-blue-400 bg-blue-50/70 dark:bg-blue-900/30 font-black'
+                      : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 font-bold'
+                  }`}
+                >
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>{isAr ? 'لوحة وإدارة الجامعات' : 'Universities Directory'}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('universities');
+                    setUniversitySubTab('updates');
+                    setIsMobileSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-2 rounded-xl text-xs transition-all cursor-pointer ${
+                    activeTab === 'universities' && universitySubTab === 'updates'
+                      ? 'text-blue-600 dark:text-blue-400 bg-blue-50/70 dark:bg-blue-900/30 font-black'
+                      : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 font-bold'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <BellRing className="w-3.5 h-3.5" />
+                    <span>{isAr ? 'تحديثات قاعدة البيانات' : 'Database Updates'}</span>
+                  </div>
+                  {pendingUniUpdatesCount > 0 && (
+                    <span className="px-1.5 py-0.2 text-[10px] font-black bg-amber-500 text-white rounded-full">
+                      {pendingUniUpdatesCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 4. Suggestions / Feedbacks */}
+          <button
+            onClick={() => {
+              setActiveTab('suggestions');
+              setIsMobileSidebarOpen(false);
+            }}
+            className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'suggestions'
+                ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 shadow-xs border border-blue-200/80 dark:border-blue-800/60 font-black'
+                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <MessageSquare className={`w-4 h-4 ${activeTab === 'suggestions' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'}`} />
+              <span>{isAr ? 'المقترحات والشكاوى' : 'Feedback Hub'}</span>
+            </div>
+            {pendingFeedbacks > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white">
+                {pendingFeedbacks}
+              </span>
+            )}
+          </button>
+
+          {/* 5. Backup & Email */}
+          <button
+            onClick={() => {
+              setActiveTab('backup');
+              setIsMobileSidebarOpen(false);
+            }}
+            className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'backup'
+                ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 shadow-xs border border-blue-200/80 dark:border-blue-800/60 font-black'
+                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Database className={`w-4 h-4 ${activeTab === 'backup' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'}`} />
+              <span>{isAr ? 'النسخ الاحتياطي والأتمتة' : 'Backup & Email'}</span>
+            </div>
+          </button>
         </nav>
 
-        {/* Sidebar Footer */}
-        <div className="p-4 border-t border-zinc-100 dark:border-zinc-800">
+        {/* Sidebar Footer - Matching Layout.tsx */}
+        <div className="border-t border-zinc-200 dark:border-zinc-800 p-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 transition-colors flex items-center justify-center cursor-pointer"
+              title={settings.theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+            >
+              {settings.theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+            
+            <button 
+              onClick={toggleLanguage}
+              className="px-2.5 py-1.5 text-xs font-bold rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 transition-colors uppercase tracking-wider cursor-pointer"
+            >
+              {settings.language === 'ar' ? 'EN' : 'عربي'}
+            </button>
+          </div>
+
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 px-3.5 py-3 rounded-2xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50/70 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 transition-all border border-rose-200/60 dark:border-rose-900/40 shadow-xs"
+            className="text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 p-2 px-3 py-1.5 text-xs font-bold bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            title={settings.language === 'ar' ? 'تسجيل الخروج' : 'Logout'}
           >
-            <LogOut size={16} />
+            <LogOut className="w-4 h-4" />
             <span>{isAr ? 'تسجيل الخروج' : 'Logout'}</span>
           </button>
         </div>
@@ -588,7 +840,7 @@ export function Admin() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsMobileSidebarOpen(true)}
-              className="md:hidden p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-300"
+              className="md:hidden p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-300 cursor-pointer"
             >
               <Menu size={20} />
             </button>
@@ -602,16 +854,7 @@ export function Admin() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            <button
-              onClick={fetchData}
-              disabled={loading}
-              className="p-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl transition-all shadow-2xs"
-              title={isAr ? 'تحديث البيانات' : 'Refresh Data'}
-            >
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            </button>
-          </div>
+          <div className="flex items-center gap-2"></div>
         </header>
 
         {/* Tab Body */}
@@ -671,7 +914,7 @@ export function Admin() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 bg-white dark:bg-zinc-900 p-6 sm:p-7 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-5">
                   <h3 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-                    <TrendingUp size={20} className="text-purple-600 dark:text-purple-400" />
+                    <TrendingUp size={20} className="text-blue-600 dark:text-blue-400" />
                     <span>{isAr ? 'ملخص الأداء الأكاديمي للطلاب' : 'Academic Performance Breakdown'}</span>
                   </h3>
 
@@ -731,9 +974,9 @@ export function Admin() {
                   </div>
                 </div>
 
-                <div className="bg-gradient-to-br from-purple-900/10 via-indigo-900/5 to-transparent dark:from-purple-950/30 dark:via-zinc-900 dark:to-zinc-900 p-6 sm:p-7 rounded-3xl border border-purple-200/60 dark:border-purple-900/40 shadow-xs flex flex-col justify-between">
+                <div className="bg-gradient-to-br from-blue-900/10 via-indigo-900/5 to-transparent dark:from-blue-950/30 dark:via-zinc-900 dark:to-zinc-900 p-6 sm:p-7 rounded-3xl border border-blue-200/60 dark:border-blue-900/40 shadow-xs flex flex-col justify-between">
                   <div>
-                    <div className="flex items-center gap-2 text-purple-700 dark:text-purple-300 font-bold mb-2">
+                    <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-bold mb-2">
                       <Sparkles size={18} />
                       <span>{isAr ? 'إجراءات سريعة للأدمن' : 'Admin Quick Actions'}</span>
                     </div>
@@ -748,7 +991,7 @@ export function Admin() {
                     <button
                       onClick={handleExportBackup}
                       disabled={backupLoading}
-                      className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-xs"
+                      className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-xs"
                     >
                       <Download size={14} />
                       <span>{isAr ? 'تنزيل نسخة احتياطية فوراً' : 'Download Backup JSON'}</span>
@@ -778,17 +1021,43 @@ export function Admin() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder={isAr ? 'بحث باسم الطالب، الإيميل، الكلية، أو الجامعة...' : 'Search student by name, email, college...'}
-                    className="w-full pl-9 rtl:pl-3 rtl:pr-9 pr-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs sm:text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                    className="w-full pl-9 rtl:pl-3 rtl:pr-9 pr-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs sm:text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {availableStudentUnis.length > 0 && (
+                    <select
+                      value={studentUniFilter}
+                      onChange={(e) => setStudentUniFilter(e.target.value)}
+                      className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="all">{isAr ? 'كل الجامعات' : 'All Universities'}</option>
+                      {availableStudentUnis.map(uni => (
+                        <option key={uni} value={uni}>{uni}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {availableStudentColleges.length > 0 && (
+                    <select
+                      value={studentCollegeFilter}
+                      onChange={(e) => setStudentCollegeFilter(e.target.value)}
+                      className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="all">{isAr ? 'كل الكليات' : 'All Colleges'}</option>
+                      {availableStudentColleges.map(col => (
+                        <option key={col} value={col}>{col}</option>
+                      ))}
+                    </select>
+                  )}
+
                   <select
                     value={gpaFilter}
                     onChange={(e) => setGpaFilter(e.target.value as any)}
-                    className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-purple-500"
+                    className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="all">{isAr ? 'كل الطلاب' : 'All Students'}</option>
+                    <option value="all">{isAr ? 'كل التقديرات' : 'All GPA Tiers'}</option>
                     <option value="honor">{isAr ? 'المتفوقين (امتياز)' : 'Honor (≥ 3.5)'}</option>
                     <option value="good">{isAr ? 'أداء مستقر (2.5 - 3.49)' : 'Good (2.5 - 3.49)'}</option>
                     <option value="warning">{isAr ? 'تحت الإنذار' : 'Under Warning'}</option>
@@ -821,7 +1090,7 @@ export function Admin() {
                                 <span>{st.email}</span>
                                 <button
                                   onClick={() => handleCopy(st.email, st.id)}
-                                  className="text-zinc-400 hover:text-purple-600 transition-colors"
+                                  className="text-zinc-400 hover:text-blue-600 transition-colors"
                                   title={isAr ? 'نسخ الإيميل' : 'Copy Email'}
                                 >
                                   {copiedEmail === st.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
@@ -876,7 +1145,7 @@ export function Admin() {
                           <td className="py-4 px-6 text-center">
                             <button
                               onClick={() => setSelectedStudent(st)}
-                              className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold rounded-xl border border-purple-200 dark:border-purple-800/60 transition-all flex items-center gap-1.5 mx-auto shadow-2xs"
+                              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold rounded-xl border border-blue-200 dark:border-blue-800/60 transition-all flex items-center gap-1.5 mx-auto shadow-2xs"
                             >
                               <Eye size={14} />
                               <span>{isAr ? 'عرض الملف' : 'View Profile'}</span>
@@ -899,7 +1168,17 @@ export function Admin() {
             </div>
           )}
 
-          {/* TAB 3: SUGGESTIONS & FEEDBACK HUB */}
+          {/* TAB 3: UNIVERSITIES & COLLEGES DATABASE */}
+          {activeTab === 'universities' && (
+            <AdminUniversitiesTab
+              studentsList={studentsList}
+              onRefreshAllData={fetchData}
+              subTab={universitySubTab}
+              onSubTabChange={(st) => setUniversitySubTab(st)}
+            />
+          )}
+
+          {/* TAB 4: SUGGESTIONS & FEEDBACK HUB */}
           {activeTab === 'suggestions' && (
             <div className="space-y-6">
               {/* Sub-Tabs: الرئيسية / قيد المراجعة / تم الرد عليها */}
@@ -909,13 +1188,13 @@ export function Admin() {
                     onClick={() => setFeedbackSubTab('new')}
                     className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
                       feedbackSubTab === 'new'
-                        ? 'bg-white dark:bg-zinc-900 text-purple-600 dark:text-purple-400 shadow-sm'
+                        ? 'bg-white dark:bg-zinc-900 text-blue-600 dark:text-blue-400 shadow-sm'
                         : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                     }`}
                   >
                     <Inbox size={15} />
                     <span>{isAr ? 'الرئيسية (الرسائل الواردة)' : 'Inbox (New)'}</span>
-                    <span className="px-2 py-0.5 rounded-full text-[11px] bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-black">
+                    <span className="px-2 py-0.5 rounded-full text-[11px] bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-black">
                       {pendingFeedbacks}
                     </span>
                   </button>
@@ -964,7 +1243,7 @@ export function Admin() {
                       value={feedbackSearch}
                       onChange={(e) => setFeedbackSearch(e.target.value)}
                       placeholder={isAr ? 'بحث في الشكاوى أو الطلاب أو الجامعات...' : 'Search feedback, students...'}
-                      className="pl-9 rtl:pr-9 rtl:pl-3 pr-3 py-1.5 text-xs bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-purple-500 w-48 sm:w-64 text-zinc-900 dark:text-zinc-100"
+                      className="pl-9 rtl:pr-9 rtl:pl-3 pr-3 py-1.5 text-xs bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 w-48 sm:w-64 text-zinc-900 dark:text-zinc-100"
                     />
                   </div>
 
@@ -1027,7 +1306,7 @@ export function Admin() {
                         setAdminNoteInput(fb.adminNotes || '');
                         setNoteSavedSuccess(false);
                       }}
-                      className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md hover:border-purple-300 dark:hover:border-purple-700/60 transition-all cursor-pointer flex flex-col justify-between space-y-4 group relative"
+                      className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700/60 transition-all cursor-pointer flex flex-col justify-between space-y-4 group relative"
                     >
                       <div className="space-y-3.5">
                         {/* Header Badges with Interactive Category and Status Switcher */}
@@ -1063,7 +1342,7 @@ export function Admin() {
                                 ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
                                 : fb.status === 'reviewed' 
                                 ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300' 
-                                : 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
+                                : 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
                             }`}>
                               {fb.status === 'resolved' && <CheckCircle2 size={12} />}
                               {fb.status === 'reviewed' && <Clock size={12} />}
@@ -1078,15 +1357,15 @@ export function Admin() {
                         </div>
 
                         {/* Student Profile Card Header */}
-                        <div className="p-4 bg-gradient-to-r from-zinc-50 to-purple-50/40 dark:from-zinc-800/40 dark:to-purple-950/20 rounded-2xl border border-zinc-200/70 dark:border-zinc-700/60 space-y-2.5">
+                        <div className="p-4 bg-gradient-to-r from-zinc-50 to-blue-50/40 dark:from-zinc-800/40 dark:to-blue-950/20 rounded-2xl border border-zinc-200/70 dark:border-zinc-700/60 space-y-2.5">
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-sm">
+                              <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-sm">
                                 {studentName.charAt(0)}
                               </div>
                               <div className="min-w-0">
                                 <p className="font-bold text-sm text-zinc-900 dark:text-white truncate">{studentName}</p>
-                                <p className="text-xs font-semibold text-purple-600 dark:text-purple-400 truncate dir-ltr text-right rtl:text-right">{studentEmail}</p>
+                                <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 truncate dir-ltr text-right rtl:text-right">{studentEmail}</p>
                                 <p className="text-[11px] text-zinc-400 truncate">{studentUni} {studentCollege && `• ${studentCollege}`}</p>
                               </div>
                             </div>
@@ -1101,7 +1380,7 @@ export function Admin() {
                               }`}>
                                 {studentCgpa.toFixed(2)} CGPA
                               </span>
-                              <p className="text-[10px] font-bold text-purple-600 dark:text-purple-400 mt-0.5">
+                              <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 mt-0.5">
                                 {studentEvaluation}
                               </p>
                             </div>
@@ -1122,7 +1401,7 @@ export function Admin() {
 
                         {/* Complaint / Message Title & Content */}
                         <div className="space-y-1.5">
-                          <h4 className="font-bold text-base text-zinc-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                          <h4 className="font-bold text-base text-zinc-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                             {fb.title}
                           </h4>
                           <p className="text-xs text-zinc-600 dark:text-zinc-300 line-clamp-2 leading-relaxed bg-zinc-50/70 dark:bg-zinc-800/30 p-3 rounded-2xl border border-zinc-100 dark:border-zinc-800/80">
@@ -1133,7 +1412,7 @@ export function Admin() {
                         {/* Attachments & Admin Note Indicators */}
                         <div className="flex items-center gap-3 flex-wrap text-xs">
                           {fb.attachments && fb.attachments.length > 0 && (
-                            <div className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400 font-bold">
+                            <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-bold">
                               <Paperclip size={13} />
                               <span>{fb.attachments.length} {isAr ? 'مرفقات مرفوعة' : 'attachments'}</span>
                             </div>
@@ -1155,7 +1434,7 @@ export function Admin() {
                             setAdminNoteInput(fb.adminNotes || '');
                             setNoteSavedSuccess(false);
                           }}
-                          className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/50 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-xs font-bold rounded-xl border border-purple-200 dark:border-purple-800/60 transition-all flex items-center gap-1.5 shadow-2xs"
+                          className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-bold rounded-xl border border-blue-200 dark:border-blue-800/60 transition-all flex items-center gap-1.5 shadow-2xs"
                         >
                           <Eye size={13} />
                           <span>{isAr ? 'عرض التفاصيل والمواد' : 'View Details & Courses'}</span>
@@ -1166,7 +1445,7 @@ export function Admin() {
                           {fb.status !== 'new' && (
                             <button
                               onClick={() => handleUpdateFeedbackStatus(fb.id, 'new')}
-                              className="px-2.5 py-1.5 bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 text-purple-700 dark:text-purple-300 text-[11px] font-bold rounded-xl border border-purple-200 dark:border-purple-800/40 transition-all"
+                              className="px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 text-blue-700 dark:text-blue-300 text-[11px] font-bold rounded-xl border border-blue-200 dark:border-blue-800/40 transition-all"
                               title={isAr ? 'إرجاع للرئيسية (الوارد)' : 'Move to Inbox'}
                             >
                               {isAr ? 'إرجاع للرئيسية' : 'To Inbox'}
@@ -1285,7 +1564,7 @@ export function Admin() {
 
                 <div className="bg-white dark:bg-zinc-900 p-6 sm:p-7 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-5">
                   <div className="flex items-center gap-3 pb-3 border-b border-zinc-100 dark:border-zinc-800">
-                    <div className="w-10 h-10 rounded-2xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
                       <Mail size={20} />
                     </div>
                     <div>
@@ -1307,10 +1586,10 @@ export function Admin() {
 
                   <form onSubmit={handleSaveEmailConfig} className="space-y-4">
                     {/* Sender Gmail Credentials */}
-                    <div className="p-4 bg-purple-50/50 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-900/30 rounded-2xl space-y-3">
+                    <div className="p-4 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 rounded-2xl space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <Mail size={15} className="text-purple-600 dark:text-purple-400" />
+                          <Mail size={15} className="text-blue-600 dark:text-blue-400" />
                           <h4 className="text-xs font-bold text-zinc-900 dark:text-white">
                             {isAr ? 'بيانات بريد Gmail المرسل (Sender Gmail)' : 'Sender Gmail Configuration'}
                           </h4>
@@ -1318,7 +1597,7 @@ export function Admin() {
                         <button
                           type="button"
                           onClick={() => setShowGoogleGuide(!showGoogleGuide)}
-                          className="text-[11px] font-bold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
+                          className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
                         >
                           <HelpCircle size={13} />
                           <span>{isAr ? 'كيف تستخرج كلمة مرور التطبيقات؟' : 'How to get App Password?'}</span>
@@ -1327,8 +1606,8 @@ export function Admin() {
 
                       {/* Google App Password Guide Helper */}
                       {showGoogleGuide && (
-                        <div className="p-3.5 bg-white dark:bg-zinc-900 border border-purple-200 dark:border-purple-800 rounded-xl text-xs space-y-2 text-zinc-700 dark:text-zinc-300">
-                          <p className="font-bold text-purple-600 dark:text-purple-400">
+                        <div className="p-3.5 bg-white dark:bg-zinc-900 border border-blue-200 dark:border-blue-800 rounded-xl text-xs space-y-2 text-zinc-700 dark:text-zinc-300">
+                          <p className="font-bold text-blue-600 dark:text-blue-400">
                             {isAr ? 'خطوات تفعيل إرسال الإيميل من حسابك الجيميل (في 30 ثانية):' : 'Steps to get your Gmail App Password (30 seconds):'}
                           </p>
                           <ol className="list-decimal list-inside space-y-1 text-[11px] text-zinc-600 dark:text-zinc-400 pr-1">
@@ -1351,7 +1630,7 @@ export function Admin() {
                             value={emailConfig.senderEmail || ''}
                             onChange={(e) => setEmailConfig({ ...emailConfig, senderEmail: e.target.value })}
                             placeholder="yourname@gmail.com"
-                            className="w-full px-3.5 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                            className="w-full px-3.5 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         </div>
 
@@ -1366,7 +1645,7 @@ export function Admin() {
                               value={emailConfig.appPassword || ''}
                               onChange={(e) => setEmailConfig({ ...emailConfig, appPassword: e.target.value })}
                               placeholder="xxxx xxxx xxxx xxxx"
-                              className="w-full px-3.5 py-2.5 pr-9 rtl:pr-3.5 rtl:pl-9 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                              className="w-full px-3.5 py-2.5 pr-9 rtl:pr-3.5 rtl:pl-9 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
                             />
                             <button
                               type="button"
@@ -1391,7 +1670,7 @@ export function Admin() {
                         value={emailConfig.targetEmail}
                         onChange={(e) => setEmailConfig({ ...emailConfig, targetEmail: e.target.value })}
                         placeholder="admin@example.com"
-                        className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                        className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
 
@@ -1444,7 +1723,7 @@ export function Admin() {
                           type="checkbox"
                           checked={emailConfig.enabled}
                           onChange={(e) => setEmailConfig({ ...emailConfig, enabled: e.target.checked })}
-                          className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
+                          className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
                         />
                         <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
                           {isAr ? 'تفعيل الإرسال المجدول تلقائياً' : 'Enable Automated Schedule'}
@@ -1458,13 +1737,13 @@ export function Admin() {
                           onClick={handleSendBackupEmailNow}
                           className="px-3.5 py-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 disabled:opacity-50 text-zinc-800 dark:text-zinc-200 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
                         >
-                          {backupLoading ? <Loader2 size={13} className="animate-spin text-purple-600" /> : <Send size={13} />}
+                          {backupLoading ? <Loader2 size={13} className="animate-spin text-blue-600" /> : <Send size={13} />}
                           <span>{backupLoading ? (isAr ? 'جاري الإرسال...' : 'Sending...') : (isAr ? 'إرسال تجريبي الآن' : 'Send Test Now')}</span>
                         </button>
 
                         <button
                           type="submit"
-                          className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+                          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
                         >
                           {isAr ? 'حفظ الإعدادات والجدولة' : 'Save Settings'}
                         </button>
@@ -1484,7 +1763,7 @@ export function Admin() {
           <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-zinc-200 dark:border-zinc-800 shadow-2xl p-6 sm:p-7 space-y-6">
             <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 font-black text-xl flex items-center justify-center">
+                <div className="w-12 h-12 rounded-2xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 font-black text-xl flex items-center justify-center">
                   {selectedStudent.name.charAt(0)}
                 </div>
                 <div>
@@ -1504,7 +1783,7 @@ export function Admin() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center">
                 <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'المعدل التراكمي CGPA' : 'CGPA'}</span>
-                <span className="text-xl font-black text-purple-600 dark:text-purple-400">{selectedStudent.cgpa.toFixed(2)}</span>
+                <span className="text-xl font-black text-blue-600 dark:text-blue-400">{selectedStudent.cgpa.toFixed(2)}</span>
               </div>
 
               <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center">
@@ -1548,7 +1827,7 @@ export function Admin() {
                         <span className="font-bold text-zinc-500">
                           {gr?.totalAchieved || 0} / {sub.total_marks} ({Math.round(gr?.percentage || 0)}%)
                         </span>
-                        <span className="px-2.5 py-1 rounded-xl bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 font-black">
+                        <span className="px-2.5 py-1 rounded-xl bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-black">
                           {gr?.letter || 'F'}
                         </span>
                       </div>
@@ -1684,7 +1963,7 @@ export function Admin() {
                         ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
                         : selectedFeedback.status === 'reviewed'
                         ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
-                        : 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
+                        : 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
                     }`}>
                       {selectedFeedback.status === 'resolved' && <CheckCircle2 size={12} />}
                       {selectedFeedback.status === 'reviewed' && <Clock size={12} />}
@@ -1711,15 +1990,15 @@ export function Admin() {
               </div>
 
               {/* Student Overview Profile */}
-              <div className="p-4 bg-gradient-to-br from-purple-500/10 via-zinc-50 dark:via-zinc-800/50 to-purple-500/5 rounded-3xl border border-purple-200/60 dark:border-purple-900/40 space-y-3">
+              <div className="p-4 bg-gradient-to-br from-blue-500/10 via-zinc-50 dark:via-zinc-800/50 to-blue-500/5 rounded-3xl border border-blue-200/60 dark:border-blue-900/40 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-12 h-12 rounded-2xl bg-purple-600 text-white font-black text-lg flex items-center justify-center shadow-md">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white font-black text-lg flex items-center justify-center shadow-md">
                       {studentName.charAt(0)}
                     </div>
                     <div className="min-w-0">
                       <h4 className="font-bold text-base text-zinc-900 dark:text-white">{studentName}</h4>
-                      <p className="text-xs font-semibold text-purple-600 dark:text-purple-400 dir-ltr text-right rtl:text-right">{studentEmail}</p>
+                      <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 dir-ltr text-right rtl:text-right">{studentEmail}</p>
                       <p className="text-xs text-zinc-400">{studentUni} {studentCollege && `• ${studentCollege}`}</p>
                     </div>
                   </div>
@@ -1727,7 +2006,7 @@ export function Admin() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <div className="px-3.5 py-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
                       <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'المعدل التراكمي' : 'CGPA'}</span>
-                      <span className="text-base font-black text-purple-600 dark:text-purple-400">{studentCgpa.toFixed(2)}</span>
+                      <span className="text-base font-black text-blue-600 dark:text-blue-400">{studentCgpa.toFixed(2)}</span>
                     </div>
 
                     <div className="px-3.5 py-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
@@ -1751,7 +2030,7 @@ export function Admin() {
               {/* Message Details & Attachments */}
               <div className="space-y-3">
                 <h4 className="font-bold text-sm text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
-                  <MessageSquare size={16} className="text-purple-500" />
+                  <MessageSquare size={16} className="text-blue-500" />
                   <span>{isAr ? 'شرح وتفاصيل الرسالة بالكامل:' : 'Full Message Details & Description:'}</span>
                 </h4>
                 <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 text-xs sm:text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed">
@@ -1762,7 +2041,7 @@ export function Admin() {
                 {selectedFeedback.attachments && selectedFeedback.attachments.length > 0 && (
                   <div className="space-y-2 pt-2">
                     <h5 className="text-xs font-bold text-zinc-500 flex items-center gap-1.5">
-                      <Paperclip size={14} className="text-purple-500" />
+                      <Paperclip size={14} className="text-blue-500" />
                       <span>{isAr ? 'الملفات المرفقة مع الطلب:' : 'Attached Files:'}</span>
                     </h5>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -1772,7 +2051,7 @@ export function Admin() {
                           className="p-3 bg-zinc-50 dark:bg-zinc-800/80 rounded-2xl border border-zinc-200 dark:border-zinc-700 flex items-center justify-between gap-2"
                         >
                           <div className="flex items-center gap-2 min-w-0">
-                            <FileText size={16} className="text-purple-500 shrink-0" />
+                            <FileText size={16} className="text-blue-500 shrink-0" />
                             <div className="min-w-0">
                               <p className="font-bold text-xs text-zinc-800 dark:text-zinc-200 truncate">{att.name}</p>
                               <p className="text-[10px] text-zinc-400">{Math.round(att.size / 1024)} KB</p>
@@ -1783,7 +2062,7 @@ export function Admin() {
                             <button
                               type="button"
                               onClick={() => handlePreviewAttachment(att)}
-                              className="p-1.5 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 text-purple-600 dark:text-purple-300 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                              className="p-1.5 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 text-blue-600 dark:text-blue-300 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
                               title={isAr ? 'معاينة في نافذة جديدة' : 'Preview'}
                             >
                               <ExternalLink size={12} />
@@ -1809,7 +2088,7 @@ export function Admin() {
               <div className="space-y-3 pt-2">
                 <h4 className="font-bold text-sm text-zinc-800 dark:text-zinc-200 flex items-center justify-between">
                   <span className="flex items-center gap-2">
-                    <BookOpen size={16} className="text-purple-500" />
+                    <BookOpen size={16} className="text-blue-500" />
                     <span>{isAr ? 'مواد الطالب وتفاصيل تقسيم الدرجات في كل مادة:' : 'Student Courses & Grading Breakdown:'}</span>
                   </span>
                   <span className="text-xs text-zinc-400 font-medium">
@@ -1837,7 +2116,7 @@ export function Admin() {
                             <span className="font-black text-xs text-zinc-600 dark:text-zinc-300">
                               {gr?.totalAchieved || 0} / {sub.total_marks || sub.totalMarks} ({Math.round(gr?.percentage || 0)}%)
                             </span>
-                            <span className="px-2.5 py-1 rounded-xl bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 font-black text-xs">
+                            <span className="px-2.5 py-1 rounded-xl bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-black text-xs">
                               {gr?.letter || 'F'}
                             </span>
                           </div>
@@ -1852,7 +2131,7 @@ export function Admin() {
                                 className="px-2.5 py-1 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700/60 text-[11px] flex items-center gap-1.5 shadow-2xs"
                               >
                                 <span className="font-bold text-zinc-700 dark:text-zinc-300">{d.name}:</span>
-                                <span className="font-black text-purple-600 dark:text-purple-400">
+                                <span className="font-black text-blue-600 dark:text-blue-400">
                                   {d.achievedMarks !== null && d.achievedMarks !== undefined ? d.achievedMarks : '-'} / {d.maxMarks}
                                 </span>
                                 <span className={`text-[9px] px-1.5 py-0.2 rounded-md font-bold ${
@@ -1885,8 +2164,8 @@ export function Admin() {
                       onClick={() => handleUpdateFeedbackStatus(selectedFeedback.id, 'new')}
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                         selectedFeedback.status === 'new'
-                          ? 'bg-purple-600 text-white shadow-xs'
-                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-purple-100'
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-blue-100'
                       }`}
                     >
                       {isAr ? 'جديد (الرئيسية)' : 'Set New'}
@@ -1932,12 +2211,12 @@ export function Admin() {
                       value={adminNoteInput}
                       onChange={(e) => setAdminNoteInput(e.target.value)}
                       placeholder={isAr ? 'اكتب ملاحظة أو رداً هنا...' : 'Type admin notes or reply...'}
-                      className="flex-1 px-3 py-2 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-purple-500 text-zinc-800 dark:text-zinc-200"
+                      className="flex-1 px-3 py-2 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-zinc-800 dark:text-zinc-200"
                     />
                     <button
                       onClick={handleSaveAdminNote}
                       disabled={savingNote}
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50"
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50"
                     >
                       {savingNote ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ الملاحظة' : 'Save Note')}
                     </button>
@@ -1964,7 +2243,7 @@ export function Admin() {
                     href={`mailto:${studentEmail}?subject=${encodeURIComponent(`رد إدارة UniStudent بخصوص: ${selectedFeedback.title}`)}&body=${encodeURIComponent(`مرحباً ${studentName}،\n\nبخصوص طلبك/شكوتك بعنوان "${selectedFeedback.title}":\n\n`)}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2"
+                    className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2"
                   >
                     <Mail size={14} />
                     <span>{isAr ? 'الرد على الطالب عبر البريد' : 'Reply via Email'}</span>

@@ -450,7 +450,7 @@ export function ProductivityDashboard() {
           </div>
 
           {/* Productivity Groups & Categories Section */}
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-3">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-4 sm:p-6 space-y-3 w-full max-w-full min-w-0">
             <div className="flex items-center gap-2 pb-2 border-b border-zinc-100 dark:border-zinc-800">
               <Layers size={18} className="text-indigo-500" />
               <h3 className="font-bold text-sm text-zinc-900 dark:text-white">
@@ -458,7 +458,7 @@ export function ProductivityDashboard() {
               </h3>
             </div>
 
-            <GroupsManager />
+            <GroupsManager embedded />
           </div>
 
         </div>

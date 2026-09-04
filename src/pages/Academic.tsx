@@ -7,6 +7,7 @@ import { calculateSubjectGrade, calculateGPA, getWarningThreshold, isSubjectAtWa
 import { Subject } from '../types';
 import { Plus, AlertTriangle, Edit2, Trash2, X } from 'lucide-react';
 import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../components/ui/UnifiedSemesterFilter';
+import { ConfirmModal } from '../components/ui/CustomModal';
 
 export function Academic() {
   const { t } = useTranslation();
@@ -18,8 +19,16 @@ export function Academic() {
   const [filterSemesters, setFilterSemesters] = useState<number[]>(currentSemester ? [currentSemester.semesterIndex] : [1]);
   const [showModal, setShowModal] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    code: string;
+    name: string;
+    creditHours: number | '';
+    totalMarks: number | '';
+    yearIndex: number;
+    semesterIndex: number;
+  }>({
     code: '',
     name: '',
     creditHours: 3,
@@ -55,15 +64,24 @@ export function Academic() {
     setShowModal(true);
   };
 
-  const handleDelete = (e: React.MouseEvent, subjectId: string) => {
+  const handleDelete = (e: React.MouseEvent, subject: Subject) => {
     e.stopPropagation();
-    if (window.confirm(isAr ? 'هل أنت متأكد من حذف هذه المادة؟ سيتم حذف كافة التقييمات المرتبطة بها.' : 'Are you sure you want to delete this subject? All associated grade distributions will be removed.')) {
-      deleteSubject(subjectId);
-    }
+    setSubjectToDelete(subject);
   };
 
   const handleSaveSubject = () => {
-    if (!formData.name.trim() || !formData.code.trim()) return;
+    if (!formData.name.trim() || !formData.code.trim()) {
+      alert(isAr ? 'يرجى إدخال اسم المادة وكود المادة.' : 'Please enter subject name and code.');
+      return;
+    }
+    if (formData.creditHours === '' || isNaN(Number(formData.creditHours)) || Number(formData.creditHours) <= 0) {
+      alert(isAr ? 'يرجى إدخال عدد الساعات المعتمدة بشكل صحيح (أكبر من 0).' : 'Please enter valid credit hours.');
+      return;
+    }
+    if (formData.totalMarks === '' || isNaN(Number(formData.totalMarks)) || Number(formData.totalMarks) <= 0) {
+      alert(isAr ? 'يرجى إدخال الدرجة الكلية للمادة بشكل صحيح (أكبر من 0).' : 'Please enter valid total marks.');
+      return;
+    }
     
     if (editingSubject) {
       updateSubject(editingSubject.id, {
@@ -149,6 +167,8 @@ export function Academic() {
                 <tr>
                   <th className="px-6 py-4 font-medium">{t('subject_name')}</th>
                   <th className="px-6 py-4 font-medium">{t('subject_code')}</th>
+                  <th className="px-6 py-4 font-medium text-center">{t('year')}</th>
+                  <th className="px-6 py-4 font-medium text-center">{t('semester')}</th>
                   <th className="px-6 py-4 font-medium text-center">{t('credit_hours')}</th>
                   <th className="px-6 py-4 font-medium text-center">{t('total_marks')}</th>
                   <th className="px-6 py-4 font-medium text-center">{t('current_grade')}</th>
@@ -168,6 +188,8 @@ export function Academic() {
                         {subject.name}
                       </td>
                       <td className="px-6 py-4 text-zinc-500">{subject.code}</td>
+                      <td className="px-6 py-4 text-center font-bold text-zinc-700 dark:text-zinc-300">{subject.yearIndex}</td>
+                      <td className="px-6 py-4 text-center font-bold text-zinc-700 dark:text-zinc-300">{subject.semesterIndex}</td>
                       <td className="px-6 py-4 text-center">{subject.creditHours}</td>
                       <td className="px-6 py-4 text-center">{subject.totalMarks}</td>
                       <td className="px-6 py-4 text-center font-bold">
@@ -189,8 +211,8 @@ export function Academic() {
                             <Edit2 size={15} />
                           </button>
                           <button
-                            onClick={(e) => handleDelete(e, subject.id)}
-                            className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs"
+                            onClick={(e) => handleDelete(e, subject)}
+                            className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs cursor-pointer"
                             title={isAr ? 'حذف المادة' : 'Delete Subject'}
                           >
                             <Trash2 size={15} />
@@ -202,7 +224,7 @@ export function Academic() {
                 })}
                 {filteredSubjects.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-zinc-400">
+                    <td colSpan={8} className="px-6 py-8 text-center text-zinc-400">
                       {isAr ? 'لا توجد مواد مضافة في هذا الفصل الدراسي.' : 'No subjects added for this semester.'}
                     </td>
                   </tr>
@@ -313,8 +335,8 @@ export function Academic() {
                   <input 
                     type="number" 
                     min="1" 
-                    value={formData.creditHours} 
-                    onChange={e => setFormData({...formData, creditHours: Number(e.target.value)})} 
+                    value={formData.creditHours === '' ? '' : formData.creditHours} 
+                    onChange={e => setFormData({...formData, creditHours: e.target.value === '' ? '' : Number(e.target.value)})} 
                     className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
                   />
                 </div>
@@ -323,8 +345,8 @@ export function Academic() {
                   <input 
                     type="number" 
                     min="1" 
-                    value={formData.totalMarks} 
-                    onChange={e => setFormData({...formData, totalMarks: Number(e.target.value)})} 
+                    value={formData.totalMarks === '' ? '' : formData.totalMarks} 
+                    onChange={e => setFormData({...formData, totalMarks: e.target.value === '' ? '' : Number(e.target.value)})} 
                     className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
                   />
                 </div>
@@ -347,6 +369,23 @@ export function Academic() {
           </div>
         </div>
       )}
+
+      {/* In-app confirmation modal for deleting subject */}
+      <ConfirmModal
+        isOpen={!!subjectToDelete}
+        title={isAr ? 'حذف المادة الدراسية' : 'Delete Subject'}
+        message={isAr ? `هل أنت متأكد من حذف مادة (${subjectToDelete?.name})؟ سيتم حذف كافة التقييمات المرتبطة بها نهائياً.` : `Are you sure you want to delete (${subjectToDelete?.name})? All associated grade distributions will be removed.`}
+        confirmText={isAr ? 'نعم، احذف المادة' : 'Yes, Delete'}
+        cancelText={isAr ? 'تراجع' : 'Cancel'}
+        variant="danger"
+        onConfirm={() => {
+          if (subjectToDelete) {
+            deleteSubject(subjectToDelete.id);
+            setSubjectToDelete(null);
+          }
+        }}
+        onCancel={() => setSubjectToDelete(null)}
+      />
     </div>
   );
 }

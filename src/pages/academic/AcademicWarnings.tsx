@@ -46,7 +46,7 @@ export function AcademicWarnings() {
 
   // Temp state while editing in modal
   const [tempLetter, setTempLetter] = useState(currentLetter);
-  const [tempPoints, setTempPoints] = useState(currentPoints);
+  const [tempPoints, setTempPoints] = useState<number | ''>(currentPoints);
 
   // Sort grading scale for display (from high to low)
   const sortedScale = [...currentScale].sort((a, b) => b.points - a.points);
@@ -75,12 +75,16 @@ export function AcademicWarnings() {
   // Handlers for modal threshold changes
   const handleGradeLetterChange = (letter: string) => {
     const matchedRule = getMatchingGradeRuleByLetter(letter, settings.gradingScale);
-    const points = matchedRule ? matchedRule.points : tempPoints;
+    const points = matchedRule ? matchedRule.points : (tempPoints !== '' ? tempPoints : currentPoints);
     setTempLetter(letter);
     setTempPoints(points);
   };
 
-  const handleGpaPointsChange = (val: number) => {
+  const handleGpaPointsChange = (val: number | '') => {
+    if (val === '') {
+      setTempPoints('');
+      return;
+    }
     const maxScalePoints = sortedScale.length > 0 ? Math.max(...sortedScale.map(r => r.points), 4.0) : 4.0;
     const clampedPoints = Math.max(0, Math.min(maxScalePoints, Number(val.toFixed(2))));
     const matchedRule = getMatchingGradeRuleByPoints(clampedPoints, settings.gradingScale);
@@ -91,9 +95,15 @@ export function AcademicWarnings() {
   };
 
   const handleSaveThreshold = async () => {
+    if (tempPoints === '' || isNaN(Number(tempPoints)) || Number(tempPoints) < 0) {
+      alert(isAr ? 'يرجى إدخال معدل النقاط المطلوب بشكل صحيح (لا يمكن ترك الحقل فارغاً).' : 'Please enter valid GPA points.');
+      return;
+    }
+
+    const finalPoints = Number(tempPoints);
     updateSettings({
       warningGradeLetter: tempLetter,
-      warningGpaPoints: tempPoints
+      warningGpaPoints: finalPoints
     });
 
     const { userId } = useAppStore.getState();
@@ -101,7 +111,7 @@ export function AcademicWarnings() {
       const { db } = await import('../../lib/db');
       db.upsertSettings(userId, {
         warningGradeLetter: tempLetter,
-        warningGpaPoints: tempPoints
+        warningGpaPoints: finalPoints
       }).catch(console.error);
     }
 
@@ -235,7 +245,7 @@ export function AcademicWarnings() {
               <div className="flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-300">
                 <Sparkles size={14} className="text-amber-500" />
                 <span>
-                  {isAr ? 'الحد المختار حالياً:' : 'Selected:'} {tempLetter} ({tempPoints.toFixed(2)} GPA)
+                  {isAr ? 'الحد المختار حالياً:' : 'Selected:'} {tempLetter} ({typeof tempPoints === 'number' ? tempPoints.toFixed(2) : (tempPoints || '0.00')} GPA)
                 </span>
               </div>
 
@@ -294,7 +304,7 @@ export function AcademicWarnings() {
                 <div className="mt-3 pt-2 border-t border-zinc-200 dark:border-zinc-700/50 flex items-center justify-between text-xs text-zinc-500">
                   <span>{isAr ? 'النقاط المقابلة:' : 'Equivalent GPA:'}</span>
                   <span className="font-bold text-amber-600 dark:text-amber-400 text-sm">
-                    {tempPoints.toFixed(2)} GPA
+                    {typeof tempPoints === 'number' ? tempPoints.toFixed(2) : (tempPoints || '0.00')} GPA
                   </span>
                 </div>
               </div>
@@ -313,7 +323,7 @@ export function AcademicWarnings() {
                     <button
                       type="button"
                       disabled={!isEditingThreshold}
-                      onClick={() => handleGpaPointsChange(Math.max(0, tempPoints - 0.1))}
+                      onClick={() => handleGpaPointsChange(Math.max(0, (Number(tempPoints) || 0) - 0.1))}
                       className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 font-bold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 transition-colors flex items-center justify-center"
                     >
                       -
@@ -325,15 +335,21 @@ export function AcademicWarnings() {
                         min="0"
                         max="4.0"
                         disabled={!isEditingThreshold}
-                        value={tempPoints}
-                        onChange={(e) => handleGpaPointsChange(parseFloat(e.target.value) || 0)}
+                        value={tempPoints === '' ? '' : tempPoints}
+                        onChange={(e) => {
+                          if (e.target.value === '') {
+                            handleGpaPointsChange('');
+                          } else {
+                            handleGpaPointsChange(parseFloat(e.target.value));
+                          }
+                        }}
                         className="w-full text-center text-lg font-black py-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
                       />
                     </div>
                     <button
                       type="button"
                       disabled={!isEditingThreshold}
-                      onClick={() => handleGpaPointsChange(tempPoints + 0.1)}
+                      onClick={() => handleGpaPointsChange((Number(tempPoints) || 0) + 0.1)}
                       className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 font-bold border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 transition-colors flex items-center justify-center"
                     >
                       +

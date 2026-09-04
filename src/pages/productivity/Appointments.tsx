@@ -134,10 +134,12 @@ export function Appointments() {
   });
 
   return (
-    <div className="flex flex-col min-h-full gap-6 pb-8">
-      <ProductivityGroupTabs activeGroupId={activeGroupId} setActiveGroupId={setActiveGroupId} />
+    <div className="flex flex-col min-h-full w-full max-w-full min-w-0 gap-6 pb-8">
+      <div className="w-full max-w-full min-w-0 shrink-0">
+        <ProductivityGroupTabs activeGroupId={activeGroupId} setActiveGroupId={setActiveGroupId} />
+      </div>
       
-      <div className="flex-1 flex flex-col gap-6">
+      <div className="flex-1 flex flex-col gap-6 w-full max-w-full min-w-0">
         {/* Header */}
         <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
@@ -336,8 +338,8 @@ export function Appointments() {
 
         {/* Calendar View for Appointments Only */}
         {viewMode === 'calendar' && (
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col flex-1">
-            <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/70 dark:bg-zinc-800/40">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col flex-1 w-full max-w-full min-w-0">
+            <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/70 dark:bg-zinc-800/40 shrink-0">
               <button 
                 onClick={prevMonth} 
                 className="p-2 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-colors shadow-2xs cursor-pointer"

@@ -7,6 +7,7 @@ import { calculateSubjectGrade } from '../../lib/academic';
 import { Subject } from '../../types';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
 import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../../components/ui/UnifiedSemesterFilter';
+import { ConfirmModal } from '../../components/ui/CustomModal';
 
 export function AcademicSubjects() {
   const { t } = useTranslation();
@@ -18,8 +19,16 @@ export function AcademicSubjects() {
   const [filterSemesters, setFilterSemesters] = useState<number[]>(currentSemester ? [currentSemester.semesterIndex] : []);
   const [showModal, setShowModal] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    code: string;
+    name: string;
+    creditHours: number | '';
+    totalMarks: number | '';
+    yearIndex: number;
+    semesterIndex: number;
+  }>({
     code: '',
     name: '',
     creditHours: 3,
@@ -30,6 +39,7 @@ export function AcademicSubjects() {
 
   const handleOpenAdd = () => {
     setEditingSubject(null);
+    setFormError(null);
     setFormData({
       code: '',
       name: '',
@@ -44,6 +54,7 @@ export function AcademicSubjects() {
   const handleOpenEdit = (e: React.MouseEvent, subject: Subject) => {
     e.stopPropagation();
     setEditingSubject(subject);
+    setFormError(null);
     setFormData({
       code: subject.code,
       name: subject.name,
@@ -55,11 +66,9 @@ export function AcademicSubjects() {
     setShowModal(true);
   };
 
-  const handleDeleteSubject = (e: React.MouseEvent, id: string) => {
+  const handleDeleteSubject = (e: React.MouseEvent, subject: Subject) => {
     e.stopPropagation();
-    if (window.confirm(isAr ? 'هل أنت متأكد من حذف هذه المادة؟' : 'Are you sure you want to delete this subject?')) {
-      deleteSubject(id);
-    }
+    setSubjectToDelete(subject);
   };
 
   const [formError, setFormError] = useState<string | null>(null);
@@ -70,13 +79,21 @@ export function AcademicSubjects() {
       setFormError(settings.language === 'ar' ? 'يرجى إدخال اسم المادة الدراسية.' : 'Please enter subject name.');
       return;
     }
+    if (formData.creditHours === '' || isNaN(Number(formData.creditHours)) || Number(formData.creditHours) <= 0) {
+      setFormError(settings.language === 'ar' ? 'يرجى إدخال عدد الساعات المعتمدة بشكل صحيح (أكبر من 0).' : 'Please enter valid credit hours (greater than 0).');
+      return;
+    }
+    if (formData.totalMarks === '' || isNaN(Number(formData.totalMarks)) || Number(formData.totalMarks) <= 0) {
+      setFormError(settings.language === 'ar' ? 'يرجى إدخال الدرجة الكلية للمادة بشكل صحيح (أكبر من 0).' : 'Please enter valid total marks (greater than 0).');
+      return;
+    }
 
     if (editingSubject) {
       updateSubject(editingSubject.id, {
         name: formData.name.trim(),
-        code: formData.code.trim() || `SUB-${Math.floor(100 + Math.random() * 900)}`,
-        creditHours: Number(formData.creditHours) || 3,
-        totalMarks: Number(formData.totalMarks) || 100,
+        code: formData.code.trim(),
+        creditHours: Number(formData.creditHours),
+        totalMarks: Number(formData.totalMarks),
         yearIndex: Number(formData.yearIndex),
         semesterIndex: Number(formData.semesterIndex)
       });
@@ -86,9 +103,9 @@ export function AcademicSubjects() {
       const subject: Subject = {
         id: newSubId,
         name: formData.name.trim(),
-        code: formData.code.trim() || `SUB-${Math.floor(100 + Math.random() * 900)}`,
-        creditHours: Number(formData.creditHours) || 3,
-        totalMarks: Number(formData.totalMarks) || 100,
+        code: formData.code.trim(),
+        creditHours: Number(formData.creditHours),
+        totalMarks: Number(formData.totalMarks),
         yearIndex: Number(formData.yearIndex),
         semesterIndex: Number(formData.semesterIndex),
         status: 'current',
@@ -196,8 +213,8 @@ export function AcademicSubjects() {
                           <Edit2 size={15} />
                         </button>
                         <button
-                          onClick={(e) => handleDeleteSubject(e, subject.id)}
-                          className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs"
+                          onClick={(e) => handleDeleteSubject(e, subject)}
+                          className="p-1.5 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all shadow-xs cursor-pointer"
                           title={isAr ? 'حذف المادة' : 'Delete Subject'}
                         >
                           <Trash2 size={15} />
@@ -289,8 +306,11 @@ export function AcademicSubjects() {
                   <input 
                     type="number" 
                     min="1" 
-                    value={formData.creditHours} 
-                    onChange={e => setFormData({...formData, creditHours: Number(e.target.value)})} 
+                    value={formData.creditHours === '' ? '' : formData.creditHours} 
+                    onChange={e => {
+                      if (formError) setFormError(null);
+                      setFormData({...formData, creditHours: e.target.value === '' ? '' : Number(e.target.value)});
+                    }} 
                     className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
                   />
                 </div>
@@ -299,8 +319,11 @@ export function AcademicSubjects() {
                   <input 
                     type="number" 
                     min="1" 
-                    value={formData.totalMarks} 
-                    onChange={e => setFormData({...formData, totalMarks: Number(e.target.value)})} 
+                    value={formData.totalMarks === '' ? '' : formData.totalMarks} 
+                    onChange={e => {
+                      if (formError) setFormError(null);
+                      setFormData({...formData, totalMarks: e.target.value === '' ? '' : Number(e.target.value)});
+                    }} 
                     className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
                   />
                 </div>
@@ -323,6 +346,23 @@ export function AcademicSubjects() {
           </div>
         </div>
       )}
+
+      {/* In-app confirmation modal for deleting subject */}
+      <ConfirmModal
+        isOpen={!!subjectToDelete}
+        title={isAr ? 'حذف المادة الدراسية' : 'Delete Subject'}
+        message={isAr ? `هل أنت متأكد من حذف مادة (${subjectToDelete?.name})؟ سيتم إزالتها نهائياً مع كافة تقييماتها ودرجاتها.` : `Are you sure you want to delete (${subjectToDelete?.name})? All associated marks will be removed.`}
+        confirmText={isAr ? 'نعم، احذف المادة' : 'Yes, Delete'}
+        cancelText={isAr ? 'تراجع' : 'Cancel'}
+        variant="danger"
+        onConfirm={() => {
+          if (subjectToDelete) {
+            deleteSubject(subjectToDelete.id);
+            setSubjectToDelete(null);
+          }
+        }}
+        onCancel={() => setSubjectToDelete(null)}
+      />
     </div>
   );
 }

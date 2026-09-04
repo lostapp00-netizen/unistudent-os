@@ -34,7 +34,6 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const isInitialized = useAppStore(state => state.isInitialized);
   const initialize = useAppStore(state => state.initialize);
-  const refreshSubjects = useAppStore(state => state.refreshSubjects);
   const clearData = useAppStore(state => state.clearData);
 
   const settings = useAppStore(state => state.settings);
@@ -83,30 +82,60 @@ export function App() {
     return () => subscription.unsubscribe();
   }, [initialize, clearData]);
 
-  // Shared/restored university databases are refreshed while the student is
-  // using the app and immediately when they return to the tab. The server-side
-  // query resolves the current approved source, so this also covers additions
-  // made after the initial restore.
+  // Real-time & periodic synchronization for students linked to a university database
   useEffect(() => {
-    if (!session?.user?.id) return;
+    const hasUniLinked = !!settings.universityDatabaseId || (!!settings.university && settings.university !== 'غير محدد' && !!settings.college && settings.college !== 'غير محدد');
+    if (!session?.user?.id || !hasUniLinked) return;
 
-    const refreshWhenVisible = () => {
+    const triggerSync = () => {
+      useAppStore.getState().syncWithUniversityDatabase();
+    };
+
+    window.addEventListener('focus', triggerSync);
+    const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        refreshSubjects();
+        triggerSync();
       }
     };
+    document.addEventListener('visibilitychange', handleVisibility);
 
-    refreshWhenVisible();
-    window.addEventListener('focus', refreshWhenVisible);
-    document.addEventListener('visibilitychange', refreshWhenVisible);
-    const intervalId = window.setInterval(refreshWhenVisible, 30000);
+    // Initial check
+    triggerSync();
+
+    // Periodic fast check (5s) to guarantee real-time reflection
+    const interval = setInterval(() => {
+      triggerSync();
+    }, 5000);
+
+    const channel = supabase
+      .channel('university_global_sync')
+      .on(
+        'broadcast',
+        { event: 'university_db_updated' },
+        () => {
+          triggerSync();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'university_databases'
+        },
+        () => {
+          triggerSync();
+        }
+      )
+      .subscribe();
 
     return () => {
-      window.removeEventListener('focus', refreshWhenVisible);
-      document.removeEventListener('visibilitychange', refreshWhenVisible);
-      window.clearInterval(intervalId);
+      window.removeEventListener('focus', triggerSync);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(interval);
+      supabase.removeChannel(channel);
     };
-  }, [session?.user?.id, refreshSubjects]);
+  }, [session?.user?.id, settings.universityDatabaseId, settings.university, settings.college]);
 
   const isAdminPath = window.location.pathname.startsWith('/admin');
 

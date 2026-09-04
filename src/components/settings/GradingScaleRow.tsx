@@ -13,7 +13,27 @@ export function GradingScaleRow({ grade, onUpdate, onDelete }: Props) {
   const [tempData, setTempData] = useState({ ...grade });
 
   const handleSave = () => {
-    onUpdate(grade.id, tempData);
+    if (
+      tempData.minPercentage === ('' as any) ||
+      tempData.maxPercentage === ('' as any) ||
+      tempData.points === ('' as any) ||
+      isNaN(Number(tempData.minPercentage)) ||
+      isNaN(Number(tempData.maxPercentage)) ||
+      isNaN(Number(tempData.points))
+    ) {
+      alert('يرجى إدخال جميع النسب والنقاط بالأرقام بشكل صحيح (لا يمكن ترك الخانة فارغة).');
+      return;
+    }
+    if (Number(tempData.minPercentage) < 0 || Number(tempData.maxPercentage) > 100 || Number(tempData.minPercentage) > Number(tempData.maxPercentage)) {
+      alert('يرجى التأكد من صحة النسب المئوية (الحد الأدنى يجب أن يكون أقل من أو يساوي الحد الأقصى).');
+      return;
+    }
+    onUpdate(grade.id, {
+      ...tempData,
+      minPercentage: Number(tempData.minPercentage),
+      maxPercentage: Number(tempData.maxPercentage),
+      points: Number(tempData.points)
+    });
     setIsEditing(false);
   };
 
@@ -52,15 +72,15 @@ export function GradingScaleRow({ grade, onUpdate, onDelete }: Props) {
         <td className="py-2 px-1">
           <input 
             type="number" 
-            value={tempData.minPercentage}
-            onChange={(e) => setTempData({...tempData, minPercentage: Number(e.target.value)})}
+            value={tempData.minPercentage === ('' as any) ? '' : tempData.minPercentage}
+            onChange={(e) => setTempData({...tempData, minPercentage: e.target.value === '' ? ('' as any) : Number(e.target.value)})}
             className="w-16 px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-zinc-800 outline-none"
           />
         </td>
         <td className="py-2 px-1">
           <div className="flex items-center gap-1.5">
             <select
-              value={tempData.maxOperator || (tempData.maxPercentage >= 100 ? '<=' : '<')}
+              value={tempData.maxOperator || (Number(tempData.maxPercentage) >= 100 ? '<=' : '<')}
               onChange={(e) => setTempData({...tempData, maxOperator: e.target.value as '<' | '<='})}
               className="text-xs px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 font-bold text-indigo-600 dark:text-indigo-400 focus:ring-1 focus:ring-indigo-500 outline-none"
               title="نوع الحد الأقصى"
@@ -70,8 +90,8 @@ export function GradingScaleRow({ grade, onUpdate, onDelete }: Props) {
             </select>
             <input 
               type="number" 
-              value={tempData.maxPercentage}
-              onChange={(e) => setTempData({...tempData, maxPercentage: Number(e.target.value)})}
+              value={tempData.maxPercentage === ('' as any) ? '' : tempData.maxPercentage}
+              onChange={(e) => setTempData({...tempData, maxPercentage: e.target.value === '' ? ('' as any) : Number(e.target.value)})}
               className="w-16 px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-zinc-800 outline-none"
             />
           </div>
@@ -80,8 +100,8 @@ export function GradingScaleRow({ grade, onUpdate, onDelete }: Props) {
           <input 
             type="number" 
             step="0.05"
-            value={tempData.points}
-            onChange={(e) => setTempData({...tempData, points: Number(e.target.value)})}
+            value={tempData.points === ('' as any) ? '' : tempData.points}
+            onChange={(e) => setTempData({...tempData, points: e.target.value === '' ? ('' as any) : Number(e.target.value)})}
             className="w-16 px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-zinc-800 outline-none"
           />
         </td>

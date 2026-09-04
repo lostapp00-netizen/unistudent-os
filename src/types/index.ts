@@ -125,6 +125,8 @@ export type UserSettings = {
   warningGpaPoints?: number;
   enableGraduationScale?: boolean;
   graduationGradingScale?: GraduationGradeRule[];
+  universityDatabaseId?: string;
+  deletedSubjectNames?: string[];
 };
 
 export type Appointment = {
@@ -202,6 +204,49 @@ export type EmailBackupConfig = {
   status?: 'active' | 'paused' | 'error';
 };
 
+export type UniversityDatabase = {
+  id: string;
+  universityNameAr: string;
+  universityNameEn: string;
+  collegeNameAr: string;
+  collegeNameEn: string;
+  sourceUserId: string;
+  sourceUserEmail?: string;
+  sourceUserName?: string;
+  totalYears: number;
+  semestersPerYear: number;
+  subjects: Subject[];
+  driveFiles: DriveFile[];
+  gradingScale?: GradeRule[];
+  isVisible?: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RegisteredUniversity = {
+  key: string;
+  nameAr: string;
+  nameEn: string;
+  isVisible?: boolean;
+  createdAt: string;
+};
+
+export type UniversityPendingUpdate = {
+  id: string;
+  universityDatabaseId: string;
+  universityName?: string;
+  collegeName?: string;
+  sourceUserId: string;
+  sourceUserEmail?: string;
+  sourceUserName?: string;
+  type: 'add_subject' | 'update_subject' | 'delete_subject' | 'add_file' | 'delete_file';
+  description: string;
+  data: any;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  resolvedAt?: string;
+};
+
 export type DatabaseBackup = {
   version: string;
   timestamp: string;
@@ -216,6 +261,8 @@ export type DatabaseBackup = {
     groups: any[];
     drive_files: any[];
     suggestions: any[];
+    university_databases?: any[];
+    pending_updates?: any[];
   };
   summary: {
     totalStudents: number;
@@ -224,6 +271,7 @@ export type DatabaseBackup = {
     totalNotes: number;
     totalFiles: number;
     totalSuggestions: number;
+    totalUniversityDatabases?: number;
   };
 };
 
