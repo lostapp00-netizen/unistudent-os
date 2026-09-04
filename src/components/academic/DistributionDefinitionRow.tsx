@@ -51,7 +51,7 @@ export function DistributionDefinitionRow({ distribution, isSubjectFinished, rem
             type="text" 
             value={tempName}
             onChange={e => setTempName(e.target.value)}
-            className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            className="flex-1 min-w-0 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
             placeholder={isRtl ? 'اسم التقييم...' : 'Name...'}
           />
           <input 

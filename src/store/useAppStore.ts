@@ -194,7 +194,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         let uniDbId = mergedSettings.universityDatabaseId;
         if (!uniDbId && mergedSettings.university && mergedSettings.college && mergedSettings.university !== 'غير محدد') {
           const allDbs = await db.getUniversityDatabases();
-          const normStr = (s?: string) => (s || '').trim().toLowerCase();
+          const normStr = (s?: string) => (s || '').trim().toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
           const autoMatched = allDbs.find(d => 
             (normStr(d.universityNameAr) === normStr(mergedSettings.university) || normStr(d.universityNameEn) === normStr(mergedSettings.university)) &&
             (normStr(d.collegeNameAr) === normStr(mergedSettings.college) || normStr(d.collegeNameEn) === normStr(mergedSettings.college))
@@ -221,12 +221,13 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
 
             // 2. Check for newly approved/added subjects in the university curriculum template
-            const existingNames = new Set(finalSubjects.map(s => s.name.trim().toLowerCase()));
-            const deletedNames = new Set((mergedSettings.deletedSubjectNames || []).map(n => n.trim().toLowerCase()));
+            const normSubj = (s?: string) => (s || '').trim().toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
+            const existingNames = new Set(finalSubjects.map(s => normSubj(s.name)));
+            const deletedNames = new Set((mergedSettings.deletedSubjectNames || []).map(n => normSubj(n)));
             const newSubjectsToAdd: Subject[] = [];
 
             matchedDb.subjects.forEach(tSub => {
-              const tName = tSub.name.trim().toLowerCase();
+              const tName = normSubj(tSub.name);
               if (!existingNames.has(tName) && !deletedNames.has(tName)) {
                 const tYear = Number(tSub.yearIndex !== undefined ? tSub.yearIndex : ((tSub as any).year_index !== undefined ? (tSub as any).year_index : 1));
                 const tSem = Number(tSub.semesterIndex !== undefined ? tSub.semesterIndex : ((tSub as any).semester_index !== undefined ? (tSub as any).semester_index : 1));
@@ -260,11 +261,10 @@ export const useAppStore = create<AppState>((set, get) => ({
               finalSubjects = [...finalSubjects, ...newSubjectsToAdd];
             }
 
-            // 3. Safely sync changes to EXISTING subjects (credit hours, total marks, year, semester)
-            const templateSubjsByName = new Map(matchedDb.subjects.map(s => [s.name.trim().toLowerCase(), s]));
+            const templateSubjsByName = new Map(matchedDb.subjects.map(s => [normSubj(s.name), s]));
 
             finalSubjects.forEach(existing => {
-              const template = templateSubjsByName.get(existing.name.trim().toLowerCase());
+              const template = templateSubjsByName.get(normSubj(existing.name));
               if (template) {
                 const tYear = Number(template.yearIndex !== undefined ? template.yearIndex : ((template as any).year_index !== undefined ? (template as any).year_index : 1));
                 const tSem = Number(template.semesterIndex !== undefined ? template.semesterIndex : ((template as any).semester_index !== undefined ? (template as any).semester_index : 1));
@@ -342,7 +342,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  // Settings
   updateSettings: (newSettings) => {
     const { userId, settings } = get();
     const updated = { ...settings, ...newSettings };
@@ -379,7 +378,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  // Subjects
   addSubject: (subject) => {
     const { userId, userEmail, settings } = get();
     if (!userId) return;
@@ -392,7 +390,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({ subjects: [...state.subjects.filter(s => s.id !== finalSubject.id), finalSubject] }));
     db.addSubject(userId, finalSubject);
 
-    // If student is source for university DB, notify admin
     checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'add_subject', `إضافة مادة جديدة: ${finalSubject.name}`, finalSubject);
   },
   updateSubject: (id, updatedFields) => {
@@ -425,7 +422,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  // Files
   addFile: (file) => {
     const { userId, userEmail, settings } = get();
     if (!userId) return;
@@ -458,7 +454,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     db.deleteDriveFile(userId, id);
   },
 
-  // Notes
   addNote: (note) => {
     const { userId } = get();
     if (!userId) return;
@@ -498,7 +493,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     db.deleteNote(userId, id);
   },
 
-  // Tasks
   addTask: (task) => {
     const { userId } = get();
     if (!userId) return;
@@ -538,7 +532,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     db.deleteTask(userId, id);
   },
 
-  // Appointments
   addAppointment: (appointment) => {
     const { userId } = get();
     if (!userId) return;
@@ -578,7 +571,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     db.deleteAppointment(userId, id);
   },
 
-  // Schedule Items
   addScheduleItem: (item) => {
     const { userId } = get();
     if (!userId) return;
@@ -618,7 +610,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     db.deleteScheduleItem(userId, id);
   },
 
-  // Groups
   addGroup: async (group) => {
     const { userId } = get();
     if (!userId) return;
@@ -646,7 +637,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     localStorage.setItem(`unistudent_groups_initialized_${userId}`, 'true');
     const previousGroups = groups;
     
-    // Update local state and unbind from entities
     set({
       groups: groups.filter(g => g.id !== id),
       tasks: tasks.map(t => t.groupId === id ? { ...t, groupId: undefined } : t),
@@ -664,7 +654,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  // University Database Import
   importFromUniversityDatabase: async (universityDbId: string, options?: { importDrive?: boolean }) => {
     const { userId, settings } = get();
     if (!userId) return;
@@ -676,7 +665,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     const chosenUni = isAr ? (udb.universityNameAr || udb.universityNameEn) : (udb.universityNameEn || udb.universityNameAr);
     const chosenCollege = isAr ? (udb.collegeNameAr || udb.collegeNameEn) : (udb.collegeNameEn || udb.collegeNameAr);
 
-    // 1. Update Settings
     const updatedSettings: Partial<UserSettings> = {
       university: chosenUni,
       college: chosenCollege,
@@ -687,7 +675,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       gradingScale: udb.gradingScale && udb.gradingScale.length > 0 ? udb.gradingScale : settings.gradingScale
     };
 
-    // Generate basic semesters if needed
     if (!settings.semesters || settings.semesters.length === 0) {
       const newSemesters: any[] = [];
       for (let y = 1; y <= (udb.totalYears || 4); y++) {
@@ -708,9 +695,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(state => ({ settings: { ...state.settings, ...updatedSettings } }));
     db.upsertSettings(userId, updatedSettings).catch(console.error);
 
-    // 2. Clone and import Subjects
     if (udb.subjects && udb.subjects.length > 0) {
-      // Clear old subjects first to prevent duplicate subjects when restoring
       await db.clearAllSubjects(userId);
 
       const importedSubjects: Subject[] = udb.subjects.map(s => {
@@ -745,7 +730,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ subjects: importedSubjects });
     }
 
-    // 3. Clone and import Drive Files
     if (options?.importDrive !== false && udb.driveFiles && udb.driveFiles.length > 0) {
       await db.clearAllDriveFiles(userId);
       const idMap = new Map<string, string>();
@@ -775,18 +759,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  // Disconnect / Unlink University Database
   unlinkUniversityDatabase: async () => {
     const { userId, settings } = get();
     if (!userId) return;
 
-    // 1. Delete all subjects for this student
     await db.clearAllSubjects(userId);
-
-    // 2. Delete all drive files for this student
     await db.clearAllDriveFiles(userId);
 
-    // 3. Reset standard grading scale
     const defaultScale: GradeRule[] = [
       { id: '1', letter: 'A+', nameAr: 'ممتاز مرتفع', nameEn: 'High Excellent', minPercentage: 90, maxPercentage: 100, maxOperator: '<=', points: 4.0 },
       { id: '2', letter: 'A', nameAr: 'ممتاز', nameEn: 'Excellent', minPercentage: 85, maxPercentage: 89.99, maxOperator: '<=', points: 3.7 },
@@ -816,18 +795,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     await db.upsertSettings(userId, updatedSettings);
   },
 
-  // Live synchronization for students who restored a university database
   syncWithUniversityDatabase: async () => {
     const { userId, settings } = get();
     if (!userId) return;
 
+    const normSubj = (s?: string) => (s || '').trim().toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
+
     let targetDbId = settings.universityDatabaseId;
     if (!targetDbId && settings.university && settings.college && settings.university !== 'غير محدد') {
       const allDbs = await db.getUniversityDatabases();
-      const normStr = (s?: string) => (s || '').trim().toLowerCase();
       const autoMatched = allDbs.find(d => 
-        (normStr(d.universityNameAr) === normStr(settings.university) || normStr(d.universityNameEn) === normStr(settings.university)) &&
-        (normStr(d.collegeNameAr) === normStr(settings.college) || normStr(d.collegeNameEn) === normStr(settings.college))
+        (normSubj(d.universityNameAr) === normSubj(settings.university) || normSubj(d.universityNameEn) === normSubj(settings.university)) &&
+        (normSubj(d.collegeNameAr) === normSubj(settings.college) || normSubj(d.collegeNameEn) === normSubj(settings.college))
       );
       if (autoMatched) {
         targetDbId = autoMatched.id;
@@ -847,7 +826,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       let currentSubjects = [...get().subjects];
       let currentFiles = [...get().files];
 
-      // 1. Sync Grading Scale
       if (matchedDb.gradingScale && matchedDb.gradingScale.length > 0) {
         const curScaleStr = JSON.stringify(settings.gradingScale || []);
         const tmplScaleStr = JSON.stringify(matchedDb.gradingScale);
@@ -857,17 +835,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
 
-      // 2. Sync Subjects
       if (matchedDb.subjects && Array.isArray(matchedDb.subjects)) {
         const templateSubjs = matchedDb.subjects;
-        const norm = (s?: string) => (s || '').trim().toLowerCase();
-        const existingByName = new Map(currentSubjects.map(s => [norm(s.name), s]));
-        const deletedNames = new Set((settings.deletedSubjectNames || []).map(n => norm(n)));
-        const templateNames = new Set(templateSubjs.map(s => norm(s.name)));
+        const existingByName = new Map(currentSubjects.map(s => [normSubj(s.name), s]));
+        const deletedNames = new Set((settings.deletedSubjectNames || []).map(n => normSubj(n)));
+        const templateNames = new Set(templateSubjs.map(s => normSubj(s.name)));
 
-        // A. Add newly approved/added subjects from template
         for (const tSub of templateSubjs) {
-          const tName = norm(tSub.name);
+          const tName = normSubj(tSub.name);
           if (!existingByName.has(tName) && !deletedNames.has(tName)) {
             const tYear = Number(tSub.yearIndex !== undefined ? tSub.yearIndex : ((tSub as any).year_index !== undefined ? (tSub as any).year_index : 1));
             const tSem = Number(tSub.semesterIndex !== undefined ? tSub.semesterIndex : ((tSub as any).semester_index !== undefined ? (tSub as any).semester_index : 1));
@@ -900,28 +875,26 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         }
 
-        // B. Update existing subjects (if changed in template)
-        const templateSubjsByName = new Map(templateSubjs.map(s => [norm(s.name), s]));
+        const templateSubjsByName = new Map(templateSubjs.map(s => [normSubj(s.name), s]));
         for (let i = 0; i < currentSubjects.length; i++) {
           const existing = currentSubjects[i];
-          const template = templateSubjsByName.get(norm(existing.name));
+          const template = templateSubjsByName.get(normSubj(existing.name));
           if (template) {
             const tYear = Number(template.yearIndex !== undefined ? template.yearIndex : ((template as any).year_index !== undefined ? (template as any).year_index : 1));
             const tSem = Number(template.semesterIndex !== undefined ? template.semesterIndex : ((template as any).semester_index !== undefined ? (template as any).semester_index : 1));
             const tHours = Number(template.creditHours !== undefined ? template.creditHours : ((template as any).credit_hours !== undefined ? (template as any).credit_hours : 3));
             const tMarks = Number(template.totalMarks !== undefined ? template.totalMarks : ((template as any).total_marks !== undefined ? (template as any).total_marks : 100));
 
-            // Check if distributions changed in template
             const tDists = template.distributions || [];
             const curDists = existing.distributions || [];
-            const curDistsByName = new Map(curDists.map(d => [norm(d.name), d]));
+            const curDistsByName = new Map(curDists.map(d => [normSubj(d.name), d]));
             
             let distsChanged = false;
             if (tDists.length !== curDists.length) {
               distsChanged = true;
             } else {
               for (const td of tDists) {
-                const cd = curDistsByName.get(norm(td.name));
+                const cd = curDistsByName.get(normSubj(td.name));
                 if (!cd || Number(cd.maxMarks) !== Number(td.maxMarks)) {
                   distsChanged = true;
                   break;
@@ -939,7 +912,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
             if (hasChanged) {
               const syncedDists = tDists.map(td => {
-                const prev = curDistsByName.get(norm(td.name));
+                const prev = curDistsByName.get(normSubj(td.name));
                 return {
                   id: prev?.id || td.id || uuidv4(),
                   name: td.name,
@@ -965,10 +938,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         }
 
-        // C. Remove subjects that the admin deleted from the template (only if student hasn't entered marks)
         const remainingSubjects: Subject[] = [];
         for (const existing of currentSubjects) {
-          const nameLower = norm(existing.name);
+          const nameLower = normSubj(existing.name);
           const hasAchievedMarks = (existing.distributions || []).some(d => d.achievedMarks !== null && d.achievedMarks !== undefined && Number(d.achievedMarks) > 0);
           if (templateSubjs.length > 0 && !templateNames.has(nameLower) && !hasAchievedMarks && existing.status !== 'finished') {
             await db.deleteSubject(userId, existing.id);

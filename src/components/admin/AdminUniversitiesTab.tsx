@@ -3266,7 +3266,7 @@ export function AdminUniversitiesTab({
                           setSubjectForm({ ...subjectForm, distributions: updated });
                         }}
                         placeholder={isAr ? 'اسم البند (مثال: ميدتيرم، عملي، فاينل)' : 'Item name'}
-                        className="flex-1 px-3.5 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold"
+                        className="flex-1 min-w-0 px-3.5 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold"
                       />
                       <input
                         type="number"
