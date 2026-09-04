@@ -1217,6 +1217,13 @@ export function AdminUniversitiesTab({
           return targetDb;
         });
       }
+      try {
+        supabase.channel('university_global_sync').send({
+          type: 'broadcast',
+          event: 'university_db_updated',
+          payload: { id: update.universityDatabaseId, timestamp: Date.now() }
+        }).catch(() => {});
+      } catch {}
       await loadUniData();
     } catch (e) {
       console.error('Error resolving pending update:', e);

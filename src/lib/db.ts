@@ -10,19 +10,17 @@ export const db = {
     return mapSettingsFromDB(data);
   },
   async upsertSettings(userId: string, settings: Partial<UserSettings>) {
-    const payload: any = {
-      user_id: userId,
-      name: settings.name,
-      university: settings.university,
-      college: settings.college,
-      enrollment_date: settings.enrollmentDate,
-      total_years: settings.totalYears,
-      semesters_per_year: settings.semestersPerYear,
-      theme: settings.theme,
-      language: settings.language,
-      grading_scale: settings.gradingScale,
-      semesters: settings.semesters
-    };
+    const payload: any = { user_id: userId };
+    if (settings.name !== undefined) payload.name = settings.name;
+    if (settings.university !== undefined) payload.university = settings.university;
+    if (settings.college !== undefined) payload.college = settings.college;
+    if (settings.enrollmentDate !== undefined) payload.enrollment_date = settings.enrollmentDate;
+    if (settings.totalYears !== undefined) payload.total_years = settings.totalYears;
+    if (settings.semestersPerYear !== undefined) payload.semesters_per_year = settings.semestersPerYear;
+    if (settings.theme !== undefined) payload.theme = settings.theme;
+    if (settings.language !== undefined) payload.language = settings.language;
+    if (settings.gradingScale !== undefined) payload.grading_scale = settings.gradingScale;
+    if (settings.semesters !== undefined) payload.semesters = settings.semesters;
 
     if (settings.email !== undefined && settings.email !== null) {
       payload.email = settings.email;
@@ -678,6 +676,24 @@ export const db = {
   },
 
   async getUniversityDatabase(id: string): Promise<UniversityDatabase | null> {
+    try {
+      const { data, error } = await supabase
+        .from('university_databases')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (!error && data) {
+        const mapped = mapUniversityDatabaseFromDB(data);
+        try {
+          const current = await this.getUniversityDatabases();
+          const updated = [mapped, ...current.filter(u => u.id !== id)];
+          localStorage.setItem('unistudent_university_databases', JSON.stringify(updated));
+        } catch {}
+        return mapped;
+      }
+    } catch (e) {
+      console.warn('Direct fetch getUniversityDatabase failed, falling back:', e);
+    }
     const list = await this.getUniversityDatabases();
     return list.find(u => u.id === id) || null;
   },
@@ -751,6 +767,15 @@ export const db = {
     } catch (e) {
       console.warn('Supabase updateUniversityDatabase failed:', e);
     }
+
+    // 3. Broadcast real-time change to all active students
+    try {
+      supabase.channel('university_global_sync').send({
+        type: 'broadcast',
+        event: 'university_db_updated',
+        payload: { id, timestamp: Date.now() }
+      }).catch(() => {});
+    } catch {}
   },
 
   async deleteUniversityDatabase(id: string): Promise<void> {
@@ -1113,12 +1138,6 @@ export const db = {
               }
             }
           }
-
-          // Send in-app notification to student
-          this.sendStudentNotification(uid, {
-            title: 'تحديث معتمد في المقررات الدراسية',
-            message: `تم تحديث خطة ومقررات ${udb.collegeNameAr || udb.collegeNameEn || 'الكلية'} لحسابك تلقائياً وفقاً لآخر التحديثات المعتمدة.`
-          }).catch(() => {});
         } catch (stErr) {
           console.warn(`Sync failed for student ${uid}:`, stErr);
         }
@@ -1183,35 +1202,9 @@ export const db = {
     } catch {}
   },
 
-  async notifyEnrolledStudentsOfDbUpdate(universityDatabaseId: string, message: string): Promise<void> {
-    try {
-      // Find all students in known users or localStorage who have this universityDatabaseId or match uni/college
-      const udb = await this.getUniversityDatabase(universityDatabaseId);
-      if (!udb) return;
-
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('unistudent_settings_')) {
-          const uid = key.replace('unistudent_settings_', '');
-          try {
-            const st = JSON.parse(localStorage.getItem(key) || '{}');
-            if (
-              st.universityDatabaseId === universityDatabaseId ||
-              (st.university === udb.universityNameAr && st.college === udb.collegeNameAr)
-            ) {
-              await this.sendStudentNotification(uid, {
-                id: `db_update_${universityDatabaseId}_${Date.now()}`,
-                title: 'تحديث جديد في خطة الكلية',
-                message: message,
-                type: 'update'
-              });
-            }
-          } catch {}
-        }
-      }
-    } catch (e) {
-      console.warn('Error notifying enrolled students:', e);
-    }
+  async notifyEnrolledStudentsOfDbUpdate(_universityDatabaseId: string, _message: string): Promise<void> {
+    // Disabled as requested: no update notifications sent to students
+    return;
   },
 
   // --- Admin All Platform Data ---
@@ -1683,17 +1676,21 @@ function mapSettingsFromDB(row: any): UserSettings {
     } catch {}
   }
 
+  const resolvedDbId = (row.university_database_id && row.university_database_id !== 'null')
+    ? row.university_database_id
+    : (localExtra.universityDatabaseId || undefined);
+
   return {
-    name: row.name || '',
-    university: row.university || '',
-    college: row.college || '',
-    enrollmentDate: row.enrollment_date || '',
-    totalYears: row.total_years || 4,
-    semestersPerYear: row.semesters_per_year || 2,
-    theme: row.theme || 'light',
-    language: row.language || 'en',
-    gradingScale: row.grading_scale || [],
-    semesters: row.semesters || [],
+    name: row.name || localExtra.name || '',
+    university: row.university || localExtra.university || '',
+    college: row.college || localExtra.college || '',
+    enrollmentDate: row.enrollment_date || localExtra.enrollmentDate || '',
+    totalYears: row.total_years || localExtra.totalYears || 4,
+    semestersPerYear: row.semesters_per_year || localExtra.semestersPerYear || 2,
+    theme: row.theme || localExtra.theme || 'light',
+    language: row.language || localExtra.language || 'en',
+    gradingScale: row.grading_scale || localExtra.gradingScale || [],
+    semesters: row.semesters || localExtra.semesters || [],
     initialCumulativeGpa: row.initial_cumulative_gpa !== undefined ? row.initial_cumulative_gpa : (localExtra.initialCumulativeGpa ?? null),
     initialCompletedCreditHours: row.initial_completed_credit_hours !== undefined ? row.initial_completed_credit_hours : (localExtra.initialCompletedCreditHours ?? null),
     setupMode: row.setup_mode || localExtra.setupMode || 'initial_gpa',
@@ -1701,8 +1698,10 @@ function mapSettingsFromDB(row: any): UserSettings {
     warningGpaPoints: row.warning_gpa_points !== undefined ? Number(row.warning_gpa_points) : (localExtra.warningGpaPoints !== undefined ? Number(localExtra.warningGpaPoints) : 2.0),
     enableGraduationScale: row.enable_graduation_scale !== undefined ? row.enable_graduation_scale : (localExtra.enableGraduationScale ?? false),
     graduationGradingScale: row.graduation_grading_scale || localExtra.graduationGradingScale || [],
-    universityDatabaseId: row.university_database_id !== undefined ? (row.university_database_id || undefined) : (localExtra.universityDatabaseId || undefined),
-    deletedSubjectNames: row.deleted_subject_names || localExtra.deletedSubjectNames || []
+    universityDatabaseId: resolvedDbId,
+    deletedSubjectNames: (Array.isArray(row.deleted_subject_names) && row.deleted_subject_names.length > 0)
+      ? row.deleted_subject_names
+      : (localExtra.deletedSubjectNames || [])
   };
 }
 

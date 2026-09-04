@@ -102,13 +102,20 @@ export function App() {
     // Initial check
     triggerSync();
 
+    // Periodic fast check (5s) to guarantee real-time reflection
     const interval = setInterval(() => {
       triggerSync();
-    }, 15000);
+    }, 5000);
 
-    const channelId = settings.universityDatabaseId || 'all_unis';
     const channel = supabase
-      .channel(`university_sync_${channelId}`)
+      .channel('university_global_sync')
+      .on(
+        'broadcast',
+        { event: 'university_db_updated' },
+        () => {
+          triggerSync();
+        }
+      )
       .on(
         'postgres_changes',
         {

@@ -24,7 +24,7 @@ export function Layout() {
   useEffect(() => {
     if (userId) {
       const notifs = db.getStudentNotifications(userId);
-      setStudentNotifications(notifs);
+      setStudentNotifications(notifs.filter(n => n.type !== 'update' && !n.title?.includes('تحديث معتمد') && !n.title?.includes('تحديث جديد')));
     }
   }, [userId]);
 

@@ -192,6 +192,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       let finalSubjects = subjects || [];
       try {
         let uniDbId = mergedSettings.universityDatabaseId;
+        if (!uniDbId) {
+          try {
+            const savedRaw = localStorage.getItem(`unistudent_settings_${userId}`);
+            if (savedRaw) {
+              const parsed = JSON.parse(savedRaw);
+              if (parsed.universityDatabaseId) {
+                uniDbId = parsed.universityDatabaseId;
+                mergedSettings.universityDatabaseId = uniDbId;
+              }
+            }
+          } catch {}
+        }
+
         if (!uniDbId && mergedSettings.university && mergedSettings.college && mergedSettings.university !== 'غير محدد') {
           const allDbs = await db.getUniversityDatabases();
           const normStr = (s?: string) => (s || '').trim().toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
@@ -802,6 +815,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     const normSubj = (s?: string) => (s || '').trim().toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
 
     let targetDbId = settings.universityDatabaseId;
+    if (!targetDbId) {
+      try {
+        const savedRaw = localStorage.getItem(`unistudent_settings_${userId}`);
+        if (savedRaw) {
+          const parsed = JSON.parse(savedRaw);
+          if (parsed.universityDatabaseId) {
+            targetDbId = parsed.universityDatabaseId;
+            set(state => ({ settings: { ...state.settings, universityDatabaseId: targetDbId } }));
+          }
+        }
+      } catch {}
+    }
+
     if (!targetDbId && settings.university && settings.college && settings.university !== 'غير محدد') {
       const allDbs = await db.getUniversityDatabases();
       const autoMatched = allDbs.find(d => 
