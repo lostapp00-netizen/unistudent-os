@@ -8,17 +8,49 @@ import { UserFeedbackSection } from '../components/settings/UserFeedbackSection'
 import { defaultGraduationScale } from '../store/useAppStore';
 import { supabase } from '../lib/supabase';
 import { UniversityRestoreModal } from '../components/settings/UniversityRestoreModal';
-import { Lock, Eye, EyeOff, KeyRound, CheckCircle2, AlertTriangle, ShieldCheck, Building2, Sparkles, Unlink, Trash2, Loader2, Save, AlertCircle } from 'lucide-react';
+import { 
+  Lock, 
+  Eye, 
+  EyeOff, 
+  KeyRound, 
+  CheckCircle2, 
+  AlertTriangle, 
+  ShieldCheck, 
+  Building2, 
+  Sparkles, 
+  Unlink, 
+  Trash2, 
+  Loader2, 
+  Save, 
+  AlertCircle,
+  User,
+  GraduationCap,
+  Database,
+  Shield,
+  MessageSquare,
+  Calendar,
+  Layers,
+  BookOpen,
+  Info,
+  Compass
+} from 'lucide-react';
+
+type SettingsTab = 'profile' | 'databases' | 'security' | 'feedback';
 
 export function Settings() {
   const { t, i18n } = useTranslation();
   const { settings, updateSettings, userEmail, unlinkUniversityDatabase } = useAppStore();
   const isAr = i18n.language === 'ar' || settings.language === 'ar';
   
+  // Active Tab
+  const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
+
+  // Modals state
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
   const [isUnlinkModalOpen, setIsUnlinkModalOpen] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
 
+  // Main Form Data
   const [formData, setFormData] = useState<{
     name: string;
     university: string;
@@ -35,6 +67,10 @@ export function Settings() {
     warningGpaPoints?: number;
     enableGraduationScale?: boolean;
     graduationGradingScale?: typeof defaultGraduationScale;
+    specialization?: string;
+    specializationStartYear?: number | '';
+    specializationStartSemester?: number | '';
+    specializationDatabaseId?: string;
   }>({
     name: settings.name,
     university: settings.university,
@@ -50,10 +86,14 @@ export function Settings() {
     warningGradeLetter: settings.warningGradeLetter,
     warningGpaPoints: settings.warningGpaPoints,
     enableGraduationScale: settings.enableGraduationScale ?? false,
-    graduationGradingScale: settings.graduationGradingScale && settings.graduationGradingScale.length > 0 ? settings.graduationGradingScale : defaultGraduationScale
+    graduationGradingScale: settings.graduationGradingScale && settings.graduationGradingScale.length > 0 ? settings.graduationGradingScale : defaultGraduationScale,
+    specialization: settings.specialization || '',
+    specializationStartYear: settings.specializationStartYear !== undefined ? settings.specializationStartYear : '',
+    specializationStartSemester: settings.specializationStartSemester !== undefined ? settings.specializationStartSemester : '',
+    specializationDatabaseId: settings.specializationDatabaseId || ''
   });
 
-  // Sync state if settings changed via database restore
+  // Sync state if settings changed externally (e.g. database restore)
   useEffect(() => {
     setFormData(prev => ({
       ...prev,
@@ -62,11 +102,25 @@ export function Settings() {
       totalYears: settings.totalYears,
       semestersPerYear: settings.semestersPerYear,
       semesters: settings.semesters,
-      gradingScale: settings.gradingScale
+      gradingScale: settings.gradingScale,
+      specialization: settings.specialization || '',
+      specializationStartYear: settings.specializationStartYear !== undefined ? settings.specializationStartYear : '',
+      specializationStartSemester: settings.specializationStartSemester !== undefined ? settings.specializationStartSemester : '',
+      specializationDatabaseId: settings.specializationDatabaseId || ''
     }));
-  }, [settings.university, settings.college, settings.totalYears, settings.semestersPerYear, settings.semesters]);
+  }, [
+    settings.university, 
+    settings.college, 
+    settings.totalYears, 
+    settings.semestersPerYear, 
+    settings.semesters,
+    settings.specialization,
+    settings.specializationStartYear,
+    settings.specializationStartSemester,
+    settings.specializationDatabaseId
+  ]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     if (type === 'number') {
       setFormData(prev => ({ ...prev, [name]: value === '' ? '' : Number(value) }));
@@ -76,7 +130,6 @@ export function Settings() {
   };
 
   const [saving, setSaving] = useState(false);
-
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
   const handleConfirmUnlink = async () => {
@@ -87,11 +140,12 @@ export function Settings() {
       setFormData(prev => ({
         ...prev,
         university: 'غير محدد',
-        college: 'غير محدد'
+        college: 'غير محدد',
+        specializationDatabaseId: ''
       }));
       setSaveStatus({
         type: 'success',
-        message: isAr ? 'تم إلغاء استخدام قاعدة البيانات وحذف المواد والدرايف وإعادة تعيين جدول التقديرات بنجاح.' : 'Database unlinked and curriculum reset successfully.'
+        message: isAr ? 'تم إلغاء استخدام قاعدة البيانات وحذف المواد والدرايف بنجاح.' : 'Database unlinked and curriculum reset successfully.'
       });
       window.scrollTo({ top: 0, behavior: 'smooth' });
       setTimeout(() => setSaveStatus(null), 5000);
@@ -106,9 +160,11 @@ export function Settings() {
     }
   };
 
+  // Password Update State with Current Password Verification
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [passwordStatus, setPasswordStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
@@ -118,10 +174,18 @@ export function Settings() {
     e.preventDefault();
     setPasswordStatus(null);
 
+    if (!currentPassword) {
+      setPasswordStatus({
+        type: 'error',
+        message: isAr ? 'يرجى إدخال كلمة المرور الحالية أولاً للتحقق من هويتك وأمان الحساب.' : 'Please enter your current password first.'
+      });
+      return;
+    }
+
     if (newPassword.length < 6) {
       setPasswordStatus({
         type: 'error',
-        message: isAr ? 'كلمة المرور الجديدة يجب ألا تقل عن 6 أحرف.' : 'New password must be at least 6 characters.'
+        message: isAr ? 'كلمة المرور الجديدة يجب ألا تقل عن 6 أحرف أو أرقام.' : 'New password must be at least 6 characters.'
       });
       return;
     }
@@ -136,12 +200,29 @@ export function Settings() {
 
     setPasswordLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw error;
+      // Step 1: Verify current password via signInWithPassword
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: userEmail || '',
+        password: currentPassword
+      });
+
+      if (signInError) {
+        setPasswordStatus({
+          type: 'error',
+          message: isAr 
+            ? 'كلمة المرور الحالية غير صحيحة! يرجى التأكد من كتابتها بشكل سليم والمحاولة مجدداً.' 
+            : 'Current password is incorrect. Please verify and try again.'
+        });
+        return;
+      }
+
+      // Step 2: Update password after successful verification
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateError) throw updateError;
 
       setPasswordStatus({
         type: 'success',
-        message: isAr ? 'تم تحديث كلمة المرور بنجاح!' : 'Password updated successfully!'
+        message: isAr ? 'تم تحديث كلمة المرور بنجاح وأمان!' : 'Password updated successfully!'
       });
       setCurrentPassword('');
       setNewPassword('');
@@ -157,6 +238,7 @@ export function Settings() {
     }
   };
 
+  // Profile / Academic Save Handler
   const handleSave = async () => {
     try {
       setSaving(true);
@@ -165,7 +247,7 @@ export function Settings() {
       if (formData.totalYears === '' || isNaN(Number(formData.totalYears)) || Number(formData.totalYears) < 1 || Number(formData.totalYears) > 10) {
         setSaveStatus({
           type: 'error',
-          message: isAr ? 'يرجى إدخال عدد السنوات الدراسية بشكل صحيح بين 1 و 10 (لا يمكن ترك الحقل فارغاً).' : 'Please enter valid total years between 1 and 10.'
+          message: isAr ? 'يرجى إدخال عدد السنوات الدراسية بشكل صحيح بين 1 و 10.' : 'Please enter valid total years between 1 and 10.'
         });
         window.scrollTo({ top: 0, behavior: 'smooth' });
         setSaving(false);
@@ -175,7 +257,7 @@ export function Settings() {
       if (formData.semestersPerYear === '' || isNaN(Number(formData.semestersPerYear)) || Number(formData.semestersPerYear) < 1 || Number(formData.semestersPerYear) > 4) {
         setSaveStatus({
           type: 'error',
-          message: isAr ? 'يرجى إدخال عدد الفصول في السنة بشكل صحيح بين 1 و 4 (لا يمكن ترك الحقل فارغاً).' : 'Please enter valid semesters per year between 1 and 4.'
+          message: isAr ? 'يرجى إدخال عدد الفصول في السنة بشكل صحيح بين 1 و 4.' : 'Please enter valid semesters per year between 1 and 4.'
         });
         window.scrollTo({ top: 0, behavior: 'smooth' });
         setSaving(false);
@@ -214,6 +296,10 @@ export function Settings() {
         semestersPerYear: Number(formData.semestersPerYear),
         initialCumulativeGpa: (formData.initialCumulativeGpa != null && formData.initialCumulativeGpa !== ('' as any)) ? Number(formData.initialCumulativeGpa) : null,
         initialCompletedCreditHours: (formData.initialCompletedCreditHours != null && formData.initialCompletedCreditHours !== ('' as any)) ? Number(formData.initialCompletedCreditHours) : null,
+        specialization: formData.specialization ? formData.specialization.trim() : '',
+        specializationStartYear: formData.specializationStartYear !== '' && formData.specializationStartYear != null ? Number(formData.specializationStartYear) : undefined,
+        specializationStartSemester: formData.specializationStartSemester !== '' && formData.specializationStartSemester != null ? Number(formData.specializationStartSemester) : undefined,
+        specializationDatabaseId: formData.specializationDatabaseId || undefined
       };
       
       const { userId } = useAppStore.getState();
@@ -225,24 +311,61 @@ export function Settings() {
       updateSettings(newSettings);
       setSaveStatus({
         type: 'success',
-        message: isAr ? 'تم حفظ وتطبيق إعدادات الملف الشخصي بنجاح!' : 'Profile settings saved successfully!'
+        message: isAr ? 'تم حفظ وتطبيق جميع الإعدادات بنجاح!' : 'Settings saved successfully!'
       });
       window.scrollTo({ top: 0, behavior: 'smooth' });
       setTimeout(() => setSaveStatus(null), 6000);
     } catch (err: any) {
-      setSaveStatus({ type: 'error', message: 'حدث خطأ: ' + err.message });
+      setSaveStatus({ type: 'error', message: (isAr ? 'حدث خطأ: ' : 'Error: ') + err.message });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setSaving(false);
     }
   };
 
+  // Specialization Calculation Logic
+  const currentSemester = formData.semesters.find(s => s.isCurrent) || formData.semesters[0];
+  const startYearNum = formData.specializationStartYear !== '' && formData.specializationStartYear != null ? Number(formData.specializationStartYear) : null;
+  const startSemNum = formData.specializationStartSemester !== '' && formData.specializationStartSemester != null ? Number(formData.specializationStartSemester) : null;
+  
+  const hasConfiguredSpecializationTiming = startYearNum !== null && startSemNum !== null;
+  const hasReachedSpecialization = hasConfiguredSpecializationTiming && currentSemester && (
+    currentSemester.yearIndex > startYearNum ||
+    (currentSemester.yearIndex === startYearNum && currentSemester.semesterIndex >= startSemNum)
+  );
+
   return (
-    <div className="space-y-8 pb-12">
-      <header>
-        <h1 className="text-3xl font-bold tracking-tight">{t('settings')}</h1>
+    <div className="space-y-6 pb-16 max-w-6xl mx-auto">
+      {/* Top Header */}
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white flex items-center gap-3">
+            <span>{t('settings')}</span>
+            <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+              {isAr ? 'لوحة التحكم الأكاديمية' : 'Academic Hub'}
+            </span>
+          </h1>
+          <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+            {isAr 
+              ? 'إدارة حسابك الشخصي، الخطة الدراسية، قواعد بيانات الكلية والتخصص، والأمان' 
+              : 'Manage your profile, academic plan, college & specialization databases, and security'}
+          </p>
+        </div>
+
+        {/* Global Save Button if in Profile Tab */}
+        {activeTab === 'profile' && (
+          <button 
+            onClick={handleSave}
+            disabled={saving}
+            className="self-start sm:self-auto bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold px-6 py-2.5 rounded-2xl shadow-lg shadow-indigo-500/20 transition-all cursor-pointer flex items-center gap-2 text-sm shrink-0"
+          >
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            <span>{saving ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ التغييرات' : 'Save Changes')}</span>
+          </button>
+        )}
       </header>
-      
+
+      {/* Global Status Message */}
       {saveStatus && (
         <div className={`p-4 sm:p-5 rounded-2xl font-bold text-sm flex items-center gap-3 transition-all animate-in fade-in shadow-sm ${
           saveStatus.type === 'success'
@@ -264,323 +387,710 @@ export function Settings() {
           </div>
         </div>
       )}
-      
-      <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-4">
-          <div>
-            <h2 className="text-xl font-semibold">{t('profile_settings')}</h2>
-            <p className="text-xs text-zinc-400 mt-0.5">
-              {isAr ? 'يمكنك إدخال بياناتك وموادك يدوياً أو استيرادها مباشرة من قواعد بيانات الجامعات' : 'Enter your info manually or import from University Database'}
-            </p>
-          </div>
 
-          <button
-            type="button"
-            onClick={() => setIsRestoreModalOpen(true)}
-            className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-500/20 transition-all cursor-pointer shrink-0"
-          >
-            <Building2 size={16} />
-            <Sparkles size={14} className="text-amber-300" />
-            <span>{isAr ? 'استرداد من قاعدة بيانات الجامعات' : 'Restore from University Database'}</span>
-          </button>
-        </div>
+      {/* Modern Tab Navigation Pills */}
+      <div className="flex items-center gap-2 p-1.5 bg-zinc-100 dark:bg-zinc-800/60 rounded-2xl overflow-x-auto border border-zinc-200 dark:border-zinc-800">
+        <button
+          type="button"
+          onClick={() => setActiveTab('profile')}
+          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap cursor-pointer ${
+            activeTab === 'profile'
+              ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm border border-zinc-200/80 dark:border-zinc-700/80'
+              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+          }`}
+        >
+          <GraduationCap size={18} />
+          <span>{isAr ? 'الملف الشخصي والخطة الأكاديمية' : 'Profile & Academic Plan'}</span>
+        </button>
 
-        {/* Linked / Restored Database Attribution Banner */}
-        {settings.university && settings.college && settings.university !== 'غير محدد' && (
-          <div className="p-4 sm:p-5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                <Building2 size={18} />
+        <button
+          type="button"
+          onClick={() => setActiveTab('databases')}
+          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap cursor-pointer ${
+            activeTab === 'databases'
+              ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm border border-zinc-200/80 dark:border-zinc-700/80'
+              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+          }`}
+        >
+          <Database size={18} />
+          <span>{isAr ? 'قواعد البيانات والاسترداد' : 'Databases & Restore'}</span>
+          {settings.universityDatabaseId && (
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('security')}
+          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap cursor-pointer ${
+            activeTab === 'security'
+              ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm border border-zinc-200/80 dark:border-zinc-700/80'
+              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+          }`}
+        >
+          <Shield size={18} />
+          <span>{isAr ? 'الأمان وكلمة المرور' : 'Security & Password'}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('feedback')}
+          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap cursor-pointer ${
+            activeTab === 'feedback'
+              ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm border border-zinc-200/80 dark:border-zinc-700/80'
+              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+          }`}
+        >
+          <MessageSquare size={18} />
+          <span>{isAr ? 'الدعم والمقترحات' : 'Support & Feedback'}</span>
+        </button>
+      </div>
+
+      {/* TAB 1: PROFILE & ACADEMIC PLAN */}
+      {activeTab === 'profile' && (
+        <div className="space-y-6 animate-in fade-in">
+          {/* Card: Personal & University Info */}
+          <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-6">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+                  <User size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-zinc-900 dark:text-white">
+                    {isAr ? 'البيانات الشخصية والجامعية' : 'Personal & University Information'}
+                  </h2>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    {isAr ? 'بيانات هويتك الأكاديمية والكلية التي تدرس بها' : 'Your academic identity and registered college'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-black text-indigo-700 dark:text-indigo-300">
-                    {isAr ? 'قاعدة البيانات مستردة من:' : 'Curriculum Restored from:'}
-                  </span>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white border border-indigo-100 dark:border-indigo-950 shadow-2xs">
-                    {settings.university} • {settings.college}
+
+              {userEmail && (
+                <span className="hidden sm:inline-flex px-3 py-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 font-mono text-xs font-bold">
+                  {userEmail}
+                </span>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{t('name')}</label>
+                <input 
+                  type="text" 
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  placeholder={isAr ? 'اسمك الكامل' : 'Your Full Name'}
+                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{t('enrollment_date')}</label>
+                <input 
+                  type="date" 
+                  name="enrollmentDate"
+                  value={formData.enrollmentDate}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{t('university')}</label>
+                <input 
+                  type="text" 
+                  name="university"
+                  value={formData.university}
+                  onChange={handleChange}
+                  placeholder={isAr ? 'مثال: جامعة القاهرة' : 'e.g. Cairo University'}
+                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{t('college')}</label>
+                <input 
+                  type="text" 
+                  name="college"
+                  value={formData.college}
+                  onChange={handleChange}
+                  placeholder={isAr ? 'مثال: كلية الهندسة' : 'e.g. Faculty of Engineering'}
+                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm"
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Card: Academic Specialization Timing & Specialization Name */}
+          <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-6 relative overflow-hidden">
+            <div className="flex items-start justify-between gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
+                  <Compass size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                    <span>{isAr ? 'نظام التخصص الأكاديمي' : 'Academic Specialization System'}</span>
+                    <Sparkles size={16} className="text-amber-500" />
+                  </h2>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    {isAr 
+                      ? 'حدد متى يبدأ التخصص في كليتك، وتفعيل اسم التخصص فور وصولك إلى الفصل الدراسي المعتمد' 
+                      : 'Set when specialization starts in your college, and unlock your major upon reaching that term'}
+                  </p>
+                </div>
+              </div>
+
+              {currentSemester && (
+                <div className="text-xs font-bold px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 shrink-0">
+                  <span>{isAr ? 'فصلك الحالي: ' : 'Current: '}</span>
+                  <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">
+                    {isAr ? `السنة ${currentSemester.yearIndex} - الترم ${currentSemester.semesterIndex}` : `Yr ${currentSemester.yearIndex} - Term ${currentSemester.semesterIndex}`}
                   </span>
                 </div>
-                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
-                  {isAr 
-                    ? `الخطة مربوطة تلقائياً (${settings.totalYears} سنوات، ${settings.semestersPerYear} فصول/سنة ولائحة التقديرات المعتمدة)` 
-                    : `Linked template (${settings.totalYears} years, ${settings.semestersPerYear} terms/yr & accredited scale)`}
+              )}
+            </div>
+
+            {/* Timing Inputs: Start Year and Start Semester */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                  <Calendar size={14} className="text-zinc-400" />
+                  <span>{isAr ? 'سنة بداية التخصص بالكلية' : 'Specialization Start Year'}</span>
+                </label>
+                <select
+                  name="specializationStartYear"
+                  value={formData.specializationStartYear}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-bold cursor-pointer"
+                >
+                  <option value="">{isAr ? 'اختر سنة بداية التخصص...' : 'Select Start Year...'}</option>
+                  {Array.from({ length: Number(formData.totalYears) || 4 }, (_, i) => i + 1).map(year => (
+                    <option key={year} value={year}>
+                      {isAr ? `السنة الدراسية ${year}` : `Year ${year}`}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-zinc-400">
+                  {isAr ? 'السنة التي يبدأ فيها الطلاب دراسة مواد تخصصهم' : 'The academic year when students start their specialized subjects'}
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                  <Layers size={14} className="text-zinc-400" />
+                  <span>{isAr ? 'ترم بداية التخصص بالكلية' : 'Specialization Start Term'}</span>
+                </label>
+                <select
+                  name="specializationStartSemester"
+                  value={formData.specializationStartSemester}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-bold cursor-pointer"
+                >
+                  <option value="">{isAr ? 'اختر فصل بداية التخصص...' : 'Select Start Term...'}</option>
+                  {Array.from({ length: Number(formData.semestersPerYear) || 2 }, (_, i) => i + 1).map(sem => (
+                    <option key={sem} value={sem}>
+                      {isAr ? `الفصل الدراسي ${sem} (الترم ${sem})` : `Semester ${sem}`}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-zinc-400">
+                  {isAr ? 'الترم الذي يتفرع فيه التخصص داخل تلك السنة' : 'The semester within that year when major begins'}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 self-end sm:self-center flex-wrap">
+            {/* Dynamic Status / Specialization Input Field */}
+            {hasConfiguredSpecializationTiming ? (
+              hasReachedSpecialization ? (
+                /* UNLOCKED STATE: Student has reached or passed the specialization milestone */
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-50/80 via-white to-amber-50/60 dark:from-indigo-950/40 dark:via-zinc-900 dark:to-amber-950/30 border border-indigo-200 dark:border-indigo-800/80 space-y-4 animate-in fade-in">
+                  <div className="flex items-center gap-2.5 text-indigo-700 dark:text-indigo-300 font-black text-sm">
+                    <Sparkles size={18} className="text-amber-500" />
+                    <span>
+                      {isAr ? '🎉 وصلت إلى مرحلة التخصص الأكاديمي!' : '🎉 You have reached the Specialization stage!'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
+                      <BookOpen size={14} className="text-indigo-600" />
+                      <span>{isAr ? 'اكتب اسم تخصصك الأكاديمي' : 'Enter Your Academic Specialization'}</span>
+                      <span className="text-[11px] font-normal text-zinc-400">
+                        ({isAr ? 'تخصصك المعتمد في الكلية' : 'Your college major'})
+                      </span>
+                    </label>
+                    <input 
+                      type="text" 
+                      name="specialization"
+                      value={formData.specialization || ''}
+                      onChange={handleChange}
+                      placeholder={isAr ? 'مثال: هندسة حاسبات ونظم / علوم الحاسب / نظم معلومات / محاسبة...' : 'e.g. Computer Engineering / CS / IS / Finance...'}
+                      className="w-full px-4 py-3 rounded-xl border border-indigo-300 dark:border-indigo-700 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-bold shadow-xs"
+                    />
+                  </div>
+
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                    {isAr 
+                      ? 'بمجرد كتابة تخصصك وحفظه، ستتمكن أيضاً من استرداد قاعدة بيانات التخصص من تبويب "قواعد البيانات والاسترداد".' 
+                      : 'Once entered and saved, you can also restore the specialization curriculum from the "Databases & Restore" tab.'}
+                  </p>
+                </div>
+              ) : (
+                /* LOCKED STATE: Student is in an earlier semester */
+                <div className="p-4 sm:p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 flex items-start gap-3">
+                  <Info size={20} className="text-zinc-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="text-xs sm:text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                      {isAr 
+                        ? `يبدأ تخصصك في السنة ${startYearNum} - الفصل ${startSemNum}` 
+                        : `Your specialization begins in Year ${startYearNum} - Term ${startSemNum}`}
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                      {isAr 
+                        ? `أنت حالياً في (السنة ${currentSemester?.yearIndex || 1} - الفصل ${currentSemester?.semesterIndex || 1}). فور تقدمك إلى الفصل الدراسي المحدد في خطتك، ستظهر لك خانة تحديد وكتابة تخصصك تلقائياً لاسترداد مواده المعتمدة.`
+                        : `You are currently in (Year ${currentSemester?.yearIndex || 1} - Term ${currentSemester?.semesterIndex || 1}). Upon advancing to the specified term, the specialization field will unlock automatically.`}
+                    </p>
+                  </div>
+                </div>
+              )
+            ) : (
+              /* NOT CONFIGURED YET */
+              <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/40 flex items-center gap-3 text-xs text-amber-800 dark:text-amber-300 font-bold">
+                <Info size={16} className="shrink-0" />
+                <span>
+                  {isAr 
+                    ? 'حدد سنة وترم بداية التخصص أعلاه لتفعيل التخصص الأكاديمي لحسابك فور وصولك إليه.' 
+                    : 'Select specialization start year and term above to activate your major when you reach it.'}
+                </span>
+              </div>
+            )}
+          </section>
+
+          {/* Card: Study Plan & Semesters */}
+          <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-6">
+            <div className="border-b border-zinc-100 dark:border-zinc-800 pb-4">
+              <h2 className="text-lg font-black text-zinc-900 dark:text-white">{t('academic_plan')}</h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                {isAr ? 'هيكل السنوات والفصول الدراسية والفصل الحالي' : 'Years and semesters structure and active term'}
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{t('total_years')}</label>
+                <input 
+                  type="number" 
+                  name="totalYears"
+                  value={formData.totalYears}
+                  onChange={handleChange}
+                  min="1"
+                  max="10"
+                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-bold"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{t('semesters_per_year')}</label>
+                <input 
+                  type="number" 
+                  name="semestersPerYear"
+                  value={formData.semestersPerYear}
+                  onChange={handleChange}
+                  min="1"
+                  max="4"
+                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-bold"
+                />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
+              <SemestersManager 
+                semesters={formData.semesters}
+                totalYears={Number(formData.totalYears) || 1}
+                semestersPerYear={Number(formData.semestersPerYear) || 1}
+                initialCumulativeGpa={formData.initialCumulativeGpa}
+                initialCompletedCreditHours={formData.initialCompletedCreditHours}
+                setupMode={formData.setupMode}
+                onInitialGpaChange={(gpa, credits, mode) => {
+                  setFormData(prev => ({
+                    ...prev,
+                    initialCumulativeGpa: gpa,
+                    initialCompletedCreditHours: credits,
+                    setupMode: mode
+                  }));
+                }}
+                onChange={(newSemesters) => setFormData(prev => ({ ...prev, semesters: newSemesters }))}
+              />
+            </div>
+          </section>
+
+          {/* Grading Scales */}
+          <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6">
+            <GradingScale 
+              scale={formData.gradingScale}
+              onChange={(newScale) => setFormData(prev => ({ ...prev, gradingScale: newScale }))}
+            />
+          </section>
+
+          {/* Graduation Grading Scale */}
+          <GraduationGradingScale
+            scale={formData.graduationGradingScale}
+            enabled={formData.enableGraduationScale}
+            onToggleEnabled={(enabled) => setFormData(prev => ({ ...prev, enableGraduationScale: enabled }))}
+            onChange={(newScale) => setFormData(prev => ({ ...prev, graduationGradingScale: newScale }))}
+          />
+
+          {/* Save Button Action */}
+          <div className="flex justify-end pt-2">
+            <button 
+              onClick={handleSave}
+              disabled={saving}
+              className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold px-8 py-3 rounded-2xl shadow-lg shadow-indigo-500/20 transition-all cursor-pointer flex items-center justify-center gap-2"
+            >
+              {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+              <span>{saving ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ إعدادات الملف الشخصي' : 'Save Profile Settings')}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: DATABASES & RESTORE */}
+      {activeTab === 'databases' && (
+        <div className="space-y-6 animate-in fade-in">
+          {/* Main College Database Card */}
+          <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+                  <Building2 size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-zinc-900 dark:text-white">
+                    {isAr ? 'قاعدة بيانات الكلية والمنهج الدراسي العام' : 'College Curriculum Database'}
+                  </h2>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    {isAr ? 'استرداد المواد، التقديرات، وملفات الدرايف المعتمدة لكليتك بنقرة واحدة' : 'Restore accredited subjects, grading rules, and drive files'}
+                  </p>
+                </div>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setIsRestoreModalOpen(true)}
-                className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-500/20 transition-all cursor-pointer shrink-0"
               >
-                {isAr ? 'تغيير أو إعادة استرداد' : 'Change or Re-import'}
-              </button>
-
-              <span className="text-zinc-300 dark:text-zinc-700">|</span>
-
-              <button
-                type="button"
-                onClick={() => setIsUnlinkModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-900/60 transition-all cursor-pointer shadow-2xs"
-              >
-                <Unlink size={13} />
-                <span>{isAr ? 'إلغاء استخدام قاعدة البيانات' : 'Disconnect Database'}</span>
+                <Building2 size={16} />
+                <Sparkles size={14} className="text-amber-300" />
+                <span>{isAr ? 'استرداد من قاعدة بيانات الجامعات' : 'Restore from University Database'}</span>
               </button>
             </div>
-          </div>
-        )}
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('name')}</label>
-            <input 
-              type="text" 
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              className="w-full px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('university')}</label>
-            <input 
-              type="text" 
-              name="university"
-              value={formData.university}
-              onChange={handleChange}
-              className="w-full px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('college')}</label>
-            <input 
-              type="text" 
-              name="college"
-              value={formData.college}
-              onChange={handleChange}
-              className="w-full px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('enrollment_date')}</label>
-            <input 
-              type="date" 
-              name="enrollmentDate"
-              value={formData.enrollmentDate}
-              onChange={handleChange}
-              className="w-full px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-            />
-          </div>
-        </div>
-      </section>
 
-      <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-6">
-        <h2 className="text-xl font-semibold border-b border-zinc-100 dark:border-zinc-800 pb-4">{t('academic_plan')}</h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('total_years')}</label>
-            <input 
-              type="number" 
-              name="totalYears"
-              value={formData.totalYears}
-              onChange={handleChange}
-              min="1"
-              max="10"
-              className="w-full px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('semesters_per_year')}</label>
-            <input 
-              type="number" 
-              name="semestersPerYear"
-              value={formData.semestersPerYear}
-              onChange={handleChange}
-              min="1"
-              max="4"
-              className="w-full px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-            />
-          </div>
-        </div>
+            {/* Linked Status */}
+            {settings.university && settings.college && settings.university !== 'غير محدد' ? (
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-50/80 to-blue-50/50 dark:from-indigo-950/40 dark:to-zinc-900 border border-indigo-200/80 dark:border-indigo-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-600/20 shrink-0">
+                    <CheckCircle2 size={24} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-indigo-700 dark:text-indigo-300">
+                        {isAr ? 'متصل ومربوط مع:' : 'Currently Connected to:'}
+                      </span>
+                      <span className="px-3 py-1 rounded-xl text-xs font-black bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white border border-indigo-100 dark:border-indigo-950 shadow-xs">
+                        {settings.university} • {settings.college}
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                      {isAr 
+                        ? `الخطة مربوطة تلقائياً (${settings.totalYears} سنوات، ${settings.semestersPerYear} فصول/سنة). أي تحديثات تعتمدها إدارة الكلية تظهر في حسابك تلقائياً وبشكل فوري.` 
+                        : `Linked template (${settings.totalYears} yrs, ${settings.semestersPerYear} terms/yr). Approved updates reflect instantly.`}
+                    </p>
+                  </div>
+                </div>
 
-        <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
-          <SemestersManager 
-            semesters={formData.semesters}
-            totalYears={Number(formData.totalYears) || 1}
-            semestersPerYear={Number(formData.semestersPerYear) || 1}
-            initialCumulativeGpa={formData.initialCumulativeGpa}
-            initialCompletedCreditHours={formData.initialCompletedCreditHours}
-            setupMode={formData.setupMode}
-            onInitialGpaChange={(gpa, credits, mode) => {
-              setFormData(prev => ({
-                ...prev,
-                initialCumulativeGpa: gpa,
-                initialCompletedCreditHours: credits,
-                setupMode: mode
-              }));
-            }}
-            onChange={(newSemesters) => setFormData(prev => ({ ...prev, semesters: newSemesters }))}
-          />
-        </div>
-      </section>
+                <div className="flex items-center gap-3 self-end sm:self-center shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsRestoreModalOpen(true)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-white dark:bg-zinc-900 hover:bg-indigo-50 dark:hover:bg-zinc-800 border border-indigo-200 dark:border-indigo-800 transition-all cursor-pointer shadow-xs"
+                  >
+                    {isAr ? 'تغيير أو إعادة استرداد' : 'Change / Re-import'}
+                  </button>
 
-      <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6">
-        <GradingScale 
-          scale={formData.gradingScale}
-          onChange={(newScale) => setFormData(prev => ({ ...prev, gradingScale: newScale }))}
-        />
-      </section>
-
-      {/* Graduation Grading Scale (Optional) */}
-      <GraduationGradingScale
-        scale={formData.graduationGradingScale}
-        enabled={formData.enableGraduationScale}
-        onToggleEnabled={(enabled) => setFormData(prev => ({ ...prev, enableGraduationScale: enabled }))}
-        onChange={(newScale) => setFormData(prev => ({ ...prev, graduationGradingScale: newScale }))}
-      />
-
-      {/* User Suggestions & Feedback Section */}
-      <UserFeedbackSection />
-
-      {/* Account Security & Password Change Section */}
-      <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 sm:p-7 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-4">
-          <div>
-            <h2 className="text-xl font-bold flex items-center gap-2.5 text-zinc-900 dark:text-white">
-              <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
-                <KeyRound size={20} />
+                  <button
+                    type="button"
+                    onClick={() => setIsUnlinkModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-900/60 transition-all cursor-pointer shadow-xs"
+                  >
+                    <Unlink size={13} />
+                    <span>{isAr ? 'إلغاء الربط' : 'Disconnect'}</span>
+                  </button>
+                </div>
               </div>
-              <span>{isAr ? 'أمان الحساب وتغيير كلمة المرور' : 'Account Security & Password'}</span>
-            </h2>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-              {isAr ? 'يمكنك تحديث كلمة المرور الخاصة بحسابك في أي وقت لحماية بياناتك الأكاديمية' : 'Update your account password at any time to keep your academic data secure'}
-            </p>
-          </div>
-          {userEmail && (
-            <span className="px-3.5 py-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl text-xs font-mono font-bold w-fit">
-              {userEmail}
-            </span>
-          )}
+            ) : (
+              <div className="p-6 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 text-center space-y-3">
+                <Building2 size={32} className="mx-auto text-zinc-400" />
+                <div className="space-y-1">
+                  <h3 className="text-sm font-black text-zinc-800 dark:text-zinc-200">
+                    {isAr ? 'لم تقم باسترداد قاعدة بيانات الكلية بعد' : 'No College Database Linked'}
+                  </h3>
+                  <p className="text-xs text-zinc-400 max-w-md mx-auto">
+                    {isAr 
+                      ? 'يمكنك استرداد خطتك الدراسية وموادك وجدول تقديراتك وملفات الدرايف الجاهزة بضغطة زر واحدة واختيار جامعتك وكليتك.' 
+                      : 'You can restore your accredited curriculum, courses, and drive files in one click by selecting your university and college.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsRestoreModalOpen(true)}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 cursor-pointer inline-flex items-center gap-2"
+                >
+                  <Sparkles size={14} className="text-amber-300" />
+                  <span>{isAr ? 'استعراض الجامعات والكليات المتاحة' : 'Browse Available Databases'}</span>
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* Academic Specialization Database Card */}
+          <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-6">
+            <div className="flex items-center gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-4">
+              <div className="p-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
+                <Compass size={20} />
+              </div>
+              <div>
+                <h2 className="text-lg font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                  <span>{isAr ? 'قاعدة بيانات التخصص الأكاديمي' : 'Specialization Database Hub'}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                    {isAr ? 'الميزة المتقدمة' : 'Advanced Feature'}
+                  </span>
+                </h2>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  {isAr 
+                    ? 'استرداد مواد تخصصك الخاصة بدءاً من سنة التخصص، بالتكامل مع مواد الكلية العامة' 
+                    : 'Restore specialized courses starting from your specialization year in dual-sync'}
+                </p>
+              </div>
+            </div>
+
+            {formData.specialization ? (
+              <div className="p-5 rounded-2xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 space-y-3">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2.5">
+                    <BookOpen size={18} className="text-amber-600 dark:text-amber-400" />
+                    <div>
+                      <span className="text-xs font-black text-amber-900 dark:text-amber-200">
+                        {isAr ? 'تخصصك المعتمد:' : 'Active Major:'}
+                      </span>
+                      <span className="mx-2 px-3 py-1 rounded-xl text-xs font-black bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white border border-amber-200 dark:border-amber-900 shadow-xs">
+                        {formData.specialization}
+                      </span>
+                    </div>
+                  </div>
+
+                  {formData.specializationStartYear && formData.specializationStartSemester && (
+                    <span className="text-xs font-bold text-amber-700 dark:text-amber-300 bg-white/80 dark:bg-zinc-900/80 px-2.5 py-1 rounded-lg border border-amber-200/60 dark:border-amber-900/60">
+                      {isAr 
+                        ? `يبدأ من: السنة ${formData.specializationStartYear} (الترم ${formData.specializationStartSemester})` 
+                        : `From: Year ${formData.specializationStartYear} (Term ${formData.specializationStartSemester})`}
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                  {isAr 
+                    ? 'عند توفر قواعد بيانات تخصصية معتمدة من كليتك في لوحة تحكم الإدارة، ستتمكن من استرداد مواد التخصص وملفاتها بنقرة واحدة مع الحفاظ التام على مواد السنوات العامة السابقة.' 
+                    : 'When accredited specialization curricula are configured by admin for your college, you can restore specialization subjects while retaining all common foundation subjects.'}
+                </p>
+              </div>
+            ) : (
+              <div className="p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 flex items-start gap-3 text-xs text-zinc-500 dark:text-zinc-400">
+                <Info size={18} className="text-zinc-400 shrink-0 mt-0.5" />
+                <p className="leading-relaxed">
+                  {isAr 
+                    ? 'لتفعيل قاعدة بيانات التخصص، يرجى أولاً تحديد سنة وترم بداية التخصص واسم التخصص في تبويب "الملف الشخصي والخطة الأكاديمية".' 
+                    : 'To configure specialization database, please set your specialization start year, term, and major name in the "Profile & Academic Plan" tab.'}
+                </p>
+              </div>
+            )}
+          </section>
         </div>
+      )}
 
-        {passwordStatus && (
-          <div className={`p-4 rounded-2xl text-xs sm:text-sm font-bold flex items-center gap-2.5 transition-all animate-in fade-in ${
-            passwordStatus.type === 'success' 
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/50' 
-              : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50'
-          }`}>
-            {passwordStatus.type === 'success' ? <CheckCircle2 size={18} className="shrink-0 text-emerald-600" /> : <AlertTriangle size={18} className="shrink-0 text-rose-600" />}
-            <span>{passwordStatus.message}</span>
-          </div>
-        )}
+      {/* TAB 3: SECURITY & PASSWORD */}
+      {activeTab === 'security' && (
+        <div className="space-y-6 animate-in fade-in max-w-3xl">
+          {/* Account Security Card */}
+          <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 sm:p-7 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+                  <KeyRound size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-zinc-900 dark:text-white">
+                    {isAr ? 'تغيير كلمة المرور والتحقق الأمني' : 'Password & Security Verification'}
+                  </h2>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    {isAr ? 'يلزم إدخال كلمة المرور الحالية أولاً للتحقق من هويتك قبل تعيين كلمة مرور جديدة' : 'Current password verification is required before setting a new password'}
+                  </p>
+                </div>
+              </div>
 
-        <form onSubmit={handleUpdatePassword} className="space-y-4 max-w-xl">
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
-              <span>{isAr ? 'كلمة المرور الجديدة' : 'New Password'}</span>
-              <span className="text-[11px] font-normal text-zinc-400">{isAr ? '(6 خانات على الأقل)' : '(Min 6 chars)'}</span>
-            </label>
-            <div className="relative">
-              <input 
-                type={showPassword ? 'text' : 'password'} 
-                required
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="••••••••"
-                minLength={6}
-                className="w-full px-4 py-2.5 pr-11 rtl:pr-4 rtl:pl-11 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/60 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-mono"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute top-1/2 -translate-y-1/2 right-3 rtl:right-auto rtl:left-3 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1"
-                title={showPassword ? (isAr ? 'إخفاء' : 'Hide') : (isAr ? 'إظهار' : 'Show')}
-              >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
+              {userEmail && (
+                <span className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl text-xs font-mono font-bold w-fit">
+                  {userEmail}
+                </span>
+              )}
             </div>
+
+            {passwordStatus && (
+              <div className={`p-4 rounded-2xl text-xs sm:text-sm font-bold flex items-center gap-2.5 transition-all animate-in fade-in ${
+                passwordStatus.type === 'success' 
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/50' 
+                  : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50'
+              }`}>
+                {passwordStatus.type === 'success' ? <CheckCircle2 size={18} className="shrink-0 text-emerald-600" /> : <AlertTriangle size={18} className="shrink-0 text-rose-600" />}
+                <span>{passwordStatus.message}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdatePassword} className="space-y-4">
+              {/* Field 1: Current Password */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Lock size={13} className="text-indigo-600" />
+                    <span>{isAr ? 'كلمة المرور الحالية' : 'Current Password'}</span>
+                  </span>
+                  <span className="text-[11px] font-normal text-rose-500">{isAr ? '* إلزامي للتحقق' : '* Required'}</span>
+                </label>
+                <div className="relative">
+                  <input 
+                    type={showCurrentPassword ? 'text' : 'password'} 
+                    required
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-4 py-2.5 pr-11 rtl:pr-4 rtl:pl-11 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/60 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                    className="absolute top-1/2 -translate-y-1/2 right-3 rtl:right-auto rtl:left-3 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1 cursor-pointer"
+                    title={showCurrentPassword ? (isAr ? 'إخفاء' : 'Hide') : (isAr ? 'إظهار' : 'Show')}
+                  >
+                    {showCurrentPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Field 2: New Password */}
+              <div className="space-y-1.5 pt-2">
+                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
+                  <span>{isAr ? 'كلمة المرور الجديدة' : 'New Password'}</span>
+                  <span className="text-[11px] font-normal text-zinc-400">{isAr ? '(6 خانات على الأقل)' : '(Min 6 chars)'}</span>
+                </label>
+                <div className="relative">
+                  <input 
+                    type={showPassword ? 'text' : 'password'} 
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="••••••••"
+                    minLength={6}
+                    className="w-full px-4 py-2.5 pr-11 rtl:pr-4 rtl:pl-11 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/60 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute top-1/2 -translate-y-1/2 right-3 rtl:right-auto rtl:left-3 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1 cursor-pointer"
+                    title={showPassword ? (isAr ? 'إخفاء' : 'Hide') : (isAr ? 'إظهار' : 'Show')}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Field 3: Confirm New Password */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                  {isAr ? 'تأكيد كلمة المرور الجديدة' : 'Confirm New Password'}
+                </label>
+                <div className="relative">
+                  <input 
+                    type={showConfirmPassword ? 'text' : 'password'} 
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    minLength={6}
+                    className="w-full px-4 py-2.5 pr-11 rtl:pr-4 rtl:pl-11 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/60 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute top-1/2 -translate-y-1/2 right-3 rtl:right-auto rtl:left-3 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1 cursor-pointer"
+                    title={showConfirmPassword ? (isAr ? 'إخفاء' : 'Hide') : (isAr ? 'إظهار' : 'Show')}
+                  >
+                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Match Feedback */}
+              {newPassword && confirmPassword && newPassword !== confirmPassword && (
+                <p className="text-xs font-bold text-rose-500 flex items-center gap-1.5 pt-0.5">
+                  <AlertTriangle size={13} />
+                  <span>{isAr ? 'كلمتا المرور غير متطابقتين' : 'Passwords do not match'}</span>
+                </p>
+              )}
+
+              {newPassword && confirmPassword && newPassword === confirmPassword && newPassword.length >= 6 && (
+                <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 pt-0.5">
+                  <CheckCircle2 size={13} />
+                  <span>{isAr ? 'كلمتا المرور متطابقتان وجاهزتان للتحديث' : 'Passwords match'}</span>
+                </p>
+              )}
+
+              <div className="pt-3">
+                <button
+                  type="submit"
+                  disabled={passwordLoading}
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-md shadow-indigo-500/20 transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  {passwordLoading ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                  <span>{passwordLoading ? (isAr ? 'جاري التحقق والتحديث...' : 'Verifying & Updating...') : (isAr ? 'تأكيد وتحديث كلمة المرور' : 'Verify & Update Password')}</span>
+                </button>
+              </div>
+            </form>
+          </section>
+
+          {/* Tips Card */}
+          <div className="p-5 rounded-3xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 space-y-2">
+            <h3 className="text-xs font-black text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+              <ShieldCheck size={16} className="text-emerald-500" />
+              <span>{isAr ? 'نصائح حماية الحساب الأكاديمي' : 'Account Security Recommendations'}</span>
+            </h3>
+            <ul className="text-xs text-zinc-500 dark:text-zinc-400 space-y-1 list-disc list-inside leading-relaxed">
+              <li>{isAr ? 'استخدم كلمة مرور قوية تحتوي على أحرف وأرقام ورموز خاصة.' : 'Use a strong password combining letters, numbers, and symbols.'}</li>
+              <li>{isAr ? 'لا تشارك بيانات دخولك مع أي شخص لحماية درجاتك وملاحظاتك الدراسية.' : 'Do not share your credentials to safeguard your academic records.'}</li>
+              <li>{isAr ? 'يتم حفظ جميع بياناتك وموادك مشفرة ومؤمنة بالكامل عبر خوادم سحابية محمية.' : 'All your data and notes are securely encrypted in the cloud.'}</li>
+            </ul>
           </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-              {isAr ? 'تأكيد كلمة المرور الجديدة' : 'Confirm New Password'}
-            </label>
-            <div className="relative">
-              <input 
-                type={showConfirmPassword ? 'text' : 'password'} 
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="••••••••"
-                minLength={6}
-                className="w-full px-4 py-2.5 pr-11 rtl:pr-4 rtl:pl-11 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/60 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-mono"
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                className="absolute top-1/2 -translate-y-1/2 right-3 rtl:right-auto rtl:left-3 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1"
-                title={showConfirmPassword ? (isAr ? 'إخفاء' : 'Hide') : (isAr ? 'إظهار' : 'Show')}
-              >
-                {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-          </div>
-
-          {newPassword && confirmPassword && newPassword !== confirmPassword && (
-            <p className="text-xs font-bold text-rose-500 flex items-center gap-1.5 pt-0.5">
-              <AlertTriangle size={13} />
-              <span>{isAr ? 'كلمتا المرور غير متطابقتين' : 'Passwords do not match'}</span>
-            </p>
-          )}
-
-          {newPassword && confirmPassword && newPassword === confirmPassword && newPassword.length >= 6 && (
-            <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 pt-0.5">
-              <CheckCircle2 size={13} />
-              <span>{isAr ? 'كلمتا المرور متطابقتان وجاهزتان للتحديث' : 'Passwords match'}</span>
-            </p>
-          )}
-
-          <div className="pt-2">
-            <button
-              type="submit"
-              disabled={passwordLoading}
-              className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-xs transition-all flex items-center gap-2"
-            >
-              <ShieldCheck size={16} />
-              <span>{passwordLoading ? (isAr ? 'جاري التحديث...' : 'Updating...') : (isAr ? 'تحديث كلمة المرور' : 'Update Password')}</span>
-            </button>
-          </div>
-        </form>
-      </section>
-
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 sm:p-5 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm">
-        <div className="flex items-center gap-2">
-          {saveStatus?.type === 'success' && (
-            <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-emerald-600 dark:text-emerald-400 animate-in fade-in">
-              <CheckCircle2 size={18} />
-              <span>{isAr ? 'تم حفظ وتطبيق التعديلات بنجاح' : 'Changes saved successfully'}</span>
-            </div>
-          )}
-          {saveStatus?.type === 'error' && (
-            <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-rose-600 dark:text-rose-400 animate-in fade-in">
-              <AlertCircle size={18} />
-              <span>{saveStatus.message}</span>
-            </div>
-          )}
         </div>
+      )}
 
-        <button 
-          onClick={handleSave}
-          disabled={saving}
-          className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold px-7 py-3 rounded-2xl shadow-md shadow-indigo-500/20 transition-all cursor-pointer flex items-center justify-center gap-2"
-        >
-          {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-          <span>{saving ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ إعدادات الملف الشخصي' : 'Save Profile Settings')}</span>
-        </button>
-      </div>
+      {/* TAB 4: USER FEEDBACK & SUGGESTIONS */}
+      {activeTab === 'feedback' && (
+        <div className="space-y-6 animate-in fade-in">
+          <UserFeedbackSection />
+        </div>
+      )}
 
       {/* Confirm Unlink Database Modal */}
       {isUnlinkModalOpen && (
@@ -624,6 +1134,7 @@ export function Settings() {
         </div>
       )}
 
+      {/* University Restore Modal */}
       <UniversityRestoreModal
         isOpen={isRestoreModalOpen}
         onClose={() => setIsRestoreModalOpen(false)}

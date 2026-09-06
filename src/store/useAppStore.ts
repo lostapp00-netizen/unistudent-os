@@ -88,6 +88,10 @@ const defaultSettings: UserSettings = {
   warningGpaPoints: 2.0,
   enableGraduationScale: false,
   graduationGradingScale: defaultGraduationScale,
+  specialization: '',
+  specializationStartYear: undefined,
+  specializationStartSemester: undefined,
+  specializationDatabaseId: undefined,
 };
 
 export interface AppState {

@@ -39,6 +39,10 @@ export const db = {
     if ('deletedSubjectNames' in settings) payload.deleted_subject_names = settings.deletedSubjectNames || [];
     if ('enableGraduationScale' in settings) payload.enable_graduation_scale = settings.enableGraduationScale;
     if ('graduationGradingScale' in settings) payload.graduation_grading_scale = settings.graduationGradingScale;
+    if ('specialization' in settings) payload.specialization = settings.specialization || null;
+    if ('specializationStartYear' in settings) payload.specialization_start_year = settings.specializationStartYear || null;
+    if ('specializationStartSemester' in settings) payload.specialization_start_semester = settings.specializationStartSemester || null;
+    if ('specializationDatabaseId' in settings) payload.specialization_database_id = settings.specializationDatabaseId || null;
 
     try {
       const existingRaw = localStorage.getItem(`unistudent_settings_${userId}`);
@@ -49,7 +53,11 @@ export const db = {
         universityDatabaseId: 'universityDatabaseId' in settings ? (settings.universityDatabaseId || null) : existingObj.universityDatabaseId,
         deletedSubjectNames: 'deletedSubjectNames' in settings ? (settings.deletedSubjectNames || []) : (existingObj.deletedSubjectNames || []),
         enableGraduationScale: 'enableGraduationScale' in settings ? settings.enableGraduationScale : existingObj.enableGraduationScale,
-        graduationGradingScale: 'graduationGradingScale' in settings ? settings.graduationGradingScale : existingObj.graduationGradingScale
+        graduationGradingScale: 'graduationGradingScale' in settings ? settings.graduationGradingScale : existingObj.graduationGradingScale,
+        specialization: 'specialization' in settings ? settings.specialization : existingObj.specialization,
+        specializationStartYear: 'specializationStartYear' in settings ? settings.specializationStartYear : existingObj.specializationStartYear,
+        specializationStartSemester: 'specializationStartSemester' in settings ? settings.specializationStartSemester : existingObj.specializationStartSemester,
+        specializationDatabaseId: 'specializationDatabaseId' in settings ? settings.specializationDatabaseId : existingObj.specializationDatabaseId
       }));
     } catch {}
 
@@ -67,6 +75,10 @@ export const db = {
         delete payload.deleted_subject_names;
         delete payload.enable_graduation_scale;
         delete payload.graduation_grading_scale;
+        delete payload.specialization;
+        delete payload.specialization_start_year;
+        delete payload.specialization_start_semester;
+        delete payload.specialization_database_id;
         await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
       } else {
         console.error('Error upserting settings:', error);
@@ -1763,7 +1775,11 @@ function mapSettingsFromDB(row: any): UserSettings {
     universityDatabaseId: resolvedDbId,
     deletedSubjectNames: (Array.isArray(row.deleted_subject_names) && row.deleted_subject_names.length > 0)
       ? row.deleted_subject_names
-      : (localExtra.deletedSubjectNames || [])
+      : (localExtra.deletedSubjectNames || []),
+    specialization: row.specialization !== undefined ? row.specialization : (localExtra.specialization || undefined),
+    specializationStartYear: row.specialization_start_year !== undefined ? Number(row.specialization_start_year) : (localExtra.specializationStartYear !== undefined ? Number(localExtra.specializationStartYear) : undefined),
+    specializationStartSemester: row.specialization_start_semester !== undefined ? Number(row.specialization_start_semester) : (localExtra.specializationStartSemester !== undefined ? Number(localExtra.specializationStartSemester) : undefined),
+    specializationDatabaseId: row.specialization_database_id !== undefined ? row.specialization_database_id : (localExtra.specializationDatabaseId || undefined)
   };
 }
 

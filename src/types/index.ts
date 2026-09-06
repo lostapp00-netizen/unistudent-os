@@ -132,6 +132,10 @@ export type UserSettings = {
   graduationGradingScale?: GraduationGradeRule[];
   universityDatabaseId?: string;
   deletedSubjectNames?: string[];
+  specialization?: string;
+  specializationStartYear?: number;
+  specializationStartSemester?: number;
+  specializationDatabaseId?: string;
 };
 
 export type Appointment = {
