@@ -210,7 +210,7 @@ export function Settings() {
         setPasswordStatus({
           type: 'error',
           message: isAr 
-            ? 'كلمة المرور الحالية غير صحيحة! يرجى التأكد من كتابتها بشكل سليم والمحاولة مجدداً.' 
+            ? 'كلمة المرور الحالية غير صحيحة! يرجى التأكد من كتابة كلمة المرور القديمة بشكل سليم والمحاولة مجدداً.' 
             : 'Current password is incorrect. Please verify and try again.'
         });
         return;
@@ -335,17 +335,19 @@ export function Settings() {
   );
 
   return (
-    <div className="space-y-6 pb-16 max-w-6xl mx-auto">
-      {/* Top Header */}
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white flex items-center gap-3">
-            <span>{t('settings')}</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+    <div className="space-y-4 sm:space-y-6 pb-20 max-w-6xl mx-auto w-full px-1 sm:px-2 md:px-0">
+      {/* Top Header - Fully Responsive on Mobile, Tablet & Desktop */}
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-zinc-900 dark:text-white">
+              {t('settings')}
+            </h1>
+            <span className="text-[11px] sm:text-xs px-2.5 py-0.5 rounded-full font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
               {isAr ? 'لوحة التحكم الأكاديمية' : 'Academic Hub'}
             </span>
-          </h1>
-          <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+          </div>
+          <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
             {isAr 
               ? 'إدارة حسابك الشخصي، الخطة الدراسية، قواعد بيانات الكلية والتخصص، والأمان' 
               : 'Manage your profile, academic plan, college & specialization databases, and security'}
@@ -357,7 +359,7 @@ export function Settings() {
           <button 
             onClick={handleSave}
             disabled={saving}
-            className="self-start sm:self-auto bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold px-6 py-2.5 rounded-2xl shadow-lg shadow-indigo-500/20 transition-all cursor-pointer flex items-center gap-2 text-sm shrink-0"
+            className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl shadow-md shadow-indigo-500/20 transition-all cursor-pointer flex items-center justify-center gap-2 text-xs sm:text-sm shrink-0"
           >
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
             <span>{saving ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ التغييرات' : 'Save Changes')}</span>
@@ -367,113 +369,125 @@ export function Settings() {
 
       {/* Global Status Message */}
       {saveStatus && (
-        <div className={`p-4 sm:p-5 rounded-2xl font-bold text-sm flex items-center gap-3 transition-all animate-in fade-in shadow-sm ${
+        <div className={`p-3.5 sm:p-5 rounded-2xl font-bold text-xs sm:text-sm flex items-center gap-3 transition-all animate-in fade-in shadow-sm ${
           saveStatus.type === 'success'
             ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60'
             : 'bg-rose-50 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60'
         }`}>
           {saveStatus.type === 'success' ? (
-            <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-xs">
-              <CheckCircle2 size={20} />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <CheckCircle2 size={18} />
             </div>
           ) : (
-            <div className="w-9 h-9 rounded-xl bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-xs">
-              <AlertCircle size={20} />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <AlertCircle size={18} />
             </div>
           )}
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <p className="font-extrabold">{saveStatus.type === 'success' ? (isAr ? 'تم بنجاح!' : 'Success!') : (isAr ? 'تنبيه' : 'Alert')}</p>
-            <p className="text-xs font-medium opacity-90">{saveStatus.message}</p>
+            <p className="text-[11px] sm:text-xs font-medium opacity-90 truncate sm:whitespace-normal">{saveStatus.message}</p>
           </div>
         </div>
       )}
 
-      {/* Modern Tab Navigation Pills */}
-      <div className="flex items-center gap-2 p-1.5 bg-zinc-100 dark:bg-zinc-800/60 rounded-2xl overflow-x-auto border border-zinc-200 dark:border-zinc-800">
+      {/* Responsive Tab Navigation: 2x2 Grid on Mobile (<640px), Clean Flex Bar on Tablet & Laptop */}
+      <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 p-1.5 bg-zinc-100 dark:bg-zinc-800/60 rounded-2xl border border-zinc-200 dark:border-zinc-800">
         <button
           type="button"
           onClick={() => setActiveTab('profile')}
-          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap cursor-pointer ${
+          className={`flex items-center justify-center sm:justify-start gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
             activeTab === 'profile'
               ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm border border-zinc-200/80 dark:border-zinc-700/80'
               : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
           }`}
         >
-          <GraduationCap size={18} />
-          <span>{isAr ? 'الملف الشخصي والخطة الأكاديمية' : 'Profile & Academic Plan'}</span>
+          <GraduationCap size={17} className="shrink-0" />
+          <span className="truncate">
+            <span className="sm:hidden">{isAr ? 'البيانات الأكاديمية' : 'Profile'}</span>
+            <span className="hidden sm:inline">{isAr ? 'الملف الشخصي والخطة الأكاديمية' : 'Profile & Academic Plan'}</span>
+          </span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('databases')}
-          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap cursor-pointer ${
+          className={`flex items-center justify-center sm:justify-start gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
             activeTab === 'databases'
               ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm border border-zinc-200/80 dark:border-zinc-700/80'
               : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
           }`}
         >
-          <Database size={18} />
-          <span>{isAr ? 'قواعد البيانات والاسترداد' : 'Databases & Restore'}</span>
+          <Database size={17} className="shrink-0" />
+          <span className="truncate">
+            <span className="sm:hidden">{isAr ? 'قواعد البيانات' : 'Databases'}</span>
+            <span className="hidden sm:inline">{isAr ? 'قواعد البيانات والاسترداد' : 'Databases & Restore'}</span>
+          </span>
           {settings.universityDatabaseId && (
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
           )}
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('security')}
-          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap cursor-pointer ${
+          className={`flex items-center justify-center sm:justify-start gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
             activeTab === 'security'
               ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm border border-zinc-200/80 dark:border-zinc-700/80'
               : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
           }`}
         >
-          <Shield size={18} />
-          <span>{isAr ? 'الأمان وكلمة المرور' : 'Security & Password'}</span>
+          <Shield size={17} className="shrink-0" />
+          <span className="truncate">
+            <span className="sm:hidden">{isAr ? 'الأمان والباسورد' : 'Security'}</span>
+            <span className="hidden sm:inline">{isAr ? 'الأمان وكلمة المرور' : 'Security & Password'}</span>
+          </span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('feedback')}
-          className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap cursor-pointer ${
+          className={`flex items-center justify-center sm:justify-start gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
             activeTab === 'feedback'
               ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm border border-zinc-200/80 dark:border-zinc-700/80'
               : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
           }`}
         >
-          <MessageSquare size={18} />
-          <span>{isAr ? 'الدعم والمقترحات' : 'Support & Feedback'}</span>
+          <MessageSquare size={17} className="shrink-0" />
+          <span className="truncate">
+            <span className="sm:hidden">{isAr ? 'المقترحات' : 'Feedback'}</span>
+            <span className="hidden sm:inline">{isAr ? 'الدعم والمقترحات' : 'Support & Feedback'}</span>
+          </span>
         </button>
       </div>
 
       {/* TAB 1: PROFILE & ACADEMIC PLAN */}
       {activeTab === 'profile' && (
-        <div className="space-y-6 animate-in fade-in">
-          {/* Card: Personal & University Info */}
-          <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-6">
-            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-4">
+        <div className="space-y-4 sm:space-y-6 animate-in fade-in">
+          {/* Card 1: Personal & University Info */}
+          <section className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-4 sm:p-6 lg:p-7 space-y-4 sm:space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-3 sm:pb-4">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
-                  <User size={20} />
+                <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 shrink-0">
+                  <User size={18} className="sm:w-5 sm:h-5" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-black text-zinc-900 dark:text-white">
+                  <h2 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white">
                     {isAr ? 'البيانات الشخصية والجامعية' : 'Personal & University Information'}
                   </h2>
-                  <p className="text-xs text-zinc-400 mt-0.5">
+                  <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5">
                     {isAr ? 'بيانات هويتك الأكاديمية والكلية التي تدرس بها' : 'Your academic identity and registered college'}
                   </p>
                 </div>
               </div>
 
               {userEmail && (
-                <span className="hidden sm:inline-flex px-3 py-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 font-mono text-xs font-bold">
+                <span className="inline-flex max-w-full truncate px-3 py-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 font-mono text-[11px] sm:text-xs font-bold w-fit">
                   {userEmail}
                 </span>
               )}
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-5">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{t('name')}</label>
                 <input 
@@ -482,7 +496,7 @@ export function Settings() {
                   value={formData.name}
                   onChange={handleChange}
                   placeholder={isAr ? 'اسمك الكامل' : 'Your Full Name'}
-                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm"
+                  className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-base sm:text-sm"
                 />
               </div>
 
@@ -493,7 +507,7 @@ export function Settings() {
                   name="enrollmentDate"
                   value={formData.enrollmentDate}
                   onChange={handleChange}
-                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm"
+                  className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-base sm:text-sm"
                 />
               </div>
 
@@ -505,7 +519,7 @@ export function Settings() {
                   value={formData.university}
                   onChange={handleChange}
                   placeholder={isAr ? 'مثال: جامعة القاهرة' : 'e.g. Cairo University'}
-                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm"
+                  className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-base sm:text-sm"
                 />
               </div>
 
@@ -517,25 +531,25 @@ export function Settings() {
                   value={formData.college}
                   onChange={handleChange}
                   placeholder={isAr ? 'مثال: كلية الهندسة' : 'e.g. Faculty of Engineering'}
-                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm"
+                  className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-base sm:text-sm"
                 />
               </div>
             </div>
           </section>
 
-          {/* Card: Academic Specialization Timing & Specialization Name */}
-          <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-6 relative overflow-hidden">
-            <div className="flex items-start justify-between gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-4">
+          {/* Card 2: Academic Specialization Timing & Major Name */}
+          <section className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-4 sm:p-6 lg:p-7 space-y-4 sm:space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-3 sm:pb-4">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
-                  <Compass size={20} />
+                <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 shrink-0">
+                  <Compass size={18} className="sm:w-5 sm:h-5" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                  <h2 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white flex items-center gap-2">
                     <span>{isAr ? 'نظام التخصص الأكاديمي' : 'Academic Specialization System'}</span>
-                    <Sparkles size={16} className="text-amber-500" />
+                    <Sparkles size={15} className="text-amber-500 shrink-0" />
                   </h2>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
                     {isAr 
                       ? 'حدد متى يبدأ التخصص في كليتك، وتفعيل اسم التخصص فور وصولك إلى الفصل الدراسي المعتمد' 
                       : 'Set when specialization starts in your college, and unlock your major upon reaching that term'}
@@ -544,7 +558,7 @@ export function Settings() {
               </div>
 
               {currentSemester && (
-                <div className="text-xs font-bold px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 shrink-0">
+                <div className="text-[11px] sm:text-xs font-bold px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 w-fit shrink-0">
                   <span>{isAr ? 'فصلك الحالي: ' : 'Current: '}</span>
                   <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">
                     {isAr ? `السنة ${currentSemester.yearIndex} - الترم ${currentSemester.semesterIndex}` : `Yr ${currentSemester.yearIndex} - Term ${currentSemester.semesterIndex}`}
@@ -554,17 +568,17 @@ export function Settings() {
             </div>
 
             {/* Timing Inputs: Start Year and Start Semester */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-5">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-                  <Calendar size={14} className="text-zinc-400" />
+                  <Calendar size={13} className="text-zinc-400 shrink-0" />
                   <span>{isAr ? 'سنة بداية التخصص بالكلية' : 'Specialization Start Year'}</span>
                 </label>
                 <select
                   name="specializationStartYear"
                   value={formData.specializationStartYear}
                   onChange={handleChange}
-                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-bold cursor-pointer"
+                  className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-base sm:text-sm font-bold cursor-pointer"
                 >
                   <option value="">{isAr ? 'اختر سنة بداية التخصص...' : 'Select Start Year...'}</option>
                   {Array.from({ length: Number(formData.totalYears) || 4 }, (_, i) => i + 1).map(year => (
@@ -580,14 +594,14 @@ export function Settings() {
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-                  <Layers size={14} className="text-zinc-400" />
+                  <Layers size={13} className="text-zinc-400 shrink-0" />
                   <span>{isAr ? 'ترم بداية التخصص بالكلية' : 'Specialization Start Term'}</span>
                 </label>
                 <select
                   name="specializationStartSemester"
                   value={formData.specializationStartSemester}
                   onChange={handleChange}
-                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-bold cursor-pointer"
+                  className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-base sm:text-sm font-bold cursor-pointer"
                 >
                   <option value="">{isAr ? 'اختر فصل بداية التخصص...' : 'Select Start Term...'}</option>
                   {Array.from({ length: Number(formData.semestersPerYear) || 2 }, (_, i) => i + 1).map(sem => (
@@ -606,9 +620,9 @@ export function Settings() {
             {hasConfiguredSpecializationTiming ? (
               hasReachedSpecialization ? (
                 /* UNLOCKED STATE: Student has reached or passed the specialization milestone */
-                <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-50/80 via-white to-amber-50/60 dark:from-indigo-950/40 dark:via-zinc-900 dark:to-amber-950/30 border border-indigo-200 dark:border-indigo-800/80 space-y-4 animate-in fade-in">
-                  <div className="flex items-center gap-2.5 text-indigo-700 dark:text-indigo-300 font-black text-sm">
-                    <Sparkles size={18} className="text-amber-500" />
+                <div className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-indigo-50/80 via-white to-amber-50/60 dark:from-indigo-950/40 dark:via-zinc-900 dark:to-amber-950/30 border border-indigo-200 dark:border-indigo-800/80 space-y-3.5 animate-in fade-in">
+                  <div className="flex items-center gap-2.5 text-indigo-700 dark:text-indigo-300 font-black text-xs sm:text-sm">
+                    <Sparkles size={16} className="text-amber-500 shrink-0" />
                     <span>
                       {isAr ? '🎉 وصلت إلى مرحلة التخصص الأكاديمي!' : '🎉 You have reached the Specialization stage!'}
                     </span>
@@ -616,7 +630,7 @@ export function Settings() {
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
-                      <BookOpen size={14} className="text-indigo-600" />
+                      <BookOpen size={13} className="text-indigo-600 shrink-0" />
                       <span>{isAr ? 'اكتب اسم تخصصك الأكاديمي' : 'Enter Your Academic Specialization'}</span>
                       <span className="text-[11px] font-normal text-zinc-400">
                         ({isAr ? 'تخصصك المعتمد في الكلية' : 'Your college major'})
@@ -628,11 +642,11 @@ export function Settings() {
                       value={formData.specialization || ''}
                       onChange={handleChange}
                       placeholder={isAr ? 'مثال: هندسة حاسبات ونظم / علوم الحاسب / نظم معلومات / محاسبة...' : 'e.g. Computer Engineering / CS / IS / Finance...'}
-                      className="w-full px-4 py-3 rounded-xl border border-indigo-300 dark:border-indigo-700 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-bold shadow-xs"
+                      className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-indigo-300 dark:border-indigo-700 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-base sm:text-sm font-bold shadow-xs"
                     />
                   </div>
 
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                  <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
                     {isAr 
                       ? 'بمجرد كتابة تخصصك وحفظه، ستتمكن أيضاً من استرداد قاعدة بيانات التخصص من تبويب "قواعد البيانات والاسترداد".' 
                       : 'Once entered and saved, you can also restore the specialization curriculum from the "Databases & Restore" tab.'}
@@ -640,15 +654,15 @@ export function Settings() {
                 </div>
               ) : (
                 /* LOCKED STATE: Student is in an earlier semester */
-                <div className="p-4 sm:p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 flex items-start gap-3">
-                  <Info size={20} className="text-zinc-400 shrink-0 mt-0.5" />
+                <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 flex items-start gap-2.5 sm:gap-3">
+                  <Info size={18} className="text-zinc-400 shrink-0 mt-0.5" />
                   <div className="space-y-1">
                     <p className="text-xs sm:text-sm font-bold text-zinc-700 dark:text-zinc-300">
                       {isAr 
                         ? `يبدأ تخصصك في السنة ${startYearNum} - الفصل ${startSemNum}` 
                         : `Your specialization begins in Year ${startYearNum} - Term ${startSemNum}`}
                     </p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                    <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
                       {isAr 
                         ? `أنت حالياً في (السنة ${currentSemester?.yearIndex || 1} - الفصل ${currentSemester?.semesterIndex || 1}). فور تقدمك إلى الفصل الدراسي المحدد في خطتك، ستظهر لك خانة تحديد وكتابة تخصصك تلقائياً لاسترداد مواده المعتمدة.`
                         : `You are currently in (Year ${currentSemester?.yearIndex || 1} - Term ${currentSemester?.semesterIndex || 1}). Upon advancing to the specified term, the specialization field will unlock automatically.`}
@@ -658,7 +672,7 @@ export function Settings() {
               )
             ) : (
               /* NOT CONFIGURED YET */
-              <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/40 flex items-center gap-3 text-xs text-amber-800 dark:text-amber-300 font-bold">
+              <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/40 flex items-center gap-2.5 sm:gap-3 text-xs text-amber-800 dark:text-amber-300 font-bold">
                 <Info size={16} className="shrink-0" />
                 <span>
                   {isAr 
@@ -669,16 +683,16 @@ export function Settings() {
             )}
           </section>
 
-          {/* Card: Study Plan & Semesters */}
-          <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-6">
-            <div className="border-b border-zinc-100 dark:border-zinc-800 pb-4">
-              <h2 className="text-lg font-black text-zinc-900 dark:text-white">{t('academic_plan')}</h2>
-              <p className="text-xs text-zinc-400 mt-0.5">
+          {/* Card 3: Study Plan & Semesters */}
+          <section className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-4 sm:p-6 lg:p-7 space-y-4 sm:space-y-6">
+            <div className="border-b border-zinc-100 dark:border-zinc-800 pb-3 sm:pb-4">
+              <h2 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white">{t('academic_plan')}</h2>
+              <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5">
                 {isAr ? 'هيكل السنوات والفصول الدراسية والفصل الحالي' : 'Years and semesters structure and active term'}
               </p>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-5">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{t('total_years')}</label>
                 <input 
@@ -688,7 +702,7 @@ export function Settings() {
                   onChange={handleChange}
                   min="1"
                   max="10"
-                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-bold"
+                  className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-base sm:text-sm font-bold"
                 />
               </div>
 
@@ -701,12 +715,12 @@ export function Settings() {
                   onChange={handleChange}
                   min="1"
                   max="4"
-                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-bold"
+                  className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-base sm:text-sm font-bold"
                 />
               </div>
             </div>
 
-            <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
+            <div className="pt-3 sm:pt-4 border-t border-zinc-100 dark:border-zinc-800 overflow-x-auto">
               <SemestersManager 
                 semesters={formData.semesters}
                 totalYears={Number(formData.totalYears) || 1}
@@ -727,28 +741,30 @@ export function Settings() {
             </div>
           </section>
 
-          {/* Grading Scales */}
-          <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6">
+          {/* Card 4: Grading Scales */}
+          <section className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-4 sm:p-6 lg:p-7 overflow-x-auto">
             <GradingScale 
               scale={formData.gradingScale}
               onChange={(newScale) => setFormData(prev => ({ ...prev, gradingScale: newScale }))}
             />
           </section>
 
-          {/* Graduation Grading Scale */}
-          <GraduationGradingScale
-            scale={formData.graduationGradingScale}
-            enabled={formData.enableGraduationScale}
-            onToggleEnabled={(enabled) => setFormData(prev => ({ ...prev, enableGraduationScale: enabled }))}
-            onChange={(newScale) => setFormData(prev => ({ ...prev, graduationGradingScale: newScale }))}
-          />
+          {/* Card 5: Graduation Grading Scale */}
+          <div className="overflow-x-auto">
+            <GraduationGradingScale
+              scale={formData.graduationGradingScale}
+              enabled={formData.enableGraduationScale}
+              onToggleEnabled={(enabled) => setFormData(prev => ({ ...prev, enableGraduationScale: enabled }))}
+              onChange={(newScale) => setFormData(prev => ({ ...prev, graduationGradingScale: newScale }))}
+            />
+          </div>
 
-          {/* Save Button Action */}
+          {/* Bottom Save Button Action */}
           <div className="flex justify-end pt-2">
             <button 
               onClick={handleSave}
               disabled={saving}
-              className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold px-8 py-3 rounded-2xl shadow-lg shadow-indigo-500/20 transition-all cursor-pointer flex items-center justify-center gap-2"
+              className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold px-8 py-3 rounded-xl sm:rounded-2xl shadow-lg shadow-indigo-500/20 transition-all cursor-pointer flex items-center justify-center gap-2 text-sm"
             >
               {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
               <span>{saving ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ إعدادات الملف الشخصي' : 'Save Profile Settings')}</span>
@@ -759,19 +775,19 @@ export function Settings() {
 
       {/* TAB 2: DATABASES & RESTORE */}
       {activeTab === 'databases' && (
-        <div className="space-y-6 animate-in fade-in">
+        <div className="space-y-4 sm:space-y-6 animate-in fade-in">
           {/* Main College Database Card */}
-          <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-4">
+          <section className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-4 sm:p-6 lg:p-7 space-y-4 sm:space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-3 sm:pb-4">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
-                  <Building2 size={20} />
+                <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 shrink-0">
+                  <Building2 size={18} className="sm:w-5 sm:h-5" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-black text-zinc-900 dark:text-white">
+                  <h2 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white">
                     {isAr ? 'قاعدة بيانات الكلية والمنهج الدراسي العام' : 'College Curriculum Database'}
                   </h2>
-                  <p className="text-xs text-zinc-400 mt-0.5">
+                  <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5">
                     {isAr ? 'استرداد المواد، التقديرات، وملفات الدرايف المعتمدة لكليتك بنقرة واحدة' : 'Restore accredited subjects, grading rules, and drive files'}
                   </p>
                 </div>
@@ -780,7 +796,7 @@ export function Settings() {
               <button
                 type="button"
                 onClick={() => setIsRestoreModalOpen(true)}
-                className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-500/20 transition-all cursor-pointer shrink-0"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2.5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-500/20 transition-all cursor-pointer shrink-0"
               >
                 <Building2 size={16} />
                 <Sparkles size={14} className="text-amber-300" />
@@ -790,21 +806,21 @@ export function Settings() {
 
             {/* Linked Status */}
             {settings.university && settings.college && settings.university !== 'غير محدد' ? (
-              <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-50/80 to-blue-50/50 dark:from-indigo-950/40 dark:to-zinc-900 border border-indigo-200/80 dark:border-indigo-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3.5">
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-600/20 shrink-0">
-                    <CheckCircle2 size={24} />
+              <div className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-indigo-50/80 to-blue-50/50 dark:from-indigo-950/40 dark:to-zinc-900 border border-indigo-200/80 dark:border-indigo-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-start sm:items-center gap-3 sm:gap-3.5">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-600/20 shrink-0 mt-0.5 sm:mt-0">
+                    <CheckCircle2 size={20} className="sm:w-6 sm:h-6" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-black text-indigo-700 dark:text-indigo-300">
                         {isAr ? 'متصل ومربوط مع:' : 'Currently Connected to:'}
                       </span>
-                      <span className="px-3 py-1 rounded-xl text-xs font-black bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white border border-indigo-100 dark:border-indigo-950 shadow-xs">
+                      <span className="px-2.5 sm:px-3 py-1 rounded-xl text-xs font-black bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white border border-indigo-100 dark:border-indigo-950 shadow-xs">
                         {settings.university} • {settings.college}
                       </span>
                     </div>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                    <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed">
                       {isAr 
                         ? `الخطة مربوطة تلقائياً (${settings.totalYears} سنوات، ${settings.semestersPerYear} فصول/سنة). أي تحديثات تعتمدها إدارة الكلية تظهر في حسابك تلقائياً وبشكل فوري.` 
                         : `Linked template (${settings.totalYears} yrs, ${settings.semestersPerYear} terms/yr). Approved updates reflect instantly.`}
@@ -812,11 +828,11 @@ export function Settings() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 self-end sm:self-center shrink-0">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto shrink-0">
                   <button
                     type="button"
                     onClick={() => setIsRestoreModalOpen(true)}
-                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-white dark:bg-zinc-900 hover:bg-indigo-50 dark:hover:bg-zinc-800 border border-indigo-200 dark:border-indigo-800 transition-all cursor-pointer shadow-xs"
+                    className="w-full sm:w-auto text-center px-3.5 py-2.5 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-white dark:bg-zinc-900 hover:bg-indigo-50 dark:hover:bg-zinc-800 border border-indigo-200 dark:border-indigo-800 transition-all cursor-pointer shadow-xs"
                   >
                     {isAr ? 'تغيير أو إعادة استرداد' : 'Change / Re-import'}
                   </button>
@@ -824,7 +840,7 @@ export function Settings() {
                   <button
                     type="button"
                     onClick={() => setIsUnlinkModalOpen(true)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-900/60 transition-all cursor-pointer shadow-xs"
+                    className="w-full sm:w-auto text-center inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-900/60 transition-all cursor-pointer shadow-xs"
                   >
                     <Unlink size={13} />
                     <span>{isAr ? 'إلغاء الربط' : 'Disconnect'}</span>
@@ -832,13 +848,13 @@ export function Settings() {
                 </div>
               </div>
             ) : (
-              <div className="p-6 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 text-center space-y-3">
-                <Building2 size={32} className="mx-auto text-zinc-400" />
+              <div className="p-5 sm:p-6 rounded-xl sm:rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 text-center space-y-3">
+                <Building2 size={28} className="mx-auto text-zinc-400 sm:w-8 sm:h-8" />
                 <div className="space-y-1">
-                  <h3 className="text-sm font-black text-zinc-800 dark:text-zinc-200">
+                  <h3 className="text-xs sm:text-sm font-black text-zinc-800 dark:text-zinc-200">
                     {isAr ? 'لم تقم باسترداد قاعدة بيانات الكلية بعد' : 'No College Database Linked'}
                   </h3>
-                  <p className="text-xs text-zinc-400 max-w-md mx-auto">
+                  <p className="text-[11px] sm:text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
                     {isAr 
                       ? 'يمكنك استرداد خطتك الدراسية وموادك وجدول تقديراتك وملفات الدرايف الجاهزة بضغطة زر واحدة واختيار جامعتك وكليتك.' 
                       : 'You can restore your accredited curriculum, courses, and drive files in one click by selecting your university and college.'}
@@ -847,7 +863,7 @@ export function Settings() {
                 <button
                   type="button"
                   onClick={() => setIsRestoreModalOpen(true)}
-                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 cursor-pointer inline-flex items-center gap-2"
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 cursor-pointer inline-flex items-center justify-center gap-2"
                 >
                   <Sparkles size={14} className="text-amber-300" />
                   <span>{isAr ? 'استعراض الجامعات والكليات المتاحة' : 'Browse Available Databases'}</span>
@@ -857,19 +873,19 @@ export function Settings() {
           </section>
 
           {/* Academic Specialization Database Card */}
-          <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-6">
-            <div className="flex items-center gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-4">
-              <div className="p-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
-                <Compass size={20} />
+          <section className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-4 sm:p-6 lg:p-7 space-y-4 sm:space-y-6">
+            <div className="flex items-center gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-3 sm:pb-4">
+              <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 shrink-0">
+                <Compass size={18} className="sm:w-5 sm:h-5" />
               </div>
               <div>
-                <h2 className="text-lg font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white flex items-center gap-2">
                   <span>{isAr ? 'قاعدة بيانات التخصص الأكاديمي' : 'Specialization Database Hub'}</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                    {isAr ? 'الميزة المتقدمة' : 'Advanced Feature'}
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
+                    {isAr ? 'الميزة المتقدمة' : 'Advanced'}
                   </span>
                 </h2>
-                <p className="text-xs text-zinc-400 mt-0.5">
+                <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5">
                   {isAr 
                     ? 'استرداد مواد تخصصك الخاصة بدءاً من سنة التخصص، بالتكامل مع مواد الكلية العامة' 
                     : 'Restore specialized courses starting from your specialization year in dual-sync'}
@@ -878,10 +894,10 @@ export function Settings() {
             </div>
 
             {formData.specialization ? (
-              <div className="p-5 rounded-2xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 space-y-3">
+              <div className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 space-y-3">
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-2.5">
-                    <BookOpen size={18} className="text-amber-600 dark:text-amber-400" />
+                    <BookOpen size={17} className="text-amber-600 dark:text-amber-400 shrink-0" />
                     <div>
                       <span className="text-xs font-black text-amber-900 dark:text-amber-200">
                         {isAr ? 'تخصصك المعتمد:' : 'Active Major:'}
@@ -893,7 +909,7 @@ export function Settings() {
                   </div>
 
                   {formData.specializationStartYear && formData.specializationStartSemester && (
-                    <span className="text-xs font-bold text-amber-700 dark:text-amber-300 bg-white/80 dark:bg-zinc-900/80 px-2.5 py-1 rounded-lg border border-amber-200/60 dark:border-amber-900/60">
+                    <span className="text-[11px] sm:text-xs font-bold text-amber-700 dark:text-amber-300 bg-white/80 dark:bg-zinc-900/80 px-2.5 py-1 rounded-lg border border-amber-200/60 dark:border-amber-900/60">
                       {isAr 
                         ? `يبدأ من: السنة ${formData.specializationStartYear} (الترم ${formData.specializationStartSemester})` 
                         : `From: Year ${formData.specializationStartYear} (Term ${formData.specializationStartSemester})`}
@@ -901,19 +917,19 @@ export function Settings() {
                   )}
                 </div>
 
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
                   {isAr 
                     ? 'عند توفر قواعد بيانات تخصصية معتمدة من كليتك في لوحة تحكم الإدارة، ستتمكن من استرداد مواد التخصص وملفاتها بنقرة واحدة مع الحفاظ التام على مواد السنوات العامة السابقة.' 
                     : 'When accredited specialization curricula are configured by admin for your college, you can restore specialization subjects while retaining all common foundation subjects.'}
                 </p>
               </div>
             ) : (
-              <div className="p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 flex items-start gap-3 text-xs text-zinc-500 dark:text-zinc-400">
+              <div className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 flex items-start gap-2.5 sm:gap-3 text-xs text-zinc-500 dark:text-zinc-400">
                 <Info size={18} className="text-zinc-400 shrink-0 mt-0.5" />
-                <p className="leading-relaxed">
+                <p className="leading-relaxed text-[11px] sm:text-xs">
                   {isAr 
-                    ? 'لتفعيل قاعدة بيانات التخصص، يرجى أولاً تحديد سنة وترم بداية التخصص واسم التخصص في تبويب "الملف الشخصي والخطة الأكاديمية".' 
-                    : 'To configure specialization database, please set your specialization start year, term, and major name in the "Profile & Academic Plan" tab.'}
+                    ? 'لتفعيل قاعدة بيانات التخصص، يرجى أولاً تحديد سنة وترم بداية التخصص واسم التخصص في تبويب "البيانات الأكاديمية".' 
+                    : 'To configure specialization database, please set your specialization start year, term, and major name in the "Academic Plan" tab.'}
                 </p>
               </div>
             )}
@@ -923,48 +939,48 @@ export function Settings() {
 
       {/* TAB 3: SECURITY & PASSWORD */}
       {activeTab === 'security' && (
-        <div className="space-y-6 animate-in fade-in max-w-3xl">
+        <div className="space-y-4 sm:space-y-6 animate-in fade-in max-w-3xl">
           {/* Account Security Card */}
-          <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 sm:p-7 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-4">
+          <section className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-4 sm:p-6 lg:p-7 space-y-4 sm:space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-3 sm:pb-4">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
-                  <KeyRound size={20} />
+                <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 shrink-0">
+                  <KeyRound size={18} className="sm:w-5 sm:h-5" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-black text-zinc-900 dark:text-white">
+                  <h2 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white">
                     {isAr ? 'تغيير كلمة المرور والتحقق الأمني' : 'Password & Security Verification'}
                   </h2>
-                  <p className="text-xs text-zinc-400 mt-0.5">
+                  <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5">
                     {isAr ? 'يلزم إدخال كلمة المرور الحالية أولاً للتحقق من هويتك قبل تعيين كلمة مرور جديدة' : 'Current password verification is required before setting a new password'}
                   </p>
                 </div>
               </div>
 
               {userEmail && (
-                <span className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl text-xs font-mono font-bold w-fit">
+                <span className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl text-xs font-mono font-bold w-fit truncate">
                   {userEmail}
                 </span>
               )}
             </div>
 
             {passwordStatus && (
-              <div className={`p-4 rounded-2xl text-xs sm:text-sm font-bold flex items-center gap-2.5 transition-all animate-in fade-in ${
+              <div className={`p-3.5 sm:p-4 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold flex items-center gap-2.5 transition-all animate-in fade-in ${
                 passwordStatus.type === 'success' 
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/50' 
                   : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50'
               }`}>
                 {passwordStatus.type === 'success' ? <CheckCircle2 size={18} className="shrink-0 text-emerald-600" /> : <AlertTriangle size={18} className="shrink-0 text-rose-600" />}
-                <span>{passwordStatus.message}</span>
+                <span className="min-w-0 break-words">{passwordStatus.message}</span>
               </div>
             )}
 
-            <form onSubmit={handleUpdatePassword} className="space-y-4">
+            <form onSubmit={handleUpdatePassword} className="space-y-3.5 sm:space-y-4">
               {/* Field 1: Current Password */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    <Lock size={13} className="text-indigo-600" />
+                    <Lock size={13} className="text-indigo-600 shrink-0" />
                     <span>{isAr ? 'كلمة المرور الحالية' : 'Current Password'}</span>
                   </span>
                   <span className="text-[11px] font-normal text-rose-500">{isAr ? '* إلزامي للتحقق' : '* Required'}</span>
@@ -976,12 +992,12 @@ export function Settings() {
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full px-4 py-2.5 pr-11 rtl:pr-4 rtl:pl-11 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/60 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-mono"
+                    className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rtl:pl-11 ltr:pr-11 rounded-xl sm:rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/60 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-base sm:text-sm font-mono"
                   />
                   <button
                     type="button"
                     onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    className="absolute top-1/2 -translate-y-1/2 right-3 rtl:right-auto rtl:left-3 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1 cursor-pointer"
+                    className="absolute top-1/2 -translate-y-1/2 rtl:left-3 ltr:right-3 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1.5 cursor-pointer"
                     title={showCurrentPassword ? (isAr ? 'إخفاء' : 'Hide') : (isAr ? 'إظهار' : 'Show')}
                   >
                     {showCurrentPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -990,7 +1006,7 @@ export function Settings() {
               </div>
 
               {/* Field 2: New Password */}
-              <div className="space-y-1.5 pt-2">
+              <div className="space-y-1.5 pt-1.5">
                 <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
                   <span>{isAr ? 'كلمة المرور الجديدة' : 'New Password'}</span>
                   <span className="text-[11px] font-normal text-zinc-400">{isAr ? '(6 خانات على الأقل)' : '(Min 6 chars)'}</span>
@@ -1003,12 +1019,12 @@ export function Settings() {
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="••••••••"
                     minLength={6}
-                    className="w-full px-4 py-2.5 pr-11 rtl:pr-4 rtl:pl-11 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/60 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-mono"
+                    className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rtl:pl-11 ltr:pr-11 rounded-xl sm:rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/60 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-base sm:text-sm font-mono"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute top-1/2 -translate-y-1/2 right-3 rtl:right-auto rtl:left-3 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1 cursor-pointer"
+                    className="absolute top-1/2 -translate-y-1/2 rtl:left-3 ltr:right-3 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1.5 cursor-pointer"
                     title={showPassword ? (isAr ? 'إخفاء' : 'Hide') : (isAr ? 'إظهار' : 'Show')}
                   >
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -1029,12 +1045,12 @@ export function Settings() {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="••••••••"
                     minLength={6}
-                    className="w-full px-4 py-2.5 pr-11 rtl:pr-4 rtl:pl-11 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/60 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-mono"
+                    className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rtl:pl-11 ltr:pr-11 rounded-xl sm:rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/60 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-base sm:text-sm font-mono"
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute top-1/2 -translate-y-1/2 right-3 rtl:right-auto rtl:left-3 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1 cursor-pointer"
+                    className="absolute top-1/2 -translate-y-1/2 rtl:left-3 ltr:right-3 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1.5 cursor-pointer"
                     title={showConfirmPassword ? (isAr ? 'إخفاء' : 'Hide') : (isAr ? 'إظهار' : 'Show')}
                   >
                     {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -1045,23 +1061,23 @@ export function Settings() {
               {/* Match Feedback */}
               {newPassword && confirmPassword && newPassword !== confirmPassword && (
                 <p className="text-xs font-bold text-rose-500 flex items-center gap-1.5 pt-0.5">
-                  <AlertTriangle size={13} />
+                  <AlertTriangle size={13} className="shrink-0" />
                   <span>{isAr ? 'كلمتا المرور غير متطابقتين' : 'Passwords do not match'}</span>
                 </p>
               )}
 
               {newPassword && confirmPassword && newPassword === confirmPassword && newPassword.length >= 6 && (
                 <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 pt-0.5">
-                  <CheckCircle2 size={13} />
+                  <CheckCircle2 size={13} className="shrink-0" />
                   <span>{isAr ? 'كلمتا المرور متطابقتان وجاهزتان للتحديث' : 'Passwords match'}</span>
                 </p>
               )}
 
-              <div className="pt-3">
+              <div className="pt-2">
                 <button
                   type="submit"
                   disabled={passwordLoading}
-                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-md shadow-indigo-500/20 transition-all flex items-center gap-2 cursor-pointer"
+                  className="w-full sm:w-auto px-6 py-3 sm:py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs sm:text-sm rounded-xl sm:rounded-2xl shadow-md shadow-indigo-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {passwordLoading ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
                   <span>{passwordLoading ? (isAr ? 'جاري التحقق والتحديث...' : 'Verifying & Updating...') : (isAr ? 'تأكيد وتحديث كلمة المرور' : 'Verify & Update Password')}</span>
@@ -1071,12 +1087,12 @@ export function Settings() {
           </section>
 
           {/* Tips Card */}
-          <div className="p-5 rounded-3xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 space-y-2">
+          <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 space-y-2">
             <h3 className="text-xs font-black text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-              <ShieldCheck size={16} className="text-emerald-500" />
+              <ShieldCheck size={16} className="text-emerald-500 shrink-0" />
               <span>{isAr ? 'نصائح حماية الحساب الأكاديمي' : 'Account Security Recommendations'}</span>
             </h3>
-            <ul className="text-xs text-zinc-500 dark:text-zinc-400 space-y-1 list-disc list-inside leading-relaxed">
+            <ul className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 space-y-1 list-disc list-inside leading-relaxed">
               <li>{isAr ? 'استخدم كلمة مرور قوية تحتوي على أحرف وأرقام ورموز خاصة.' : 'Use a strong password combining letters, numbers, and symbols.'}</li>
               <li>{isAr ? 'لا تشارك بيانات دخولك مع أي شخص لحماية درجاتك وملاحظاتك الدراسية.' : 'Do not share your credentials to safeguard your academic records.'}</li>
               <li>{isAr ? 'يتم حفظ جميع بياناتك وموادك مشفرة ومؤمنة بالكامل عبر خوادم سحابية محمية.' : 'All your data and notes are securely encrypted in the cloud.'}</li>
@@ -1087,21 +1103,21 @@ export function Settings() {
 
       {/* TAB 4: USER FEEDBACK & SUGGESTIONS */}
       {activeTab === 'feedback' && (
-        <div className="space-y-6 animate-in fade-in">
+        <div className="space-y-4 sm:space-y-6 animate-in fade-in">
           <UserFeedbackSection />
         </div>
       )}
 
-      {/* Confirm Unlink Database Modal */}
+      {/* Confirm Unlink Database Modal - Fully Responsive on Mobile */}
       {isUnlinkModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md p-6 sm:p-7 space-y-4 border border-zinc-200 dark:border-zinc-800 shadow-2xl text-center">
-            <div className="w-14 h-14 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 mx-auto flex items-center justify-center shadow-md shadow-rose-500/10">
-              <Trash2 size={26} />
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl w-[92vw] sm:w-full max-w-md p-5 sm:p-7 space-y-4 border border-zinc-200 dark:border-zinc-800 shadow-2xl text-center">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 mx-auto flex items-center justify-center shadow-md shadow-rose-500/10">
+              <Trash2 size={24} className="sm:w-6 sm:h-6" />
             </div>
 
             <div className="space-y-1.5">
-              <h3 className="font-black text-lg text-zinc-900 dark:text-white">
+              <h3 className="font-black text-base sm:text-lg text-zinc-900 dark:text-white">
                 {isAr ? 'إلغاء استخدام قاعدة بيانات الجامعة' : 'Disconnect University Database'}
               </h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
@@ -1111,12 +1127,12 @@ export function Settings() {
               </p>
             </div>
 
-            <div className="flex items-center justify-center gap-2 pt-2">
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-center gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setIsUnlinkModalOpen(false)}
                 disabled={unlinking}
-                className="px-5 py-2.5 text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer"
+                className="w-full sm:w-auto px-5 py-2.5 text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer"
               >
                 {isAr ? 'تراجع وإلغاء' : 'Cancel'}
               </button>
@@ -1124,7 +1140,7 @@ export function Settings() {
                 type="button"
                 onClick={handleConfirmUnlink}
                 disabled={unlinking}
-                className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-lg shadow-rose-500/25 cursor-pointer flex items-center gap-1.5"
+                className="w-full sm:w-auto px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-lg shadow-rose-500/25 cursor-pointer flex items-center justify-center gap-1.5"
               >
                 {unlinking ? <Loader2 size={14} className="animate-spin" /> : <Unlink size={14} />}
                 <span>{isAr ? 'نعم، إلغاء ومسح المواد' : 'Yes, Disconnect'}</span>
