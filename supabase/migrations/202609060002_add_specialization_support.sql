@@ -214,3 +214,15 @@ BEGIN
     );
 END;
 $$;
+
+-- 5. Grant execution permissions on the updated RPC
+REVOKE ALL ON FUNCTION public.sync_approved_university_database_to_students(TEXT) FROM public;
+GRANT EXECUTE ON FUNCTION public.sync_approved_university_database_to_students(TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sync_approved_university_database_to_students(TEXT) TO anon;
+GRANT EXECUTE ON FUNCTION public.sync_approved_university_database_to_students(TEXT) TO service_role;
+
+-- 6. Performance indexes for specialization queries
+CREATE INDEX IF NOT EXISTS idx_udb_parent_id ON public.university_databases(parent_database_id);
+CREATE INDEX IF NOT EXISTS idx_udb_is_specialization ON public.university_databases(is_specialization);
+CREATE INDEX IF NOT EXISTS idx_settings_specialization_db_id ON public.settings(specialization_database_id);
+
