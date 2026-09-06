@@ -16,6 +16,8 @@ import {
   Edit2, 
   Sparkles, 
   Users, 
+  User,
+  Compass,
   Folder, 
   FileText, 
   CheckCircle2, 
@@ -1738,23 +1740,27 @@ export function AdminUniversitiesTab({
                               {update.data && (
                                 <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                                   {update.data.yearIndex !== undefined && (
-                                    <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-black">
-                                      📅 {isAr ? `سنة ${update.data.yearIndex}` : `Year ${update.data.yearIndex}`}
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-black">
+                                      <Calendar size={11} />
+                                      <span>{isAr ? `سنة ${update.data.yearIndex}` : `Year ${update.data.yearIndex}`}</span>
                                     </span>
                                   )}
                                   {update.data.semesterIndex !== undefined && (
-                                    <span className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-black">
-                                      📖 {isAr ? `ترم ${update.data.semesterIndex}` : `Term ${update.data.semesterIndex}`}
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-black">
+                                      <BookOpen size={11} />
+                                      <span>{isAr ? `ترم ${update.data.semesterIndex}` : `Term ${update.data.semesterIndex}`}</span>
                                     </span>
                                   )}
                                   {update.data.creditHours !== undefined && (
-                                    <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
-                                      ⏳ {update.data.creditHours} {isAr ? 'ساعات' : 'hrs'}
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
+                                      <Clock size={11} />
+                                      <span>{update.data.creditHours} {isAr ? 'ساعات' : 'hrs'}</span>
                                     </span>
                                   )}
                                   {update.data.totalMarks !== undefined && (
-                                    <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
-                                      💯 {update.data.totalMarks} {isAr ? 'درجة' : 'marks'}
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
+                                      <Award size={11} />
+                                      <span>{update.data.totalMarks} {isAr ? 'درجة' : 'marks'}</span>
                                     </span>
                                   )}
                                 </div>
@@ -2691,8 +2697,9 @@ export function AdminUniversitiesTab({
 
                             {/* Source Student */}
                             <div className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/40 p-2.5 rounded-2xl border border-zinc-100 dark:border-zinc-800/80">
-                              <span className="font-bold text-zinc-700 dark:text-zinc-300 block truncate">
-                                👤 {spec.sourceUserName || (isAr ? 'طالب مسجل' : 'Student')}
+                              <span className="font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5 truncate">
+                                <User size={13} className="text-zinc-500 shrink-0" />
+                                <span>{spec.sourceUserName || (isAr ? 'طالب مسجل' : 'Student')}</span>
                               </span>
                               <span className="text-[11px] text-zinc-400 truncate block">
                                 {spec.sourceUserEmail || (isAr ? 'بدون بريد' : 'No email')}
@@ -3089,8 +3096,9 @@ export function AdminUniversitiesTab({
                             <h4 className="font-black text-xs text-zinc-900 dark:text-white truncate">
                               {st.name}
                             </h4>
-                            <p className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 truncate mt-0.5">
-                              🏛️ {st.university && st.university !== 'غير محدد' ? st.university : (isAr ? 'غير محدد' : 'Not specified')}
+                            <p className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 truncate mt-0.5 flex items-center gap-1">
+                              <Building2 size={12} className="shrink-0" />
+                              <span>{st.university && st.university !== 'غير محدد' ? st.university : (isAr ? 'غير محدد' : 'Not specified')}</span>
                             </p>
                           </div>
                           <button
@@ -3222,7 +3230,10 @@ export function AdminUniversitiesTab({
 
                 {!showAllStudentsForCollege && (
                   <div className="p-3 bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40 rounded-2xl flex items-center justify-between text-xs font-bold text-blue-700 dark:text-blue-300">
-                    <span>🏛️ {isAr ? `يتم الآن عرض طلاب (${currentUniversityGroup.nameAr}) فقط` : `Showing only students of (${currentUniversityGroup.nameEn})`}</span>
+                    <span className="flex items-center gap-1.5">
+                      <Building2 size={13} className="shrink-0" />
+                      <span>{isAr ? `يتم الآن عرض طلاب (${currentUniversityGroup.nameAr}) فقط` : `Showing only students of (${currentUniversityGroup.nameEn})`}</span>
+                    </span>
                     <span className="px-2 py-0.5 bg-blue-600 text-white rounded-lg text-[11px]">
                       {filteredStudentsForCreateCollege.length} {isAr ? 'طالب' : 'students'}
                     </span>
@@ -3276,12 +3287,14 @@ export function AdminUniversitiesTab({
                                 {st.email}
                               </p>
                               <div className="flex flex-wrap gap-1 mt-1.5">
-                                <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
-                                  🎓 {st.college && st.college !== 'غير محدد' ? st.college : (isAr ? 'غير محدد' : 'No col')}
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
+                                  <GraduationCap size={11} className="shrink-0" />
+                                  <span>{st.college && st.college !== 'غير محدد' ? st.college : (isAr ? 'غير محدد' : 'No col')}</span>
                                 </span>
                                 {showAllStudentsForCollege && (
-                                  <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold">
-                                    🏛️ {st.university || ''}
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold">
+                                    <Building2 size={11} className="shrink-0" />
+                                    <span>{st.university || ''}</span>
                                   </span>
                                 )}
                               </div>
@@ -3619,8 +3632,9 @@ export function AdminUniversitiesTab({
                                       {st.name}
                                     </span>
                                     {st.specialization && (
-                                      <span className="px-2 py-0.5 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-black shrink-0">
-                                        🎯 {st.specialization}
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-black shrink-0">
+                                        <Compass size={11} />
+                                        <span>{st.specialization}</span>
                                       </span>
                                     )}
                                   </div>
@@ -3846,11 +3860,13 @@ export function AdminUniversitiesTab({
                           </p>
 
                           <div className="flex flex-wrap gap-1.5 mt-2">
-                            <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[11px] font-bold">
-                              🏛️ {st.university && st.university !== 'غير محدد' ? st.university : (isAr ? 'غير محدد' : 'No uni')}
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[11px] font-bold">
+                              <Building2 size={12} className="shrink-0" />
+                              <span>{st.university && st.university !== 'غير محدد' ? st.university : (isAr ? 'غير محدد' : 'No uni')}</span>
                             </span>
-                            <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[11px] font-bold">
-                              🎓 {st.college && st.college !== 'غير محدد' ? st.college : (isAr ? 'غير محدد' : 'No col')}
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[11px] font-bold">
+                              <GraduationCap size={12} className="shrink-0" />
+                              <span>{st.college && st.college !== 'غير محدد' ? st.college : (isAr ? 'غير محدد' : 'No col')}</span>
                             </span>
                           </div>
                         </div>
@@ -3858,11 +3874,13 @@ export function AdminUniversitiesTab({
 
                       <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-2 flex-wrap">
                         <div className="flex items-center gap-2 text-xs font-bold text-zinc-600 dark:text-zinc-300">
-                          <span className="px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold">
-                            📚 {subjsCount} {isAr ? 'مواد' : 'subjs'}
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold">
+                            <BookOpen size={12} className="shrink-0" />
+                            <span>{subjsCount} {isAr ? 'مواد' : 'subjs'}</span>
                           </span>
-                          <span className="px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 text-xs font-bold">
-                            📁 {filesCount} {isAr ? 'ملفات' : 'files'}
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 text-xs font-bold">
+                            <Folder size={12} className="shrink-0" />
+                            <span>{filesCount} {isAr ? 'ملفات' : 'files'}</span>
                           </span>
                         </div>
 

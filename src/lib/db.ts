@@ -39,9 +39,9 @@ export const db = {
     if ('deletedSubjectNames' in settings) payload.deleted_subject_names = settings.deletedSubjectNames || [];
     if ('enableGraduationScale' in settings) payload.enable_graduation_scale = settings.enableGraduationScale;
     if ('graduationGradingScale' in settings) payload.graduation_grading_scale = settings.graduationGradingScale;
-    if ('specialization' in settings) payload.specialization = settings.specialization || null;
-    if ('specializationStartYear' in settings) payload.specialization_start_year = settings.specializationStartYear || null;
-    if ('specializationStartSemester' in settings) payload.specialization_start_semester = settings.specializationStartSemester || null;
+    if ('specialization' in settings) payload.specialization = settings.specialization ? settings.specialization.trim() : null;
+    if ('specializationStartYear' in settings) payload.specialization_start_year = (settings.specializationStartYear != null && settings.specializationStartYear !== '' && Number(settings.specializationStartYear) > 0) ? Number(settings.specializationStartYear) : null;
+    if ('specializationStartSemester' in settings) payload.specialization_start_semester = (settings.specializationStartSemester != null && settings.specializationStartSemester !== '' && Number(settings.specializationStartSemester) > 0) ? Number(settings.specializationStartSemester) : null;
     if ('specializationDatabaseId' in settings) payload.specialization_database_id = settings.specializationDatabaseId || null;
 
     try {
@@ -2082,10 +2082,14 @@ function mapSettingsFromDB(row: any): UserSettings {
     deletedSubjectNames: (Array.isArray(row.deleted_subject_names) && row.deleted_subject_names.length > 0)
       ? row.deleted_subject_names
       : (localExtra.deletedSubjectNames || []),
-    specialization: row.specialization !== undefined ? row.specialization : (localExtra.specialization || undefined),
-    specializationStartYear: row.specialization_start_year !== undefined ? Number(row.specialization_start_year) : (localExtra.specializationStartYear !== undefined ? Number(localExtra.specializationStartYear) : undefined),
-    specializationStartSemester: row.specialization_start_semester !== undefined ? Number(row.specialization_start_semester) : (localExtra.specializationStartSemester !== undefined ? Number(localExtra.specializationStartSemester) : undefined),
-    specializationDatabaseId: row.specialization_database_id !== undefined ? row.specialization_database_id : (localExtra.specializationDatabaseId || undefined)
+    specialization: row.specialization != null ? row.specialization : (localExtra.specialization || undefined),
+    specializationStartYear: (row.specialization_start_year != null && row.specialization_start_year !== '' && Number(row.specialization_start_year) > 0)
+      ? Number(row.specialization_start_year)
+      : ((localExtra.specializationStartYear != null && localExtra.specializationStartYear !== '' && Number(localExtra.specializationStartYear) > 0) ? Number(localExtra.specializationStartYear) : undefined),
+    specializationStartSemester: (row.specialization_start_semester != null && row.specialization_start_semester !== '' && Number(row.specialization_start_semester) > 0)
+      ? Number(row.specialization_start_semester)
+      : ((localExtra.specializationStartSemester != null && localExtra.specializationStartSemester !== '' && Number(localExtra.specializationStartSemester) > 0) ? Number(localExtra.specializationStartSemester) : undefined),
+    specializationDatabaseId: row.specialization_database_id != null ? row.specialization_database_id : (localExtra.specializationDatabaseId || undefined)
   };
 }
 

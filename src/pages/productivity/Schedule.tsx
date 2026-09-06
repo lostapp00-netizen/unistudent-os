@@ -508,7 +508,7 @@ export function Schedule() {
                               <span className="flex items-center gap-1 font-bold text-blue-600 dark:text-blue-400">
                                 <Clock size={11} /> {item.startTime} - {item.endTime}
                               </span>
-                              {item.location && <span>📍 {item.location}</span>}
+                              {item.location && <span className="flex items-center gap-0.5"><MapPin size={11} /> {item.location}</span>}
                             </div>
                           </div>
                         );

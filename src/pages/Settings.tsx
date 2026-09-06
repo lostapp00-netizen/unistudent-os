@@ -90,8 +90,8 @@ export function Settings() {
     enableGraduationScale: settings.enableGraduationScale ?? false,
     graduationGradingScale: settings.graduationGradingScale && settings.graduationGradingScale.length > 0 ? settings.graduationGradingScale : defaultGraduationScale,
     specialization: settings.specialization || '',
-    specializationStartYear: settings.specializationStartYear !== undefined ? settings.specializationStartYear : '',
-    specializationStartSemester: settings.specializationStartSemester !== undefined ? settings.specializationStartSemester : '',
+    specializationStartYear: (settings.specializationStartYear != null && Number(settings.specializationStartYear) > 0) ? Number(settings.specializationStartYear) : '',
+    specializationStartSemester: (settings.specializationStartSemester != null && Number(settings.specializationStartSemester) > 0) ? Number(settings.specializationStartSemester) : '',
     specializationDatabaseId: settings.specializationDatabaseId || ''
   });
 
@@ -106,8 +106,8 @@ export function Settings() {
       semesters: settings.semesters,
       gradingScale: settings.gradingScale,
       specialization: settings.specialization || '',
-      specializationStartYear: settings.specializationStartYear !== undefined ? settings.specializationStartYear : '',
-      specializationStartSemester: settings.specializationStartSemester !== undefined ? settings.specializationStartSemester : '',
+      specializationStartYear: (settings.specializationStartYear != null && Number(settings.specializationStartYear) > 0) ? Number(settings.specializationStartYear) : '',
+      specializationStartSemester: (settings.specializationStartSemester != null && Number(settings.specializationStartSemester) > 0) ? Number(settings.specializationStartSemester) : '',
       specializationDatabaseId: settings.specializationDatabaseId || ''
     }));
   }, [
@@ -145,7 +145,9 @@ export function Settings() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
-    if (type === 'number') {
+    if (name === 'specializationStartYear' || name === 'specializationStartSemester') {
+      setFormData(prev => ({ ...prev, [name]: value === '' ? '' : Number(value) }));
+    } else if (type === 'number') {
       setFormData(prev => ({ ...prev, [name]: value === '' ? '' : Number(value) }));
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
@@ -313,6 +315,13 @@ export function Settings() {
         }
       }
       
+      const startYearNum = (formData.specializationStartYear !== '' && formData.specializationStartYear != null && Number(formData.specializationStartYear) > 0) 
+        ? Number(formData.specializationStartYear) 
+        : undefined;
+      const startSemNum = (formData.specializationStartSemester !== '' && formData.specializationStartSemester != null && Number(formData.specializationStartSemester) > 0) 
+        ? Number(formData.specializationStartSemester) 
+        : undefined;
+
       const newSettings = {
         ...formData,
         totalYears: Number(formData.totalYears),
@@ -320,8 +329,8 @@ export function Settings() {
         initialCumulativeGpa: (formData.initialCumulativeGpa != null && formData.initialCumulativeGpa !== ('' as any)) ? Number(formData.initialCumulativeGpa) : null,
         initialCompletedCreditHours: (formData.initialCompletedCreditHours != null && formData.initialCompletedCreditHours !== ('' as any)) ? Number(formData.initialCompletedCreditHours) : null,
         specialization: formData.specialization ? formData.specialization.trim() : '',
-        specializationStartYear: formData.specializationStartYear !== '' && formData.specializationStartYear != null ? Number(formData.specializationStartYear) : undefined,
-        specializationStartSemester: formData.specializationStartSemester !== '' && formData.specializationStartSemester != null ? Number(formData.specializationStartSemester) : undefined,
+        specializationStartYear: startYearNum,
+        specializationStartSemester: startSemNum,
         specializationDatabaseId: formData.specializationDatabaseId || undefined
       };
       
@@ -334,27 +343,29 @@ export function Settings() {
       updateSettings(newSettings);
       setSaveStatus({
         type: 'success',
-        message: isAr ? 'تم حفظ وتطبيق جميع الإعدادات بنجاح!' : 'Settings saved successfully!'
+        message: isAr ? 'تم حفظ وتطبيق جميع الإعدادات وسنة التخصص بنجاح!' : 'Settings and specialization preferences saved successfully!'
       });
-      window.scrollTo({ top: 0, behavior: 'smooth' });
       setTimeout(() => setSaveStatus(null), 6000);
     } catch (err: any) {
       setSaveStatus({ type: 'error', message: (isAr ? 'حدث خطأ: ' : 'Error: ') + err.message });
-      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setSaving(false);
     }
   };
 
-  // Specialization Calculation Logic
-  const currentSemester = formData.semesters.find(s => s.isCurrent) || formData.semesters[0];
-  const startYearNum = formData.specializationStartYear !== '' && formData.specializationStartYear != null ? Number(formData.specializationStartYear) : null;
-  const startSemNum = formData.specializationStartSemester !== '' && formData.specializationStartSemester != null ? Number(formData.specializationStartSemester) : null;
+  // Specialization Calculation Logic: Strictly match against student's selected active current semester
+  const currentSemester = formData.semesters.find(s => s.isCurrent);
+  const startYearNum = (formData.specializationStartYear !== '' && formData.specializationStartYear != null && Number(formData.specializationStartYear) > 0) ? Number(formData.specializationStartYear) : null;
+  const startSemNum = (formData.specializationStartSemester !== '' && formData.specializationStartSemester != null && Number(formData.specializationStartSemester) > 0) ? Number(formData.specializationStartSemester) : null;
   
   const hasConfiguredSpecializationTiming = startYearNum !== null && startSemNum !== null;
-  const hasReachedSpecialization = hasConfiguredSpecializationTiming && currentSemester && (
-    currentSemester.yearIndex > startYearNum ||
-    (currentSemester.yearIndex === startYearNum && currentSemester.semesterIndex >= startSemNum)
+  const hasReachedSpecialization = Boolean(
+    hasConfiguredSpecializationTiming && 
+    currentSemester && 
+    (
+      currentSemester.yearIndex > startYearNum || 
+      (currentSemester.yearIndex === startYearNum && currentSemester.semesterIndex >= startSemNum)
+    )
   );
 
   return (
@@ -376,18 +387,6 @@ export function Settings() {
               : 'Manage your profile, academic plan, college & specialization databases, and security'}
           </p>
         </div>
-
-        {/* Global Save Button if in Profile Tab */}
-        {activeTab === 'profile' && (
-          <button 
-            onClick={handleSave}
-            disabled={saving}
-            className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl shadow-md shadow-indigo-500/20 transition-all cursor-pointer flex items-center justify-center gap-2 text-xs sm:text-sm shrink-0"
-          >
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            <span>{saving ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ التغييرات' : 'Save Changes')}</span>
-          </button>
-        )}
       </header>
 
       {/* Global Status Message */}
@@ -658,7 +657,7 @@ export function Settings() {
                   <div className="flex items-center gap-2.5 text-indigo-700 dark:text-indigo-300 font-black text-xs sm:text-sm">
                     <Sparkles size={16} className="text-amber-500 shrink-0" />
                     <span>
-                      {isAr ? '🎉 وصلت إلى مرحلة التخصص الأكاديمي!' : '🎉 You have reached the Specialization stage!'}
+                      {isAr ? 'وصلت إلى مرحلة التخصص الأكاديمي' : 'You have reached the Specialization stage'}
                     </span>
                   </div>
 
@@ -707,7 +706,8 @@ export function Settings() {
                                     : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-purple-400'
                                 }`}
                               >
-                                <span>🎯 {spec.specializationNameAr || spec.collegeNameAr}</span>
+                                <Compass size={13} className={isChosen ? 'text-white' : 'text-purple-600 dark:text-purple-400'} />
+                                <span>{spec.specializationNameAr || spec.collegeNameAr}</span>
                                 <span className="text-[10px] opacity-75">
                                   ({isAr ? `سنة ${spec.specializationStartYear || 2}` : `Y${spec.specializationStartYear || 2}`})
                                 </span>
@@ -726,7 +726,7 @@ export function Settings() {
                   </p>
                 </div>
               ) : (
-                /* LOCKED STATE: Student is in an earlier semester */
+                /* LOCKED STATE: Student is in an earlier semester or hasn't selected active semester yet */
                 <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 flex items-start gap-2.5 sm:gap-3">
                   <Info size={18} className="text-zinc-400 shrink-0 mt-0.5" />
                   <div className="space-y-1">
@@ -736,9 +736,15 @@ export function Settings() {
                         : `Your specialization begins in Year ${startYearNum} - Term ${startSemNum}`}
                     </p>
                     <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                      {isAr 
-                        ? `أنت حالياً في (السنة ${currentSemester?.yearIndex || 1} - الفصل ${currentSemester?.semesterIndex || 1}). فور تقدمك إلى الفصل الدراسي المحدد في خطتك، ستظهر لك خانة تحديد وكتابة تخصصك تلقائياً لاسترداد مواده المعتمدة.`
-                        : `You are currently in (Year ${currentSemester?.yearIndex || 1} - Term ${currentSemester?.semesterIndex || 1}). Upon advancing to the specified term, the specialization field will unlock automatically.`}
+                      {currentSemester ? (
+                        isAr 
+                          ? `أنت حالياً في (السنة ${currentSemester.yearIndex} - الفصل ${currentSemester.semesterIndex}). فور تقدمك إلى الفصل الدراسي المحدد في خطتك، ستظهر لك خانة تحديد وكتابة تخصصك تلقائياً لاسترداد مواده المعتمدة.`
+                          : `You are currently in (Year ${currentSemester.yearIndex} - Term ${currentSemester.semesterIndex}). Upon advancing to the specified term, the specialization field will unlock automatically.`
+                      ) : (
+                        isAr
+                          ? `يرجى تحديد فصلك الدراسي الحالي في جدول الفصول الدراسية أدناه لمعرفة حالة تفعيل التخصص التلقائي.`
+                          : `Please set your active current semester in the semesters table below to calculate specialization availability.`
+                      )}
                     </p>
                   </div>
                 </div>
@@ -832,15 +838,38 @@ export function Settings() {
             />
           </div>
 
-          {/* Bottom Save Button Action */}
-          <div className="flex justify-end pt-2">
+          {/* Bottom Unified Save Button Action & Inline Feedback */}
+          <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 flex flex-col items-stretch sm:items-end gap-3">
+            {saveStatus && (
+              <div className={`w-full p-3.5 sm:p-4 rounded-2xl font-bold text-xs sm:text-sm flex items-center gap-3 transition-all animate-in fade-in shadow-xs ${
+                saveStatus.type === 'success'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                  : 'bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+              }`}>
+                {saveStatus.type === 'success' ? (
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <CheckCircle2 size={18} />
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 rounded-xl bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <AlertCircle size={18} />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-black text-xs sm:text-sm">{saveStatus.type === 'success' ? (isAr ? 'تم حفظ التغييرات بنجاح!' : 'Changes Saved Successfully!') : (isAr ? 'تنبيه' : 'Alert')}</p>
+                  <p className="text-[11px] sm:text-xs font-medium opacity-90">{saveStatus.message}</p>
+                </div>
+              </div>
+            )}
+
             <button 
+              type="button"
               onClick={handleSave}
               disabled={saving}
-              className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold px-8 py-3 rounded-xl sm:rounded-2xl shadow-lg shadow-indigo-500/20 transition-all cursor-pointer flex items-center justify-center gap-2 text-xs sm:text-sm"
+              className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 active:scale-98 disabled:opacity-60 text-white font-black px-8 py-3.5 rounded-xl sm:rounded-2xl shadow-lg shadow-indigo-500/25 transition-all cursor-pointer flex items-center justify-center gap-2.5 text-xs sm:text-sm"
             >
               {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-              <span>{saving ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ إعدادات الملف الشخصي' : 'Save Profile Settings')}</span>
+              <span>{saving ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ جميع التغييرات' : 'Save All Changes')}</span>
             </button>
           </div>
         </div>

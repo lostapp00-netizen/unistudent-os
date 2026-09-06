@@ -22,7 +22,8 @@ import {
   Loader2,
   Award,
   Layers,
-  ChevronRight
+  ChevronRight,
+  Compass
 } from 'lucide-react';
 
 interface UniversityRestoreModalProps {
@@ -552,8 +553,8 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                     <div>
                       <span>
                         {isAr 
-                          ? `🎯 استيراد ذكي مدمج: يشمل (${previewData.foundationCount}) مادة تمهيدية من الكلية الأساسية + (${previewData.specializationCount}) مادة تخصصية متقدمة تبدأ من سنة ${previewData.spec?.specializationStartYear} ترم ${previewData.spec?.specializationStartSemester}.`
-                          : `🎯 Smart Slicing: Includes (${previewData.foundationCount}) foundation subjects + (${previewData.specializationCount}) specialization subjects.`}
+                          ? `استيراد ذكي مدمج: يشمل (${previewData.foundationCount}) مادة تمهيدية من الكلية الأساسية + (${previewData.specializationCount}) مادة تخصصية متقدمة تبدأ من سنة ${previewData.spec?.specializationStartYear} ترم ${previewData.spec?.specializationStartSemester}.`
+                          : `Smart Slicing: Includes (${previewData.foundationCount}) foundation subjects + (${previewData.specializationCount}) specialization subjects.`}
                       </span>
                     </div>
                   </div>
@@ -655,8 +656,9 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                           <div className="flex items-center gap-2 min-w-0">
                             {previewData.isSpecialization && (
                               isSpecSubj ? (
-                                <span className="px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-[9px] font-black text-purple-700 dark:text-purple-300 shrink-0">
-                                  🎯 {isAr ? 'تخصص' : 'Major'}
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-[9px] font-black text-purple-700 dark:text-purple-300 shrink-0">
+                                  <Compass size={10} className="text-purple-600 dark:text-purple-400" />
+                                  <span>{isAr ? 'تخصص' : 'Major'}</span>
                                 </span>
                               ) : (
                                 <span className="px-1.5 py-0.5 rounded-md bg-zinc-200 dark:bg-zinc-700 text-[9px] font-black text-zinc-600 dark:text-zinc-300 shrink-0">

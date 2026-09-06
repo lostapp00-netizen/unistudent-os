@@ -21,7 +21,8 @@ import {
   Zap, 
   ChevronRight,
   User,
-  Paperclip
+  Paperclip,
+  MapPin
 } from 'lucide-react';
 import { GroupsManager } from '../../components/settings/GroupsManager';
 import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../../components/ui/UnifiedSemesterFilter';
@@ -383,7 +384,7 @@ export function ProductivityDashboard() {
                       <div className="flex items-center gap-3 mt-1 text-[11px] text-zinc-400">
                         <span className="flex items-center gap-1 font-bold text-blue-600 dark:text-blue-400"><Clock size={11} /> {item.startTime} - {item.endTime}</span>
                         {item.doctorName && <span className="flex items-center gap-1"><User size={11} /> {item.doctorName}</span>}
-                        {item.location && <span>📍 {item.location}</span>}
+                        {item.location && <span className="flex items-center gap-0.5"><MapPin size={11} /> {item.location}</span>}
                       </div>
                     </div>
 

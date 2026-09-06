@@ -13,7 +13,7 @@ export default function DashboardPage() {
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400">
-            {lang === 'ar' ? 'مرحباً بعودتك! 👋' : 'Welcome back! 👋'}
+            {lang === 'ar' ? 'مرحباً بعودتك!' : 'Welcome back!'}
           </h1>
           <p className="text-gray-500 dark:text-gray-400 mt-2 text-lg">
             {lang === 'ar' ? 'نظرة عامة على أدائك الأكاديمي ومهامك اليومية.' : 'Overview of your academic performance and daily tasks.'}
