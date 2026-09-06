@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, GraduationGradeRule, GradeRule } from '../types';
+import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, GraduationGradeRule, GradeRule, UniversityDatabase } from '../types';
 import { db } from '../lib/db';
 import { normalizeSubjectName } from '../lib/academicTranslation';
 
@@ -1040,8 +1040,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 3. Sync Drive Files
       if (matchedDb.driveFiles && Array.isArray(matchedDb.driveFiles)) {
         const templateFiles = matchedDb.driveFiles;
-        const templateFileMap = new Map(templateFiles.map(f => [f.id, f]));
-        const templateNames = new Set(templateFiles.map(f => (f.name || '').trim().toLowerCase()));
+        const templateFileMap = new Map(templateFiles.map((f: DriveFile) => [f.id, f]));
+        const templateNames = new Set(templateFiles.map((f: DriveFile) => (f.name || '').trim().toLowerCase()));
 
         // Add or update drive files
         for (const tFile of templateFiles) {
