@@ -4,7 +4,8 @@ import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem
 import { db } from '../lib/db';
 import { normalizeSubjectName } from '../lib/academicTranslation';
 
-let isSyncInProgress = false;
+let activeSyncPromise: Promise<void> | null = null;
+let isImportInProgress = false;
 
 export function deduplicateSubjects(subjectsList: Subject[]): { clean: Subject[]; duplicatesToRemove: Subject[] } {
   const seen = new Map<string, Subject>();
@@ -650,8 +651,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { userId, settings } = get();
     if (!userId) return;
 
-    if (isSyncInProgress) return;
-    isSyncInProgress = true;
+    if (isImportInProgress) return;
+    isImportInProgress = true;
 
     try {
       const udb = await db.getUniversityDatabase(universityDbId);
@@ -757,7 +758,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ files: clonedFiles });
       }
     } finally {
-      isSyncInProgress = false;
+      isImportInProgress = false;
     }
   },
 
@@ -798,13 +799,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   syncWithUniversityDatabase: async () => {
-    const { userId, settings } = get();
-    if (!userId) return;
+    if (activeSyncPromise) {
+      return activeSyncPromise;
+    }
 
-    if (isSyncInProgress) return;
-    isSyncInProgress = true;
+    activeSyncPromise = (async () => {
+      const { userId, settings } = get();
+      if (!userId) return;
 
-    try {
+      try {
       let targetDbId = settings.universityDatabaseId;
       if (!targetDbId) {
         try {
@@ -1133,11 +1136,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           db.upsertSettings(userId, { gradingScale: matchedDb.gradingScale }).catch(console.warn);
         }
       }
-    } catch (e) {
-      console.warn('syncWithUniversityDatabase error:', e);
-    } finally {
-      isSyncInProgress = false;
-    }
+      } catch (e) {
+        console.warn('syncWithUniversityDatabase error:', e);
+      } finally {
+        activeSyncPromise = null;
+      }
+    })();
+
+    return activeSyncPromise;
   }
 }));
 

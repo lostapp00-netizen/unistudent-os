@@ -99,8 +99,7 @@ export function App() {
     };
     document.addEventListener('visibilitychange', handleVisibility);
 
-    // Initial check
-    triggerSync();
+    // Real-time synchronization listeners
 
     // Periodic fast check (5s) to guarantee real-time reflection
     const interval = setInterval(() => {
