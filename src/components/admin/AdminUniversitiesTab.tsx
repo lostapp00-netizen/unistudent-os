@@ -52,20 +52,22 @@ import { supabase } from '../../lib/supabase';
 import { UniversityDatabase, UniversityPendingUpdate, Subject, DriveFile, GradeDistributionItem, GradeRule } from '../../types';
 import { ConfirmModal } from '../ui/CustomModal';
 import { autoTranslateUniversity, autoTranslateCollege, normalizeSubjectName } from '../../lib/academicTranslation';
-import { previewFile, downloadFile } from '../../lib/backblaze';
+import { previewFile, downloadFile, uploadFile } from '../../lib/backblaze';
 
 interface AdminUniversitiesTabProps {
   studentsList: any[];
   onRefreshAllData: () => Promise<void>;
   subTab?: 'universities' | 'updates';
   onSubTabChange?: (tab: 'universities' | 'updates') => void;
+  onPendingCountChange?: (count: number) => void;
 }
 
 export function AdminUniversitiesTab({
   studentsList,
   onRefreshAllData,
   subTab = 'universities',
-  onSubTabChange
+  onSubTabChange,
+  onPendingCountChange
 }: AdminUniversitiesTabProps) {
   const { t, i18n } = useTranslation();
   const isAr = i18n.language === 'ar';
@@ -222,6 +224,8 @@ export function AdminUniversitiesTab({
     url: '',
     parentId: null
   });
+  const [driveFileToUpload, setDriveFileToUpload] = useState<File | null>(null);
+  const [isUploadingDriveFile, setIsUploadingDriveFile] = useState(false);
 
   // Move Drive Item Modal State
   const [movingFile, setMovingFile] = useState<DriveFile | null>(null);
@@ -266,6 +270,8 @@ export function AdminUniversitiesTab({
       ]);
       setDatabases(dbs);
       setPendingUpdates(updates);
+      const pendingCount = updates.filter(u => u.status === 'pending').length;
+      onPendingCountChange?.(pendingCount);
     } catch (e) {
       console.error('Error loading university databases:', e);
     } finally {
@@ -1027,31 +1033,94 @@ export function AdminUniversitiesTab({
     }
   };
 
-  // Save Drive Item (File / Folder)
+  // Save Drive Item (File / Folder with real Backblaze B2 upload)
   const handleSaveDriveItem = async () => {
-    if (!selectedCollegeDb || !driveForm.name.trim()) {
-      alert(isAr ? 'يرجى كتابة اسم الملف أو المجلد.' : 'Please enter file or folder name.');
+    if (!selectedCollegeDb) return;
+
+    // Folder Branch
+    if (driveForm.type === 'folder') {
+      if (!driveForm.name.trim()) {
+        alert(isAr ? 'يرجى كتابة اسم المجلد.' : 'Please enter folder name.');
+        return;
+      }
+      try {
+        const newFolder: DriveFile = {
+          id: uuidv4(),
+          name: driveForm.name.trim(),
+          type: 'folder',
+          size: 0,
+          parentId: currentDriveFolderId,
+          createdAt: new Date().toISOString().split('T')[0],
+          url: ''
+        };
+        const updatedFiles = [...(selectedCollegeDb.driveFiles || []), newFolder];
+        await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
+        setIsDriveModalOpen(false);
+        setDriveForm({ name: '', type: 'folder', url: '', parentId: null });
+        setDriveFileToUpload(null);
+        await loadUniData();
+      } catch (e) {
+        console.error('Error creating folder:', e);
+      }
       return;
     }
 
+    // Real File Branch
+    if (!driveFileToUpload && !driveForm.url.trim()) {
+      alert(isAr ? 'يرجى اختيار ملف من جهازك لرفعه أو إدخال رابط.' : 'Please select a file to upload or enter a URL.');
+      return;
+    }
+
+    const fileName = driveForm.name.trim() || driveFileToUpload?.name || 'مستند';
+    const fileId = uuidv4();
+
     try {
-      const newItem: DriveFile = {
-        id: uuidv4(),
-        name: driveForm.name.trim(),
-        type: driveForm.type,
-        size: 0,
+      setIsUploadingDriveFile(true);
+      let publicUrl = driveForm.url.trim();
+      let b2Path: string | undefined = undefined;
+      const fileSize = driveFileToUpload ? driveFileToUpload.size : 0;
+
+      if (driveFileToUpload) {
+        try {
+          const cleanFileName = driveFileToUpload.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const b2Key = `college_drive/${selectedCollegeDb.id}/${fileId}_${cleanFileName}`;
+          const res = await uploadFile(driveFileToUpload, b2Key);
+          publicUrl = res.publicUrl;
+          b2Path = res.b2Path;
+        } catch (b2Err) {
+          console.warn('B2 upload fallback to base64 data URL:', b2Err);
+          const base64Url = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(driveFileToUpload);
+          });
+          publicUrl = base64Url;
+        }
+      }
+
+      const newFile: DriveFile = {
+        id: fileId,
+        name: fileName,
+        type: 'file',
+        size: fileSize,
         parentId: currentDriveFolderId,
         createdAt: new Date().toISOString().split('T')[0],
-        url: driveForm.url.trim()
+        url: publicUrl,
+        b2FileId: b2Path
       };
 
-      const updatedFiles = [...(selectedCollegeDb.driveFiles || []), newItem];
+      const updatedFiles = [...(selectedCollegeDb.driveFiles || []), newFile];
       await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
       setIsDriveModalOpen(false);
       setDriveForm({ name: '', type: 'folder', url: '', parentId: null });
+      setDriveFileToUpload(null);
       await loadUniData();
     } catch (e) {
-      console.error('Error saving drive item:', e);
+      console.error('Error saving drive file:', e);
+      alert(isAr ? 'حدث خطأ أثناء رفع وحفظ الملف.' : 'Error uploading and saving file.');
+    } finally {
+      setIsUploadingDriveFile(false);
     }
   };
 
@@ -1133,6 +1202,14 @@ export function AdminUniversitiesTab({
 
   // Respond to Pending Update (with Reversible status and resilient ID & Distribution matching)
   const handleResolvePendingUpdate = async (update: UniversityPendingUpdate, status: 'approved' | 'rejected' | 'pending') => {
+    // Optimistic immediate update of badge counter
+    setPendingUpdates(prev => {
+      const next = prev.map(p => p.id === update.id ? { ...p, status } : p);
+      const remainingCount = next.filter(p => p.status === 'pending').length;
+      onPendingCountChange?.(remainingCount);
+      return next;
+    });
+
     try {
       if (status === 'pending') {
         await db.recordPendingUpdate({ ...update, status: 'pending', resolvedAt: undefined });
@@ -3392,49 +3469,142 @@ export function AdminUniversitiesTab({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
-                  {isAr ? 'اسم الملف أو المجلد *' : 'Name *'}
-                </label>
-                <input
-                  type="text"
-                  value={driveForm.name}
-                  onChange={(e) => setDriveForm({ ...driveForm, name: e.target.value })}
-                  placeholder={isAr ? 'مثال: محاضرات الترم الأول' : 'e.g. Lecture Slides'}
-                  className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+              {driveForm.type === 'file' ? (
+                <div className="space-y-3">
+                  {/* File Upload Dropzone */}
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                      {isAr ? 'اختر ملفاً حقيقياً لرفعه (PDF, Docs, Slides, صور...)' : 'Select Real File to Upload'} *
+                    </label>
+                    <div className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-2xl p-4 text-center bg-zinc-50/60 dark:bg-zinc-800/40 transition-all">
+                      <input
+                        type="file"
+                        id="admin-drive-file-picker"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setDriveFileToUpload(file);
+                            if (!driveForm.name.trim()) {
+                              setDriveForm(prev => ({ ...prev, name: file.name }));
+                            }
+                          }
+                        }}
+                        className="hidden"
+                      />
+                      
+                      {driveFileToUpload ? (
+                        <div className="flex items-center justify-between gap-3 p-3 bg-white dark:bg-zinc-900 rounded-xl border border-indigo-200 dark:border-indigo-800">
+                          <div className="flex items-center gap-2.5 min-w-0 text-left rtl:text-right">
+                            <div className="w-9 h-9 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 flex items-center justify-center shrink-0">
+                              <FileText size={18} />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-zinc-900 dark:text-white truncate">
+                                {driveFileToUpload.name}
+                              </p>
+                              <p className="text-[10px] text-zinc-400 font-mono">
+                                {formatSize(driveFileToUpload.size)}
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <label
+                            htmlFor="admin-drive-file-picker"
+                            className="px-2.5 py-1 text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950 rounded-lg cursor-pointer shrink-0"
+                          >
+                            {isAr ? 'تغيير' : 'Change'}
+                          </label>
+                        </div>
+                      ) : (
+                        <label
+                          htmlFor="admin-drive-file-picker"
+                          className="flex flex-col items-center justify-center gap-2 cursor-pointer py-3"
+                        >
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                            <Upload size={20} />
+                          </div>
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                              {isAr ? 'اضغط هنا لاختيار ملف من جهازك' : 'Click here to choose file from device'}
+                            </p>
+                            <p className="text-[11px] text-zinc-400">
+                              {isAr ? 'يتم الرفع إلى سحابة Backblaze B2 مباشرة' : 'Uploads directly to Backblaze B2'}
+                            </p>
+                          </div>
+                        </label>
+                      )}
+                    </div>
+                  </div>
 
-              {driveForm.type === 'file' && (
+                  {/* Display Name */}
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                      {isAr ? 'اسم الملف المعروض للطلاب' : 'Displayed File Name'}
+                    </label>
+                    <input
+                      type="text"
+                      value={driveForm.name}
+                      onChange={(e) => setDriveForm({ ...driveForm, name: e.target.value })}
+                      placeholder={isAr ? 'اسم الملف أو المستند' : 'File Name'}
+                      className="w-full px-4 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* Optional External URL Fallback */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-500 mb-1">
+                      {isAr ? 'أو رابط خارجي للملف (اختياري)' : 'Or External File URL (Optional)'}
+                    </label>
+                    <input
+                      type="text"
+                      value={driveForm.url}
+                      onChange={(e) => setDriveForm({ ...driveForm, url: e.target.value })}
+                      placeholder="https://..."
+                      className="w-full px-3.5 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs outline-none"
+                    />
+                  </div>
+                </div>
+              ) : (
+                /* Folder Creation Form */
                 <div>
                   <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
-                    {isAr ? 'رابط الملف (اختياري)' : 'File URL'}
+                    {isAr ? 'اسم المجلد *' : 'Folder Name *'}
                   </label>
                   <input
                     type="text"
-                    value={driveForm.url}
-                    onChange={(e) => setDriveForm({ ...driveForm, url: e.target.value })}
-                    placeholder="https://..."
-                    className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={driveForm.name}
+                    onChange={(e) => setDriveForm({ ...driveForm, name: e.target.value })}
+                    placeholder={isAr ? 'مثال: محاضرات الترم الأول' : 'e.g. Lecture Slides'}
+                    className="w-full px-4 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
               )}
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+            <div className="flex justify-end items-center gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
               <button
                 type="button"
-                onClick={() => setIsDriveModalOpen(false)}
-                className="px-4 py-2 text-xs font-bold text-zinc-500"
+                onClick={() => {
+                  setIsDriveModalOpen(false);
+                  setDriveFileToUpload(null);
+                }}
+                disabled={isUploadingDriveFile}
+                className="px-4 py-2 text-xs font-bold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer"
               >
                 {isAr ? 'إلغاء' : 'Cancel'}
               </button>
               <button
                 type="button"
                 onClick={handleSaveDriveItem}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer"
+                disabled={isUploadingDriveFile || (driveForm.type === 'folder' && !driveForm.name.trim()) || (driveForm.type === 'file' && !driveFileToUpload && !driveForm.url.trim())}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-2 shadow-md shadow-indigo-500/20"
               >
-                {isAr ? 'إضافة' : 'Add'}
+                {isUploadingDriveFile ? <Loader2 size={14} className="animate-spin" /> : (driveForm.type === 'file' ? <Upload size={14} /> : <Plus size={14} />)}
+                <span>
+                  {isUploadingDriveFile 
+                    ? (isAr ? 'جاري الرفع إلى B2...' : 'Uploading...') 
+                    : (driveForm.type === 'file' ? (isAr ? 'رفع وحفظ الملف' : 'Upload File') : (isAr ? 'إنشاء المجلد' : 'Create Folder'))}
+                </span>
               </button>
             </div>
           </div>

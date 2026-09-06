@@ -84,25 +84,28 @@ export function SemestersManager({
   const shouldShowPastAcademicSetup = isBeyondFirstSemester && !hasRegisteredCoursesInFirstTerm;
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center border-b border-zinc-100 dark:border-zinc-800 pb-4">
+    <div className="space-y-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-3 sm:pb-4">
         <div>
-          <h2 className="text-xl font-semibold">{t('semesters_management')}</h2>
-          <p className="text-xs text-zinc-500 mt-0.5">
+          <h2 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-white">{t('semesters_management')}</h2>
+          <p className="text-[11px] sm:text-xs text-zinc-500 mt-0.5">
             {isAr ? 'حدد الفصل الدراسي الحالي لتخصيص حسابات المعدل والتنبيهات.' : 'Select your active semester to tailor GPA calculations.'}
           </p>
         </div>
         <button 
           onClick={handleGenerate}
-          className="flex items-center gap-2 text-sm bg-zinc-100 hover:bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-xl transition-colors font-medium"
+          className="w-full sm:w-auto flex items-center justify-center gap-2 text-xs sm:text-sm bg-zinc-100 hover:bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-300 px-3.5 py-2 rounded-xl transition-colors font-bold cursor-pointer"
         >
-          <RefreshCw className="w-4 h-4" />
-          {t('generate_semesters')}
+          <RefreshCw className="w-3.5 h-3.5" />
+          <span>{t('generate_semesters')}</span>
         </button>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm text-left rtl:text-right whitespace-nowrap">
+      <div className="overflow-x-auto -mx-3.5 sm:mx-0 px-3.5 sm:px-0">
+        <div className="flex items-center justify-between sm:hidden text-[11px] text-zinc-400 pb-1.5 font-medium">
+          <span>{isAr ? '← اسحب الجدول لتعديل التواريخ' : 'Swipe table to edit dates →'}</span>
+        </div>
+        <table className="w-full min-w-[500px] text-xs sm:text-sm text-left rtl:text-right whitespace-nowrap">
           <thead className="text-zinc-500 border-b border-zinc-200 dark:border-zinc-700">
             <tr>
               <th className="pb-3 px-2 font-medium">{t('year')}</th>
@@ -115,29 +118,29 @@ export function SemestersManager({
           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {semesters.map((sem) => (
               <tr key={sem.id} className={`transition-colors ${sem.isCurrent ? 'bg-indigo-50/70 dark:bg-indigo-900/20 font-medium' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'}`}>
-                <td className="py-3 px-2 text-zinc-800 dark:text-zinc-200">
+                <td className="py-2.5 px-2 text-zinc-800 dark:text-zinc-200">
                   {t('year')} {sem.yearIndex}
                 </td>
-                <td className="py-3 px-2 text-zinc-800 dark:text-zinc-200">
+                <td className="py-2.5 px-2 text-zinc-800 dark:text-zinc-200">
                   {t('semester')} {sem.semesterIndex}
                 </td>
-                <td className="py-2 px-1">
+                <td className="py-1.5 px-1">
                   <input 
                     type="date" 
                     value={sem.startDate}
                     onChange={(e) => updateSemester(sem.id, 'startDate', e.target.value)}
-                    className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-transparent outline-none"
+                    className="w-full min-w-[120px] px-2 py-1.5 rounded-lg border border-transparent hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-transparent outline-none text-xs sm:text-sm"
                   />
                 </td>
-                <td className="py-2 px-1">
+                <td className="py-1.5 px-1">
                   <input 
                     type="date" 
                     value={sem.endDate}
                     onChange={(e) => updateSemester(sem.id, 'endDate', e.target.value)}
-                    className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-transparent outline-none"
+                    className="w-full min-w-[120px] px-2 py-1.5 rounded-lg border border-transparent hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-transparent outline-none text-xs sm:text-sm"
                   />
                 </td>
-                <td className="py-2 px-1 text-center">
+                <td className="py-1.5 px-1 text-center">
                   <input 
                     type="radio" 
                     name="currentSemester"
@@ -150,7 +153,7 @@ export function SemestersManager({
             ))}
             {semesters.length === 0 && (
               <tr>
-                <td colSpan={5} className="text-center py-6 text-zinc-400">
+                <td colSpan={5} className="text-center py-6 text-zinc-400 text-xs">
                   {isAr ? 'قم بتحديث الفصول الدراسية للبدء.' : 'Generate semesters to begin.'}
                 </td>
               </tr>
@@ -161,7 +164,7 @@ export function SemestersManager({
 
       {/* Past Academic Setup Options (Shown only when active semester is beyond Year 1 Sem 1 AND student has no subjects in Year 1 Sem 1) */}
       {shouldShowPastAcademicSetup && currentSemester && (
-        <div className="mt-6 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-900/40 bg-gradient-to-br from-indigo-50/50 to-white dark:from-indigo-950/20 dark:to-zinc-900 shadow-sm space-y-4">
+        <div className="mt-4 p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border border-indigo-100 dark:border-indigo-900/40 bg-gradient-to-br from-indigo-50/50 to-white dark:from-indigo-950/20 dark:to-zinc-900 shadow-xs space-y-3.5">
           <div className="flex items-start gap-3">
             <div className="p-2.5 rounded-xl bg-indigo-600 text-white shadow-md">
               <Calculator size={20} />

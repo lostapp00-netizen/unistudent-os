@@ -330,17 +330,17 @@ export function UserFeedbackSection() {
   const hiddenCount = myFeedbacks.length - 3;
 
   return (
-    <section className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6 md:p-8 space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-zinc-100 dark:border-zinc-800 pb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
-            <MessageSquarePlus size={22} />
+    <section className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-3.5 sm:p-6 lg:p-7 space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-zinc-100 dark:border-zinc-800 pb-3 sm:pb-4">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold shrink-0">
+            <MessageSquarePlus size={20} className="sm:w-[22px] sm:h-[22px]" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-zinc-900 dark:text-white">
+            <h2 className="text-base sm:text-lg lg:text-xl font-bold text-zinc-900 dark:text-white">
               {isAr ? 'مقترحاتك وشكاواك للأدمن' : 'Your Suggestions & Feedback'}
             </h2>
-            <p className="text-xs text-zinc-500 mt-0.5">
+            <p className="text-[11px] sm:text-xs text-zinc-500 mt-0.5">
               {isAr 
                 ? 'شاركنا أفكارك، مشاكلك، أو الميزات التي ترغب في إضافتها لتطوير المنصة ومتابعتها' 
                 : 'Share ideas, report issues, or suggest new features to help improve the platform'}
@@ -351,22 +351,22 @@ export function UserFeedbackSection() {
 
       {/* Messages */}
       {successMessage && (
-        <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-300 text-sm flex items-center gap-2 font-medium animate-in fade-in">
-          <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+        <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-300 text-xs sm:text-sm flex items-center gap-2 font-medium animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
           <span>{successMessage}</span>
         </div>
       )}
 
       {errorMessage && (
-        <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 text-rose-800 dark:text-rose-300 text-sm flex items-center gap-2 font-medium animate-in fade-in">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+        <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 text-rose-800 dark:text-rose-300 text-xs sm:text-sm flex items-center gap-2 font-medium animate-in fade-in">
+          <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
           <span>{errorMessage}</span>
         </div>
       )}
 
       {/* Feedback Form */}
-      <form onSubmit={handleSubmit} className="space-y-4 bg-zinc-50 dark:bg-zinc-800/40 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-700/60">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <form onSubmit={handleSubmit} className="space-y-3.5 sm:space-y-4 bg-zinc-50/70 dark:bg-zinc-800/40 p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border border-zinc-200/80 dark:border-zinc-700/60">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
           <div className="sm:col-span-2">
             <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
               {isAr ? 'عنوان المقترح أو الشكوى' : 'Title'}
@@ -377,7 +377,7 @@ export function UserFeedbackSection() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder={isAr ? 'مثال: مشكلة في حساب درجات الفصل أو إضافة ميزة جديدة' : 'e.g., Issue with GPA calculation or feature request'}
-              className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-3.5 sm:px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white text-xs sm:text-sm outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
 
@@ -385,7 +385,7 @@ export function UserFeedbackSection() {
             <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
               {isAr ? 'نوع المشاركة / التصنيف' : 'Category'}
             </label>
-            <div className="flex items-center gap-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
               {[
                 { id: 'suggestion', label: isAr ? 'اقتراح' : 'Suggestion' },
                 { id: 'complaint', label: isAr ? 'شكوى' : 'Complaint' },
@@ -396,7 +396,7 @@ export function UserFeedbackSection() {
                   type="button"
                   key={cat.id}
                   onClick={() => setType(cat.id as any)}
-                  className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                  className={`py-2 px-2 rounded-xl text-xs font-bold transition-all border cursor-pointer text-center ${
                     type === cat.id
                       ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
                       : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
@@ -521,17 +521,17 @@ export function UserFeedbackSection() {
             {visibleFeedbacks.map((item) => (
               <div
                 key={item.id}
-                className="bg-zinc-50/90 dark:bg-zinc-800/40 p-4 sm:p-5 rounded-2xl border border-zinc-200 dark:border-zinc-700/50 flex flex-col gap-3 transition-all hover:border-zinc-300 dark:hover:border-zinc-600"
+                className="bg-zinc-50/90 dark:bg-zinc-800/40 p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border border-zinc-200/80 dark:border-zinc-700/50 flex flex-col gap-2.5 sm:gap-3 transition-all hover:border-zinc-300 dark:hover:border-zinc-600"
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-bold text-zinc-900 dark:text-white">{item.title}</span>
+                    <span className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-white">{item.title}</span>
                     <span className="text-[10px] px-2.5 py-0.5 rounded-md bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold">
                       {getTypeLabel(item.type)}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
                     <div>{getStatusBadge(item.status)}</div>
 
                     {/* Edit Button */}
@@ -655,13 +655,13 @@ export function UserFeedbackSection() {
       {/* --- EDIT COMPLAINT MODAL --- */}
       {editingFeedback && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-xl w-full border border-zinc-200 dark:border-zinc-800 shadow-2xl p-6 space-y-5 animate-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl max-w-xl w-[94vw] sm:w-full border border-zinc-200 dark:border-zinc-800 shadow-2xl p-4 sm:p-6 space-y-4 sm:space-y-5 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                  <Edit2 size={18} />
+                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                  <Edit2 size={16} />
                 </div>
-                <h3 className="text-base font-bold text-zinc-900 dark:text-white">
+                <h3 className="text-sm sm:text-base font-bold text-zinc-900 dark:text-white">
                   {isAr ? 'تعديل الشكوى / المقترح' : 'Edit Feedback'}
                 </h3>
               </div>
@@ -674,7 +674,7 @@ export function UserFeedbackSection() {
               </button>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3.5 sm:space-y-4">
               <div>
                 <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
                   {isAr ? 'العنوان' : 'Title'}
@@ -684,7 +684,7 @@ export function UserFeedbackSection() {
                   required
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white text-xs sm:text-sm outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
 
@@ -692,7 +692,7 @@ export function UserFeedbackSection() {
                 <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
                   {isAr ? 'التصنيف' : 'Category'}
                 </label>
-                <div className="flex items-center gap-1.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                   {[
                     { id: 'suggestion', label: isAr ? 'اقتراح' : 'Suggestion' },
                     { id: 'complaint', label: isAr ? 'شكوى' : 'Complaint' },
@@ -703,7 +703,7 @@ export function UserFeedbackSection() {
                       type="button"
                       key={cat.id}
                       onClick={() => setEditType(cat.id as any)}
-                      className={`flex-1 py-2 px-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                      className={`py-2 px-2 rounded-xl text-xs font-bold transition-all border cursor-pointer text-center ${
                         editType === cat.id
                           ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
                           : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300'
@@ -724,7 +724,7 @@ export function UserFeedbackSection() {
                   required
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  className="w-full px-3.5 sm:px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white text-xs sm:text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                 />
               </div>
 
@@ -754,7 +754,7 @@ export function UserFeedbackSection() {
                     {editAttachments.map((att) => (
                       <div
                         key={att.id}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-medium"
+                        className="flex items-center gap-2 px-2.5 py-1.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs"
                       >
                         <FileText size={14} className="text-indigo-500" />
                         <span className="max-w-[140px] truncate text-zinc-800 dark:text-zinc-200">{att.name}</span>
@@ -772,11 +772,11 @@ export function UserFeedbackSection() {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
               <button
                 type="button"
                 onClick={() => setEditingFeedback(null)}
-                className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                className="w-full sm:w-auto px-4 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-xs rounded-xl transition-all cursor-pointer text-center"
               >
                 {isAr ? 'إلغاء' : 'Cancel'}
               </button>

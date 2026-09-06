@@ -859,6 +859,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       if (!matchedDb) return;
 
+      // CRITICAL: If current user is the source student of this database, isolate them from reverse sync
+      if (matchedDb.sourceUserId && matchedDb.sourceUserId === userId) {
+        return;
+      }
+
       // If user's stored ID was different from the active DB, heal it
       if (settings.universityDatabaseId !== matchedDb.id) {
         set(state => ({ settings: { ...state.settings, universityDatabaseId: matchedDb.id } }));

@@ -44,17 +44,17 @@ export function GraduationGradingScale({ scale, onChange, enabled, onToggleEnabl
   };
 
   return (
-    <div className="space-y-5 bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+    <div className="space-y-4 sm:space-y-5 bg-white dark:bg-zinc-900 p-3.5 sm:p-6 lg:p-7 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
       {/* Header & Toggle Switch */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-3 sm:pb-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <Award className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-            <h2 className="text-lg font-bold text-zinc-900 dark:text-white">
+            <Award className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0" />
+            <h2 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-white">
               {isAr ? 'سلم تقديرات التخرج التراكمي (اختياري)' : 'Graduation Honors & Grading Scale (Optional)'}
             </h2>
           </div>
-          <p className="text-xs text-zinc-500 max-w-xl">
+          <p className="text-[11px] sm:text-xs text-zinc-500 max-w-xl leading-relaxed">
             {isAr
               ? 'مخطط تقديرات عام للتخرج لحساب مرتبة الشرف والتقدير النهائي عند انتهاء السنوات الدراسية (مثل سنة رابعة ترم ثانٍ). يتم حسابه بناءً على التراكمي CGPA أو النسبة المئوية العامة.'
               : 'Cumulative graduation grading scale to compute honors and final grade upon graduation (e.g. final semester).'}
@@ -62,7 +62,7 @@ export function GraduationGradingScale({ scale, onChange, enabled, onToggleEnabl
         </div>
 
         {/* Toggle Switch */}
-        <div className="flex items-center gap-3 bg-zinc-50 dark:bg-zinc-800/80 px-4 py-2 rounded-2xl border border-zinc-200 dark:border-zinc-700/60">
+        <div className="flex items-center justify-between sm:justify-start gap-3 bg-zinc-50 dark:bg-zinc-800/80 px-3.5 py-2 rounded-xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-700/60 shrink-0">
           <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
             {enabled ? (isAr ? 'مفعل' : 'Enabled') : (isAr ? 'معطل' : 'Disabled')}
           </span>
@@ -87,7 +87,7 @@ export function GraduationGradingScale({ scale, onChange, enabled, onToggleEnabl
       {/* Content if Enabled */}
       {enabled && (
         <div className="space-y-4 animate-in fade-in duration-200">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <span className="text-xs font-medium text-zinc-500">
               {isAr
                 ? 'قم بإعداد درجات التخرج، الرموز، ونطاقات المعدل التراكمي والنسب المئوية:'
@@ -95,15 +95,18 @@ export function GraduationGradingScale({ scale, onChange, enabled, onToggleEnabl
             </span>
             <button
               onClick={addGrade}
-              className="flex items-center gap-1.5 text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:hover:bg-purple-900/50 dark:text-purple-300 px-3 py-1.5 rounded-xl transition-colors font-bold border border-purple-200 dark:border-purple-800/50 shadow-2xs"
+              className="w-full sm:w-auto flex items-center justify-center gap-1.5 text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:hover:bg-purple-900/50 dark:text-purple-300 px-3.5 py-2 rounded-xl transition-colors font-bold border border-purple-200 dark:border-purple-800/50 shadow-2xs cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>{isAr ? 'إضافة تقدير تخرج' : 'Add Graduation Grade'}</span>
             </button>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs sm:text-sm text-left rtl:text-right whitespace-nowrap">
+          <div className="overflow-x-auto -mx-3.5 sm:mx-0 px-3.5 sm:px-0">
+            <div className="flex items-center justify-between sm:hidden text-[11px] text-zinc-400 pb-1.5 font-medium">
+              <span>{isAr ? '← اسحب الجدول لعرض وتعديل كافة الأعمدة' : 'Swipe table to view all columns →'}</span>
+            </div>
+            <table className="w-full min-w-[640px] text-xs sm:text-sm text-left rtl:text-right whitespace-nowrap">
               <thead className="text-zinc-400 border-b border-zinc-200 dark:border-zinc-700 text-xs">
                 <tr>
                   <th className="pb-3 px-2 font-bold">{isAr ? 'الرمز' : 'Letter'}</th>

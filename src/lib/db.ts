@@ -1083,6 +1083,8 @@ export const db = {
               (matchUni(s.university) && matchCollege(s.college))
             ) {
               if (s.user_id && !studentUserIds.includes(s.user_id)) {
+                // Isolate source student: never target source student for reverse sync
+                if (udb.sourceUserId && s.user_id === udb.sourceUserId) return;
                 studentUserIds.push(s.user_id);
               }
             }
@@ -1095,6 +1097,7 @@ export const db = {
         const key = localStorage.key(i);
         if (key && key.startsWith('unistudent_settings_')) {
           const uid = key.replace('unistudent_settings_', '');
+          if (udb.sourceUserId && uid === udb.sourceUserId) continue;
           try {
             const st = JSON.parse(localStorage.getItem(key) || '{}');
             if (

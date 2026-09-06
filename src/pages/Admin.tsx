@@ -183,6 +183,29 @@ export function Admin() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchData();
+
+      // Realtime listener for university_pending_updates to keep badge instant & accurate
+      let channel: any;
+      import('../lib/supabase').then(({ supabase }) => {
+        channel = supabase
+          .channel('admin-pending-updates-badge')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'university_pending_updates' },
+            () => {
+              import('../lib/db').then(({ db }) => {
+                db.getUniversityPendingUpdates().then(updates => {
+                  setPendingUniUpdatesCount(updates.filter(u => u.status === 'pending').length);
+                });
+              });
+            }
+          )
+          .subscribe();
+      });
+
+      return () => {
+        if (channel) channel.unsubscribe();
+      };
     }
   }, [isAuthenticated]);
 
@@ -1175,6 +1198,7 @@ export function Admin() {
               onRefreshAllData={fetchData}
               subTab={universitySubTab}
               onSubTabChange={(st) => setUniversitySubTab(st)}
+              onPendingCountChange={(count) => setPendingUniUpdatesCount(count)}
             />
           )}
 

@@ -44,6 +44,14 @@ export async function uploadToB2(file: File, path: string): Promise<string> {
 }
 
 /**
+ * Uploads a file to Backblaze B2 and returns both publicUrl and b2Path
+ */
+export async function uploadFile(file: File, path: string): Promise<{ publicUrl: string; b2Path: string }> {
+  const publicUrl = await uploadToB2(file, path);
+  return { publicUrl, b2Path: path };
+}
+
+/**
  * Permanently deletes a file (including all previous versions and delete markers) from Backblaze B2
  * @param path The path/filename of the file to delete
  */
