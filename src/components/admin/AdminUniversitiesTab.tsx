@@ -158,15 +158,47 @@ export function AdminUniversitiesTab({
     if (!selectedCollegeId) return null;
     return databases.find(d => d.id === selectedCollegeId) || null;
   }, [databases, selectedCollegeId]);
+
+  // College Specializations
+  const collegeSpecializations = useMemo(() => {
+    if (!selectedCollegeDb) return [];
+    return databases.filter(d => d.isSpecialization && d.parentDatabaseId === selectedCollegeDb.id);
+  }, [databases, selectedCollegeDb]);
   
   // Studio Navigation inside a College
   const [selectedYearIndex, setSelectedYearIndex] = useState<number>(1);
   const [selectedSemesterIndex, setSelectedSemesterIndex] = useState<number>(1);
-  const [activeStudioTab, setActiveStudioTab] = useState<'subjects' | 'drive' | 'students' | 'updates' | 'grading'>('subjects');
+  const [activeStudioTab, setActiveStudioTab] = useState<'subjects' | 'specializations' | 'drive' | 'students' | 'updates' | 'grading'>('subjects');
+
+  // Specializations Management State
+  const [isCreateSpecModalOpen, setIsCreateSpecModalOpen] = useState(false);
+  const [creatingSpec, setCreatingSpec] = useState(false);
+  const [specForm, setSpecForm] = useState<{
+    specializationNameAr: string;
+    specializationNameEn: string;
+    specializationStartYear: number;
+    specializationStartSemester: number;
+    sourceUserId: string;
+    sourceUserName: string;
+    sourceUserEmail: string;
+  }>({
+    specializationNameAr: '',
+    specializationNameEn: '',
+    specializationStartYear: 2,
+    specializationStartSemester: 1,
+    sourceUserId: '',
+    sourceUserName: '',
+    sourceUserEmail: ''
+  });
+  const [specStudentsList, setSpecStudentsList] = useState<any[]>([]);
+  const [loadingSpecStudents, setLoadingSpecStudents] = useState(false);
+  const [specStudentSearch, setSpecStudentSearch] = useState('');
+  const [selectedStudentForSpec, setSelectedStudentForSpec] = useState<any | null>(null);
 
   // Search & Global Filter
   const [globalSearch, setGlobalSearch] = useState('');
   const [updatesFilter, setUpdatesFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  const [updatesCategoryFilter, setUpdatesCategoryFilter] = useState<'all' | 'colleges' | 'specializations'>('all');
 
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -342,7 +374,9 @@ export function AdminUniversitiesTab({
           pendingUpdatesCount: 0
         };
       }
-      map[key].colleges.push(dbItem);
+      if (!dbItem.isSpecialization) {
+        map[key].colleges.push(dbItem);
+      }
       map[key].totalSubjects += (dbItem.subjects?.length || 0);
       map[key].totalDriveFiles += (dbItem.driveFiles?.length || 0);
 
@@ -624,6 +658,73 @@ export function AdminUniversitiesTab({
       console.error('Error creating college:', e);
     } finally {
       setCreatingCollege(false);
+    }
+  };
+
+  // --- Specializations Handlers ---
+  const handleOpenCreateSpecModal = async () => {
+    if (!selectedCollegeDb) return;
+    setSpecForm({
+      specializationNameAr: '',
+      specializationNameEn: '',
+      specializationStartYear: 2,
+      specializationStartSemester: 1,
+      sourceUserId: '',
+      sourceUserName: '',
+      sourceUserEmail: ''
+    });
+    setSelectedStudentForSpec(null);
+    setSpecStudentSearch('');
+    setIsCreateSpecModalOpen(true);
+    setLoadingSpecStudents(true);
+    try {
+      const candidates = await db.getStudentsWithSpecialization(selectedCollegeDb.collegeNameAr);
+      setSpecStudentsList(candidates);
+    } catch (e) {
+      console.error('Error fetching candidate students for specialization:', e);
+      setSpecStudentsList([]);
+    } finally {
+      setLoadingSpecStudents(false);
+    }
+  };
+
+  const handleSelectStudentForSpec = (student: any) => {
+    setSelectedStudentForSpec(student);
+    setSpecForm(prev => ({
+      ...prev,
+      sourceUserId: student.userId,
+      sourceUserName: student.name,
+      sourceUserEmail: student.email,
+      specializationStartYear: student.specializationStartYear || prev.specializationStartYear || 2,
+      specializationStartSemester: student.specializationStartSemester || prev.specializationStartSemester || 1,
+      specializationNameAr: prev.specializationNameAr || student.specialization || ''
+    }));
+  };
+
+  const handleCreateSpecialization = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCollegeDb || !specForm.specializationNameAr.trim() || !specForm.sourceUserId) return;
+    setCreatingSpec(true);
+    try {
+      await db.createSpecializationDatabase({
+        parentCollegeDbId: selectedCollegeDb.id,
+        specializationNameAr: specForm.specializationNameAr.trim(),
+        specializationNameEn: specForm.specializationNameEn.trim() || specForm.specializationNameAr.trim(),
+        specializationStartYear: Number(specForm.specializationStartYear || 2),
+        specializationStartSemester: Number(specForm.specializationStartSemester || 1),
+        sourceUserId: specForm.sourceUserId,
+        sourceUserName: specForm.sourceUserName,
+        sourceUserEmail: specForm.sourceUserEmail,
+        subjects: selectedStudentForSpec?.subjects || []
+      });
+      await loadUniData();
+      await onRefreshAllData();
+      setIsCreateSpecModalOpen(false);
+    } catch (e) {
+      console.error('Error creating specialization:', e);
+      alert(isAr ? 'حدث خطأ أثناء إنشاء التخصص' : 'Error creating specialization');
+    } finally {
+      setCreatingSpec(false);
     }
   };
 
@@ -1350,8 +1451,38 @@ export function AdminUniversitiesTab({
     if (updatesFilter !== 'all') {
       list = list.filter(u => u.status === updatesFilter);
     }
+    if (updatesCategoryFilter === 'colleges') {
+      list = list.filter(u => {
+        const targetDb = databases.find(d => d.id === u.universityDatabaseId);
+        return !targetDb || !targetDb.isSpecialization;
+      });
+    } else if (updatesCategoryFilter === 'specializations') {
+      list = list.filter(u => {
+        const targetDb = databases.find(d => d.id === u.universityDatabaseId);
+        return targetDb && targetDb.isSpecialization;
+      });
+    }
     return list;
-  }, [pendingUpdates, updatesFilter]);
+  }, [pendingUpdates, updatesFilter, updatesCategoryFilter, databases]);
+
+  // Counts by category
+  const updatesCategoryCounts = useMemo(() => {
+    let baseList = pendingUpdates;
+    if (updatesFilter !== 'all') {
+      baseList = baseList.filter(u => u.status === updatesFilter);
+    }
+    let collegesCount = 0;
+    let specCount = 0;
+    baseList.forEach(u => {
+      const targetDb = databases.find(d => d.id === u.universityDatabaseId);
+      if (targetDb?.isSpecialization) {
+        specCount++;
+      } else {
+        collegesCount++;
+      }
+    });
+    return { all: baseList.length, colleges: collegesCount, specializations: specCount };
+  }, [pendingUpdates, updatesFilter, databases]);
 
   // Current drive files in the active folder
   const currentDriveFiles = useMemo(() => {
@@ -1391,47 +1522,89 @@ export function AdminUniversitiesTab({
             </div>
 
             {/* Filter Tabs */}
-            <div className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800 p-1.5 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 flex-wrap">
-              <button
-                onClick={() => setUpdatesFilter('pending')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  updatesFilter === 'pending'
-                    ? 'bg-amber-500 text-white shadow-xs'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                {isAr ? `معلقة (${totalPendingUpdates})` : `Pending (${totalPendingUpdates})`}
-              </button>
-              <button
-                onClick={() => setUpdatesFilter('approved')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  updatesFilter === 'approved'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                {isAr ? 'تمت الموافقة' : 'Approved'}
-              </button>
-              <button
-                onClick={() => setUpdatesFilter('rejected')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  updatesFilter === 'rejected'
-                    ? 'bg-rose-600 text-white shadow-xs'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                {isAr ? 'مرفوضة' : 'Rejected'}
-              </button>
-              <button
-                onClick={() => setUpdatesFilter('all')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  updatesFilter === 'all'
-                    ? 'bg-zinc-800 dark:bg-zinc-700 text-white shadow-xs'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                {isAr ? 'الكل' : 'All'}
-              </button>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 flex-wrap">
+              {/* Category Filter (Colleges vs Specializations) */}
+              <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 p-1.5 rounded-2xl border border-zinc-200 dark:border-zinc-700/60">
+                <button
+                  type="button"
+                  onClick={() => setUpdatesCategoryFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    updatesCategoryFilter === 'all'
+                      ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-xs'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                >
+                  {isAr ? `الكل (${updatesCategoryCounts.all})` : `All (${updatesCategoryCounts.all})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUpdatesCategoryFilter('colleges')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    updatesCategoryFilter === 'colleges'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Building2 size={13} />
+                  <span>{isAr ? `كليات عامة (${updatesCategoryCounts.colleges})` : `Colleges (${updatesCategoryCounts.colleges})`}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUpdatesCategoryFilter('specializations')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    updatesCategoryFilter === 'specializations'
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Sparkles size={13} />
+                  <span>{isAr ? `تخصصات (${updatesCategoryCounts.specializations})` : `Specs (${updatesCategoryCounts.specializations})`}</span>
+                </button>
+              </div>
+
+              {/* Status Filter (Pending, Approved, Rejected, All) */}
+              <div className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800 p-1.5 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 flex-wrap">
+                <button
+                  onClick={() => setUpdatesFilter('pending')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    updatesFilter === 'pending'
+                      ? 'bg-amber-500 text-white shadow-xs'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                >
+                  {isAr ? `معلقة (${totalPendingUpdates})` : `Pending (${totalPendingUpdates})`}
+                </button>
+                <button
+                  onClick={() => setUpdatesFilter('approved')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    updatesFilter === 'approved'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                >
+                  {isAr ? 'تمت الموافقة' : 'Approved'}
+                </button>
+                <button
+                  onClick={() => setUpdatesFilter('rejected')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    updatesFilter === 'rejected'
+                      ? 'bg-rose-600 text-white shadow-xs'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                >
+                  {isAr ? 'مرفوضة' : 'Rejected'}
+                </button>
+                <button
+                  onClick={() => setUpdatesFilter('all')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    updatesFilter === 'all'
+                      ? 'bg-zinc-800 dark:bg-zinc-700 text-white shadow-xs'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                >
+                  {isAr ? 'الكل' : 'All'}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1485,9 +1658,16 @@ export function AdminUniversitiesTab({
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <h4 className="font-black text-base text-zinc-900 dark:text-white">{group.studentName}</h4>
-                            <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
-                              {group.collegeDb ? `${group.collegeDb.universityNameAr} • ${group.collegeDb.collegeNameAr}` : group.collegeId}
-                            </span>
+                            {group.collegeDb?.isSpecialization ? (
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40 flex items-center gap-1">
+                                <Sparkles size={11} />
+                                <span>{group.collegeDb.universityNameAr} • {group.collegeDb.collegeNameAr} (تخصص: {group.collegeDb.specializationNameAr || ''})</span>
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
+                                {group.collegeDb ? `${group.collegeDb.universityNameAr} • ${group.collegeDb.collegeNameAr}` : group.collegeId}
+                              </span>
+                            )}
                             <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300">
                               {group.updates.length} {isAr ? 'تعديل' : 'updates'}
                             </span>
@@ -1942,13 +2122,23 @@ export function AdminUniversitiesTab({
                                   <GraduationCap size={18} />
                                 </div>
                                 <div>
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <p className="font-black text-sm text-zinc-900 dark:text-white">{collegeDb.collegeNameAr}</p>
                                     {colUpdates > 0 && (
                                       <span className="px-2 py-0.2 rounded-full text-[10px] font-black bg-amber-500 text-white animate-pulse">
                                         {colUpdates} {isAr ? 'تحديث' : 'updates'}
                                       </span>
                                     )}
+                                    {(() => {
+                                      const specsCount = databases.filter(d => d.isSpecialization && d.parentDatabaseId === collegeDb.id).length;
+                                      if (specsCount === 0) return null;
+                                      return (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40">
+                                          <Sparkles size={10} />
+                                          <span>{specsCount} {isAr ? 'تخصص' : 'specs'}</span>
+                                        </span>
+                                      );
+                                    })()}
                                   </div>
                                   {collegeDb.collegeNameEn && collegeDb.collegeNameEn !== collegeDb.collegeNameAr && (
                                     <p className="text-[11px] text-zinc-400 font-medium">{collegeDb.collegeNameEn}</p>
@@ -2133,6 +2323,31 @@ export function AdminUniversitiesTab({
                 </div>
               </div>
 
+              {/* Specialization Notice Banner (if active database is a specialization) */}
+              {selectedCollegeDb.isSpecialization && (
+                <div className="bg-purple-50/70 dark:bg-purple-950/40 p-4 rounded-2xl border border-purple-200 dark:border-purple-800/40 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2 text-purple-900 dark:text-purple-200">
+                    <Sparkles size={18} className="text-purple-600 shrink-0" />
+                    <span>
+                      {isAr ? 'قاعدة بيانات تخصص فرعي:' : 'Specialization Database:'} <strong>{selectedCollegeDb.specializationNameAr || selectedCollegeDb.collegeNameAr}</strong> ({isAr ? `يبدأ من سنة ${selectedCollegeDb.specializationStartYear || 1} - ترم ${selectedCollegeDb.specializationStartSemester || 1}` : `Starts Year ${selectedCollegeDb.specializationStartYear || 1} - Semester ${selectedCollegeDb.specializationStartSemester || 1}`})
+                    </span>
+                  </div>
+                  {selectedCollegeDb.parentDatabaseId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCollegeId(selectedCollegeDb.parentDatabaseId!);
+                        setActiveStudioTab('specializations');
+                      }}
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition-all"
+                    >
+                      <BackIcon size={13} />
+                      <span>{isAr ? 'العودة للكلية الأم' : 'Back to College'}</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Source Student Notice Banner */}
               <div className="bg-blue-50/60 dark:bg-blue-950/30 p-4 rounded-2xl border border-blue-200/80 dark:border-blue-800/40 flex items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-2 text-blue-900 dark:text-blue-200">
@@ -2156,6 +2371,27 @@ export function AdminUniversitiesTab({
                   <BookOpen size={16} />
                   <span>{isAr ? 'المواد وتوزيع الدرجات' : 'Subjects & Grades'}</span>
                 </button>
+
+                {!selectedCollegeDb.isSpecialization && (
+                  <button
+                    onClick={() => setActiveStudioTab('specializations')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs sm:text-sm font-black transition-all cursor-pointer shrink-0 ${
+                      activeStudioTab === 'specializations'
+                        ? 'bg-purple-600 text-white shadow-md shadow-purple-500/20'
+                        : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                    }`}
+                  >
+                    <Sparkles size={16} />
+                    <span>{isAr ? 'تخصصات الكلية' : 'Specializations'}</span>
+                    {collegeSpecializations.length > 0 && (
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                        activeStudioTab === 'specializations' ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
+                      }`}>
+                        {collegeSpecializations.length}
+                      </span>
+                    )}
+                  </button>
+                )}
 
                 <button
                   onClick={() => setActiveStudioTab('drive')}
@@ -2346,6 +2582,166 @@ export function AdminUniversitiesTab({
                       </div>
                     );
                   })()}
+                </div>
+              )}
+
+              {/* STUDIO TAB: COLLEGE SPECIALIZATIONS */}
+              {activeStudioTab === 'specializations' && (
+                <div className="space-y-6 animate-in fade-in duration-150">
+                  {/* Header & Add Button */}
+                  <div className="bg-white dark:bg-zinc-900 p-6 sm:p-7 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-purple-500/20 shrink-0">
+                        <Sparkles size={24} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white">
+                            {isAr ? 'تخصصات الكلية' : 'College Specializations'}
+                          </h3>
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40">
+                            {collegeSpecializations.length} {isAr ? 'تخصص' : 'specializations'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                          {isAr
+                            ? `إدارة التخصصات المتفرعة من ${selectedCollegeDb.collegeNameAr} وسحب المناهج من الطلاب المعتمدين بدءاً من سنة التخصص فصاعداً.`
+                            : `Manage specializations branched from ${selectedCollegeDb.collegeNameEn || selectedCollegeDb.collegeNameAr} and clone curricula starting from specialization year.`}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleOpenCreateSpecModal}
+                      className="w-full sm:w-auto px-5 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-md shadow-purple-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer hover:scale-[1.02]"
+                    >
+                      <Plus size={18} />
+                      <span>{isAr ? 'إضافة تخصص جديد للكلية' : 'Add Specialization'}</span>
+                    </button>
+                  </div>
+
+                  {/* Specializations Cards Grid */}
+                  {collegeSpecializations.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {collegeSpecializations.map(spec => (
+                        <div
+                          key={spec.id}
+                          className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 p-5 sm:p-6 shadow-xs hover:border-purple-300 dark:hover:border-purple-800 transition-all flex flex-col justify-between gap-4"
+                        >
+                          <div className="space-y-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <h4 className="font-black text-base text-zinc-900 dark:text-white flex items-center gap-1.5">
+                                  <Sparkles size={16} className="text-purple-600 shrink-0" />
+                                  <span>{spec.specializationNameAr || spec.collegeNameAr}</span>
+                                </h4>
+                                {spec.specializationNameEn && (
+                                  <p className="text-xs text-zinc-400 font-medium mt-0.5" dir="ltr">
+                                    {spec.specializationNameEn}
+                                  </p>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setDbToDelete(spec)}
+                                className="p-2 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-all cursor-pointer"
+                                title={isAr ? 'حذف هذا التخصص' : 'Delete Specialization'}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+
+                            {/* Milestone Badge */}
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40">
+                              <Clock size={13} />
+                              <span>
+                                {isAr 
+                                  ? `بداية التخصص: سنة ${spec.specializationStartYear || 1} - ترم ${spec.specializationStartSemester || 1}` 
+                                  : `Starts: Year ${spec.specializationStartYear || 1} - Term ${spec.specializationStartSemester || 1}`}
+                              </span>
+                            </div>
+
+                            {/* Counts */}
+                            <div className="grid grid-cols-2 gap-2 pt-1">
+                              <div className="bg-zinc-50 dark:bg-zinc-800/60 p-2.5 rounded-2xl border border-zinc-100 dark:border-zinc-800 flex items-center gap-2">
+                                <BookOpen size={16} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                <div>
+                                  <span className="block font-black text-sm text-zinc-900 dark:text-white leading-none">
+                                    {spec.subjects?.length || 0}
+                                  </span>
+                                  <span className="text-[10px] font-bold text-zinc-400">
+                                    {isAr ? 'مواد التخصص' : 'Subjects'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="bg-zinc-50 dark:bg-zinc-800/60 p-2.5 rounded-2xl border border-zinc-100 dark:border-zinc-800 flex items-center gap-2">
+                                <HardDrive size={16} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                                <div>
+                                  <span className="block font-black text-sm text-zinc-900 dark:text-white leading-none">
+                                    {spec.driveFiles?.length || 0}
+                                  </span>
+                                  <span className="text-[10px] font-bold text-zinc-400">
+                                    {isAr ? 'ملفات الدرايف' : 'Drive Files'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Source Student */}
+                            <div className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/40 p-2.5 rounded-2xl border border-zinc-100 dark:border-zinc-800/80">
+                              <span className="font-bold text-zinc-700 dark:text-zinc-300 block truncate">
+                                👤 {spec.sourceUserName || (isAr ? 'طالب مسجل' : 'Student')}
+                              </span>
+                              <span className="text-[11px] text-zinc-400 truncate block">
+                                {spec.sourceUserEmail || (isAr ? 'بدون بريد' : 'No email')}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Manage Specialization Curriculum Button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedCollegeId(spec.id);
+                              setSelectedYearIndex(spec.specializationStartYear || 1);
+                              setSelectedSemesterIndex(spec.specializationStartSemester || 1);
+                              setActiveStudioTab('subjects');
+                            }}
+                            className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl text-xs font-black shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+                          >
+                            <span>{isAr ? 'إدارة منهج ومواد التخصص' : 'Manage Curriculum'}</span>
+                            <ArrowIcon size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 p-12 text-center space-y-4">
+                      <div className="w-16 h-16 rounded-3xl bg-purple-100 dark:bg-purple-950/50 text-purple-600 flex items-center justify-center mx-auto shadow-sm">
+                        <Sparkles size={32} />
+                      </div>
+                      <div className="max-w-md mx-auto space-y-1">
+                        <h4 className="text-lg font-black text-zinc-900 dark:text-white">
+                          {isAr ? 'لا توجد تخصصات مضافة لهذه الكلية حتى الآن' : 'No specializations added for this college yet'}
+                        </h4>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                          {isAr
+                            ? 'يمكنك إضافة تخصصات أكاديمية متفرعة (مثل: هندسة الحاسبات، ميكاترونكس، عمارة) وسحب مناهجها وملفاتها بذكاء من الطلاب المسجلين بدءاً من سنة التخصص فصاعداً.'
+                            : 'Add academic specializations and clone their curricula cleanly from enrolled students.'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleOpenCreateSpecModal}
+                        className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs rounded-2xl shadow-sm transition-all cursor-pointer inline-flex items-center gap-2"
+                      >
+                        <Plus size={16} />
+                        <span>{isAr ? 'إضافة أول تخصص للكلية' : 'Add First Specialization'}</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -3025,6 +3421,289 @@ export function AdminUniversitiesTab({
                 <span>{isAr ? 'سحب وإنشاء الكلية للجامعة' : 'Clone & Create College'}</span>
               </button>
             </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: CREATE SPECIALIZATION IN COLLEGE --- */}
+      {isCreateSpecModalOpen && selectedCollegeDb && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-2xl max-h-[92vh] shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+            
+            {/* Header */}
+            <div className="p-6 sm:p-7 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20">
+                  <Sparkles size={20} />
+                </div>
+                <div>
+                  <h3 className="font-black text-lg text-zinc-900 dark:text-white">
+                    {isAr ? `إضافة تخصص جديد لـ ${selectedCollegeDb.collegeNameAr}` : `Add Specialization to ${selectedCollegeDb.collegeNameEn || selectedCollegeDb.collegeNameAr}`}
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    {isAr ? 'سحب وتخصيص المناهج والمواد من طالب مسجل بدءاً من سنة وبداية التخصص' : 'Clone specialization curriculum starting from designated year and term'}
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setIsCreateSpecModalOpen(false)} 
+                className="p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-xl cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Form Body */}
+            <form onSubmit={handleCreateSpecialization} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1">
+                
+                {/* 1. Specialization Names */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-black text-zinc-700 dark:text-zinc-300 mb-1.5">
+                      {isAr ? 'اسم التخصص بالعربية *' : 'Specialization Name (Arabic) *'}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={specForm.specializationNameAr}
+                      onChange={(e) => setSpecForm(prev => ({ ...prev, specializationNameAr: e.target.value }))}
+                      onBlur={(e) => {
+                        if (!specForm.specializationNameEn && e.target.value) {
+                          const translated = autoTranslateCollege(e.target.value);
+                          if (translated) {
+                            setSpecForm(prev => ({ ...prev, specializationNameEn: translated }));
+                          }
+                        }
+                      }}
+                      placeholder={isAr ? 'مثال: هندسة الحاسبات والنظم' : 'e.g. Computer and Systems Engineering'}
+                      className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black text-zinc-700 dark:text-zinc-300 mb-1.5">
+                      {isAr ? 'اسم التخصص بالإنجليزية' : 'Specialization Name (English)'}
+                    </label>
+                    <input
+                      type="text"
+                      value={specForm.specializationNameEn}
+                      onChange={(e) => setSpecForm(prev => ({ ...prev, specializationNameEn: e.target.value }))}
+                      placeholder={isAr ? 'مثال: Computer Engineering' : 'e.g. Computer Engineering'}
+                      className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-purple-500"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Specialization Milestone Starting Point */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-black text-zinc-900 dark:text-white">
+                    {isAr ? 'نقطة بداية التخصص (السنة والترم) *' : 'Specialization Starting Point (Year & Term) *'}
+                  </label>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="block text-[11px] font-bold text-zinc-500 mb-1">
+                        {isAr ? 'بداية من السنة:' : 'Starting Year:'}
+                      </span>
+                      <select
+                        value={specForm.specializationStartYear}
+                        onChange={(e) => setSpecForm(prev => ({ ...prev, specializationStartYear: Number(e.target.value) }))}
+                        className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        {Array.from({ length: selectedCollegeDb.totalYears || 5 }, (_, i) => i + 1).map(y => (
+                          <option key={y} value={y}>
+                            {isAr ? `السنة الدراسية ${y}` : `Year ${y}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <span className="block text-[11px] font-bold text-zinc-500 mb-1">
+                        {isAr ? 'بداية من الترم:' : 'Starting Term:'}
+                      </span>
+                      <select
+                        value={specForm.specializationStartSemester}
+                        onChange={(e) => setSpecForm(prev => ({ ...prev, specializationStartSemester: Number(e.target.value) }))}
+                        className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        {Array.from({ length: selectedCollegeDb.semestersPerYear || 2 }, (_, i) => i + 1).map(s => (
+                          <option key={s} value={s}>
+                            {isAr ? `الترم ${s}` : `Term ${s}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 bg-purple-50/50 dark:bg-purple-950/20 p-2.5 rounded-xl border border-purple-100 dark:border-purple-900/30 flex items-start gap-1.5">
+                    <Info size={14} className="text-purple-600 shrink-0 mt-0.5" />
+                    <span>
+                      {isAr 
+                        ? `المواد السابقة لسنة ${specForm.specializationStartYear} ترم ${specForm.specializationStartSemester} تُعتبر سنوات إعدادية عامة وستُدار من الكلية الرئيسية مباشرة بدون تكرار.` 
+                        : `Earlier terms remain common foundation years managed by the main college.`}
+                    </span>
+                  </p>
+                </div>
+
+                {/* 3. Source Student Selection */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white block">
+                      {isAr ? 'اختر الطالب المراد سحب منهج التخصص منه *' : 'Select Source Student for Specialization *'}
+                    </label>
+                    <span className="text-xs text-zinc-400">
+                      {specStudentsList.length} {isAr ? 'طالب مسجل بالكلية' : 'students in college'}
+                    </span>
+                  </div>
+
+                  <div className="relative">
+                    <Search className="absolute left-3.5 rtl:left-auto rtl:right-3.5 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                    <input
+                      type="text"
+                      value={specStudentSearch}
+                      onChange={(e) => setSpecStudentSearch(e.target.value)}
+                      placeholder={isAr ? 'ابحث بالاسم، البريد، أو التخصص...' : 'Search student by name, email, or specialization...'}
+                      className="w-full pl-10 rtl:pl-4 rtl:pr-10 pr-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+
+                  {loadingSpecStudents ? (
+                    <div className="p-8 text-center text-zinc-400 flex items-center justify-center gap-2">
+                      <Loader2 size={18} className="animate-spin text-purple-600" />
+                      <span className="text-xs font-bold">{isAr ? 'جاري فحص طلاب الكلية...' : 'Loading candidate students...'}</span>
+                    </div>
+                  ) : specStudentsList.length === 0 ? (
+                    <div className="p-6 text-center bg-zinc-50 dark:bg-zinc-800/40 rounded-2xl border border-zinc-100 dark:border-zinc-800 text-xs text-zinc-400 font-bold">
+                      {isAr ? 'لم يتم العثور على طلاب مسجلين بهذه الكلية لسحب التخصص منهم' : 'No students found in this college'}
+                    </div>
+                  ) : (
+                    <div className="max-h-[220px] overflow-y-auto space-y-2 pr-1">
+                      {specStudentsList
+                        .filter(st => {
+                          if (!specStudentSearch.trim()) return true;
+                          const q = specStudentSearch.toLowerCase();
+                          return (
+                            (st.name || '').toLowerCase().includes(q) ||
+                            (st.email || '').toLowerCase().includes(q) ||
+                            (st.specialization || '').toLowerCase().includes(q)
+                          );
+                        })
+                        .map(st => {
+                          const isSelected = specForm.sourceUserId === st.userId;
+                          return (
+                            <div
+                              key={st.userId}
+                              onClick={() => handleSelectStudentForSpec(st)}
+                              className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                                isSelected 
+                                  ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-500 shadow-xs ring-2 ring-purple-500/20' 
+                                  : 'bg-zinc-50/50 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700/60 hover:border-purple-300 dark:hover:border-purple-800'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
+                                  isSelected 
+                                    ? 'bg-purple-600 text-white' 
+                                    : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300'
+                                }`}>
+                                  {isSelected ? <Check size={16} /> : (st.name?.slice(0, 1) || 'S')}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-black text-xs text-zinc-900 dark:text-white truncate">
+                                      {st.name}
+                                    </span>
+                                    {st.specialization && (
+                                      <span className="px-2 py-0.5 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-black shrink-0">
+                                        🎯 {st.specialization}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[11px] text-zinc-400 truncate block">
+                                    {st.email}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <span className="inline-block px-2.5 py-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[11px] font-black">
+                                  {st.subjectsCount || st.subjects?.length || 0} {isAr ? 'مادة' : 'subjs'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. Smart Slicing Live Preview */}
+                {selectedStudentForSpec && (
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border border-purple-200 dark:border-purple-800/50 space-y-2 animate-in fade-in">
+                    <div className="flex items-center gap-2 text-xs font-black text-purple-900 dark:text-purple-200">
+                      <Sparkles size={16} className="text-purple-600 animate-pulse" />
+                      <span>{isAr ? 'معاينة السحب الذكي لمنهج التخصص:' : 'Smart Slicing Live Preview:'}</span>
+                    </div>
+
+                    {(() => {
+                      const startYr = Number(specForm.specializationStartYear || 1);
+                      const startSm = Number(specForm.specializationStartSemester || 1);
+                      const subjs = selectedStudentForSpec.subjects || [];
+                      const slicedSubjs = subjs.filter((s: Subject) => 
+                        (s.yearIndex || 1) > startYr || ((s.yearIndex || 1) === startYr && (s.semesterIndex || 1) >= startSm)
+                      );
+                      const foundationCount = subjs.length - slicedSubjs.length;
+
+                      return (
+                        <div className="text-xs space-y-1.5 pt-0.5">
+                          <p className="flex items-center gap-2 text-purple-800 dark:text-purple-300 font-bold">
+                            <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
+                            <span>
+                              {isAr 
+                                ? `سيتم استخراج وتخصيص (${slicedSubjs.length}) مادة تبدأ من سنة ${startYr} ترم ${startSm} حتى التخرج.` 
+                                : `Will extract (${slicedSubjs.length}) subjects starting from Year ${startYr} Term ${startSm}.`}
+                            </span>
+                          </p>
+                          <p className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+                            <Info size={14} className="shrink-0" />
+                            <span>
+                              {isAr 
+                                ? `السنوات التمهيدية السابقة (${foundationCount} مادة) لن تتكرر وستبقى موحدة من قاعدة الكلية الرئيسية.` 
+                                : `Earlier foundation subjects (${foundationCount}) will not be duplicated.`}
+                            </span>
+                          </p>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-5 sm:p-6 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateSpecModalOpen(false)}
+                  className="px-5 py-2.5 text-xs sm:text-sm font-bold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-2xl cursor-pointer"
+                >
+                  {isAr ? 'إلغاء' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingSpec || !specForm.specializationNameAr.trim() || !specForm.sourceUserId}
+                  className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 text-white px-6 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-purple-500/25 transition-all cursor-pointer"
+                >
+                  {creatingSpec ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                  <span>{isAr ? 'إنشاء وسحب التخصص الأكاديمي' : 'Create Specialization'}</span>
+                </button>
+              </div>
+            </form>
 
           </div>
         </div>
