@@ -281,7 +281,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         files: files || []
       });
 
-      if (mergedSettings.universityDatabaseId) {
+      if (mergedSettings.universityDatabaseId || (mergedSettings.university && mergedSettings.college && mergedSettings.university !== 'غير محدد')) {
         get().syncWithUniversityDatabase().catch(console.warn);
       }
     } catch (err) {
@@ -803,29 +803,50 @@ export const useAppStore = create<AppState>((set, get) => ({
             const parsed = JSON.parse(savedRaw);
             if (parsed.universityDatabaseId) {
               targetDbId = parsed.universityDatabaseId;
-              set(state => ({ settings: { ...state.settings, universityDatabaseId: targetDbId } }));
             }
           }
         } catch {}
       }
 
-      if (!targetDbId && settings.university && settings.college && settings.university !== 'غير محدد') {
-        const allDbs = await db.getUniversityDatabases();
-        const autoMatched = allDbs.find(d => 
-          (normalizeSubjectName(d.universityNameAr) === normalizeSubjectName(settings.university) || normalizeSubjectName(d.universityNameEn) === normalizeSubjectName(settings.university)) &&
-          (normalizeSubjectName(d.collegeNameAr) === normalizeSubjectName(settings.college) || normalizeSubjectName(d.collegeNameEn) === normalizeSubjectName(settings.college))
-        );
-        if (autoMatched) {
-          targetDbId = autoMatched.id;
-          set(state => ({ settings: { ...state.settings, universityDatabaseId: autoMatched.id } }));
-          db.upsertSettings(userId, { universityDatabaseId: autoMatched.id }).catch(() => {});
+      const allDbs = await db.getUniversityDatabases();
+      let matchedDb: UniversityDatabase | null = null;
+
+      // 1. Try finding by ID first
+      if (targetDbId) {
+        matchedDb = allDbs.find(d => d.id === targetDbId) || null;
+      }
+
+      // 2. Self-Healing: If not found by ID, but user has university & college specified (or stale ID)
+      if (!matchedDb && settings.university && settings.college && settings.university !== 'غير محدد' && settings.university !== 'Not specified') {
+        const norm = (str?: string) => normalizeSubjectName(str);
+        const normUni = norm(settings.university);
+        const normCol = norm(settings.college);
+
+        matchedDb = allDbs.find(d => {
+          const uAr = norm(d.universityNameAr);
+          const uEn = norm(d.universityNameEn);
+          const cAr = norm(d.collegeNameAr);
+          const cEn = norm(d.collegeNameEn);
+          const uniMatches = (uAr && normUni.includes(uAr)) || (uEn && normUni.includes(uEn)) || (uAr && uAr.includes(normUni)) || uAr === normUni || uEn === normUni;
+          const colMatches = (cAr && normCol.includes(cAr)) || (cEn && normCol.includes(cEn)) || (cAr && cAr.includes(normCol)) || cAr === normCol || cEn === normCol;
+          return uniMatches && colMatches;
+        }) || null;
+
+        // Auto-heal the database ID immediately in Store, Supabase settings, and localStorage
+        if (matchedDb) {
+          targetDbId = matchedDb.id;
+          set(state => ({ settings: { ...state.settings, universityDatabaseId: matchedDb!.id } }));
+          db.upsertSettings(userId, { universityDatabaseId: matchedDb.id }).catch(() => {});
         }
       }
 
-      if (!targetDbId) return;
-
-      const matchedDb = await db.getUniversityDatabase(targetDbId);
       if (!matchedDb) return;
+
+      // If user's stored ID was different from the active DB, heal it
+      if (settings.universityDatabaseId !== matchedDb.id) {
+        set(state => ({ settings: { ...state.settings, universityDatabaseId: matchedDb.id } }));
+        db.upsertSettings(userId, { universityDatabaseId: matchedDb.id }).catch(() => {});
+      }
 
       let hasSubjectChanges = false;
       let hasFileChanges = false;
@@ -842,75 +863,71 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
 
+      // 1. Sync Grading Scale
       if (matchedDb.gradingScale && matchedDb.gradingScale.length > 0) {
         const curScaleStr = JSON.stringify(settings.gradingScale || []);
         const tmplScaleStr = JSON.stringify(matchedDb.gradingScale);
         if (curScaleStr !== tmplScaleStr) {
-          set(state => ({ settings: { ...state.settings, gradingScale: matchedDb.gradingScale } }));
+          set(state => ({ settings: { ...state.settings, gradingScale: matchedDb!.gradingScale } }));
           db.upsertSettings(userId, { gradingScale: matchedDb.gradingScale }).catch(() => {});
         }
       }
 
+      // 2. Sync Subjects with Multi-Key Matching
       if (matchedDb.subjects && Array.isArray(matchedDb.subjects)) {
         const { clean: templateSubjs } = deduplicateSubjects(matchedDb.subjects);
-        const existingByName = new Map(currentSubjects.map(s => [normalizeSubjectName(s.name), s]));
-        const deletedNames = new Set((settings.deletedSubjectNames || []).map(n => normalizeSubjectName(n)));
-        const templateNames = new Set(templateSubjs.map(s => normalizeSubjectName(s.name)));
 
-        // 1. Add new subjects from master template
-        for (const tSub of templateSubjs) {
-          const tName = normalizeSubjectName(tSub.name);
-          if (!tName) continue;
-
-          if (!existingByName.has(tName)) {
-            if (deletedNames.has(tName)) continue;
-
-            const tYear = Number(tSub.yearIndex !== undefined ? tSub.yearIndex : ((tSub as any).year_index !== undefined ? (tSub as any).year_index : 1));
-            const tSem = Number(tSub.semesterIndex !== undefined ? tSub.semesterIndex : ((tSub as any).semester_index !== undefined ? (tSub as any).semester_index : 1));
-            const tHours = Number(tSub.creditHours !== undefined ? tSub.creditHours : ((tSub as any).credit_hours !== undefined ? (tSub as any).credit_hours : 3));
-            const tMarks = Number(tSub.totalMarks !== undefined ? tSub.totalMarks : ((tSub as any).total_marks !== undefined ? (tSub as any).total_marks : 100));
-
-            const newS: Subject = {
-              id: uuidv4(),
-              code: (tSub.code || '').trim(),
-              name: tSub.name,
-              creditHours: tHours,
-              totalMarks: tMarks,
-              yearIndex: tYear,
-              semesterIndex: tSem,
-              distributions: (tSub.distributions || []).map((d: any) => ({
-                id: uuidv4(),
-                name: d.name,
-                maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : ((d as any).max_marks !== undefined ? (d as any).max_marks : 0)),
-                achievedMarks: null,
-                status: 'current' as const
-              })),
-              status: 'current',
-              includeInGpa: tSub.includeInGpa !== false && (tSub as any).include_in_gpa !== false
-            };
-
-            currentSubjects.push(newS);
-            existingByName.set(tName, newS);
-            await db.addSubject(userId, newS);
-            hasSubjectChanges = true;
+        // Multi-key matching helper function
+        const findMatchingSubjectIndex = (tSub: Subject, list: Subject[]): number => {
+          // Priority 1: Exact template ID link
+          if (tSub.id) {
+            const idx = list.findIndex(s => s.universityTemplateId === tSub.id || s.id === tSub.id);
+            if (idx >= 0) return idx;
           }
-        }
+          // Priority 2: Code + Year + Semester (if code present)
+          const tCode = (tSub.code || '').trim().toLowerCase();
+          if (tCode) {
+            const idx = list.findIndex(s => {
+              const sCode = (s.code || '').trim().toLowerCase();
+              return sCode === tCode && Number(s.yearIndex || 1) === Number(tSub.yearIndex || 1) && Number(s.semesterIndex || 1) === Number(tSub.semesterIndex || 1);
+            });
+            if (idx >= 0) return idx;
+          }
+          // Priority 3: Normalized Name + Year + Semester
+          const tNorm = normalizeSubjectName(tSub.name);
+          if (tNorm) {
+            const idx = list.findIndex(s => {
+              return normalizeSubjectName(s.name) === tNorm && Number(s.yearIndex || 1) === Number(tSub.yearIndex || 1) && Number(s.semesterIndex || 1) === Number(tSub.semesterIndex || 1);
+            });
+            if (idx >= 0) return idx;
+          }
+          // Priority 4: Normalized Name match (fallback)
+          if (tNorm) {
+            const idx = list.findIndex(s => normalizeSubjectName(s.name) === tNorm);
+            if (idx >= 0) return idx;
+          }
+          return -1;
+        };
 
-        // 2. Sync metadata changes for existing subjects
-        const templateSubjsByName = new Map(templateSubjs.map(s => [normalizeSubjectName(s.name), s]));
-        for (let i = 0; i < currentSubjects.length; i++) {
-          const existing = currentSubjects[i];
-          const template = templateSubjsByName.get(normalizeSubjectName(existing.name));
-          if (template) {
-            const tYear = Number(template.yearIndex !== undefined ? template.yearIndex : ((template as any).year_index !== undefined ? (template as any).year_index : 1));
-            const tSem = Number(template.semesterIndex !== undefined ? template.semesterIndex : ((template as any).semester_index !== undefined ? (template as any).semester_index : 1));
-            const tHours = Number(template.creditHours !== undefined ? template.creditHours : ((template as any).credit_hours !== undefined ? (template as any).credit_hours : 3));
-            const tMarks = Number(template.totalMarks !== undefined ? template.totalMarks : ((template as any).total_marks !== undefined ? (template as any).total_marks : 100));
+        const matchedExistingIndices = new Set<number>();
 
-            const tDists = template.distributions || [];
+        // A. Update existing subjects or add new ones
+        for (const tSub of templateSubjs) {
+          const tYear = Number(tSub.yearIndex !== undefined ? tSub.yearIndex : ((tSub as any).year_index !== undefined ? (tSub as any).year_index : 1));
+          const tSem = Number(tSub.semesterIndex !== undefined ? tSub.semesterIndex : ((tSub as any).semester_index !== undefined ? (tSub as any).semester_index : 1));
+          const tHours = Number(tSub.creditHours !== undefined ? tSub.creditHours : ((tSub as any).credit_hours !== undefined ? (tSub as any).credit_hours : 3));
+          const tMarks = Number(tSub.totalMarks !== undefined ? tSub.totalMarks : ((tSub as any).total_marks !== undefined ? (tSub as any).total_marks : 100));
+
+          const matchIdx = findMatchingSubjectIndex(tSub, currentSubjects);
+
+          if (matchIdx >= 0) {
+            matchedExistingIndices.add(matchIdx);
+            const existing = currentSubjects[matchIdx];
+
+            const tDists = tSub.distributions || [];
             const curDists = existing.distributions || [];
             const curDistsByName = new Map(curDists.map(d => [normalizeSubjectName(d.name), d]));
-            
+
             let distsChanged = false;
             if (tDists.length !== curDists.length) {
               distsChanged = true;
@@ -925,11 +942,13 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
 
             const hasChanged =
+              existing.name !== tSub.name ||
               existing.yearIndex !== tYear ||
               existing.semesterIndex !== tSem ||
               existing.creditHours !== tHours ||
               existing.totalMarks !== tMarks ||
-              (template.code && existing.code !== template.code) ||
+              (tSub.code && existing.code !== tSub.code) ||
+              existing.universityTemplateId !== tSub.id ||
               distsChanged;
 
             if (hasChanged) {
@@ -946,30 +965,71 @@ export const useAppStore = create<AppState>((set, get) => ({
 
               const updated: Subject = {
                 ...existing,
+                universityTemplateId: tSub.id,
+                name: tSub.name,
                 yearIndex: tYear,
                 semesterIndex: tSem,
                 creditHours: tHours,
                 totalMarks: tMarks,
-                code: template.code || existing.code,
-                distributions: syncedDists.length > 0 ? syncedDists : existing.distributions
+                code: tSub.code || existing.code,
+                distributions: syncedDists.length > 0 ? syncedDists : existing.distributions,
+                includeInGpa: tSub.includeInGpa !== false
               };
-              currentSubjects[i] = updated;
+              currentSubjects[matchIdx] = updated;
               await db.updateSubject(userId, existing.id, updated);
               hasSubjectChanges = true;
             }
+          } else {
+            // New subject added in college database: Add to student
+            const newS: Subject = {
+              id: uuidv4(),
+              universityTemplateId: tSub.id,
+              code: (tSub.code || '').trim(),
+              name: tSub.name,
+              creditHours: tHours,
+              totalMarks: tMarks,
+              yearIndex: tYear,
+              semesterIndex: tSem,
+              distributions: (tSub.distributions || []).map((d: any) => ({
+                id: d.id || uuidv4(),
+                name: d.name,
+                maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : ((d as any).max_marks !== undefined ? (d as any).max_marks : 0)),
+                achievedMarks: null,
+                status: 'current' as const
+              })),
+              status: 'current',
+              includeInGpa: tSub.includeInGpa !== false && (tSub as any).include_in_gpa !== false
+            };
+
+            currentSubjects.push(newS);
+            matchedExistingIndices.add(currentSubjects.length - 1);
+            await db.addSubject(userId, newS);
+            hasSubjectChanges = true;
           }
         }
 
-        // 3. Delete subjects removed from master template (only if student hasn't entered marks and not finished)
+        // B. Delete subjects removed from college database (unless student has completed / achieved marks)
         const remainingSubjects: Subject[] = [];
-        for (const existing of currentSubjects) {
-          const normName = normalizeSubjectName(existing.name);
-          const hasAchievedMarks = (existing.distributions || []).some(d => d.achievedMarks !== null && d.achievedMarks !== undefined && Number(d.achievedMarks) > 0);
-          if (templateSubjs.length > 0 && !templateNames.has(normName) && !hasAchievedMarks && existing.status !== 'finished') {
-            await db.deleteSubject(userId, existing.id);
-            hasSubjectChanges = true;
+        for (let i = 0; i < currentSubjects.length; i++) {
+          const s = currentSubjects[i];
+          const isMatched = matchedExistingIndices.has(i);
+
+          if (isMatched) {
+            remainingSubjects.push(s);
           } else {
-            remainingSubjects.push(existing);
+            // Subject is not in the college database
+            const hasAchievedMarks = (s.distributions || []).some(
+              d => d.achievedMarks !== null && d.achievedMarks !== undefined && Number(d.achievedMarks) > 0
+            );
+            const isFinished = s.status === 'finished';
+
+            // Delete if not completed with marks
+            if (!hasAchievedMarks && !isFinished) {
+              await db.deleteSubject(userId, s.id);
+              hasSubjectChanges = true;
+            } else {
+              remainingSubjects.push(s);
+            }
           }
         }
         if (hasSubjectChanges) {
@@ -980,35 +1040,55 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 3. Sync Drive Files
       if (matchedDb.driveFiles && Array.isArray(matchedDb.driveFiles)) {
         const templateFiles = matchedDb.driveFiles;
-        const existingNames = new Set(currentFiles.map(f => f.name.trim().toLowerCase()));
-        const templateNames = new Set(templateFiles.map(f => f.name.trim().toLowerCase()));
+        const templateFileMap = new Map(templateFiles.map(f => [f.id, f]));
+        const templateNames = new Set(templateFiles.map(f => (f.name || '').trim().toLowerCase()));
 
-        // A. Add new drive files from template
+        // Add or update drive files
         for (const tFile of templateFiles) {
-          const tName = tFile.name.trim().toLowerCase();
-          if (!existingNames.has(tName)) {
+          const existingFile = currentFiles.find(f => 
+            (f.universityTemplateId && f.universityTemplateId === tFile.id) ||
+            (f.name.trim().toLowerCase() === (tFile.name || '').trim().toLowerCase() && f.type === tFile.type)
+          );
+
+          if (!existingFile) {
             const newF: DriveFile = {
               id: uuidv4(),
+              universityTemplateId: tFile.id,
               name: tFile.name,
               size: Number(tFile.size || 0),
               type: tFile.type || 'file',
-              parentId: null,
+              parentId: tFile.parentId || null,
               createdAt: tFile.createdAt || new Date().toISOString(),
               url: tFile.url || '',
               b2FileId: tFile.b2FileId
             };
             currentFiles.push(newF);
-            existingNames.add(tName);
             await db.addDriveFile(userId, newF);
             hasFileChanges = true;
+          } else {
+            // Check if file URL or name changed
+            if (existingFile.url !== tFile.url || existingFile.name !== tFile.name || existingFile.universityTemplateId !== tFile.id) {
+              existingFile.url = tFile.url;
+              existingFile.name = tFile.name;
+              existingFile.universityTemplateId = tFile.id;
+              await db.updateDriveFile(userId, existingFile.id, {
+                url: tFile.url,
+                name: tFile.name,
+                universityTemplateId: tFile.id
+              }).catch(() => {});
+              hasFileChanges = true;
+            }
           }
         }
 
-        // B. Remove drive files that were deleted from template
+        // Remove drive files that were deleted from template
         const remainingFiles: DriveFile[] = [];
         for (const f of currentFiles) {
-          const fName = f.name.trim().toLowerCase();
-          if (f.url && !templateNames.has(fName)) {
+          const fName = (f.name || '').trim().toLowerCase();
+          const isFromTemplate = Boolean(f.universityTemplateId) || Boolean(f.url);
+          const stillInTemplate = (f.universityTemplateId && templateFileMap.has(f.universityTemplateId)) || templateNames.has(fName);
+
+          if (isFromTemplate && !stillInTemplate) {
             await db.deleteDriveFile(userId, f.id);
             hasFileChanges = true;
           } else {

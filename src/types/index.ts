@@ -28,6 +28,9 @@ export type GradeDistributionItem = {
 
 export type Subject = {
   id: string;
+  // Identifies the approved university-template subject this personal copy
+  // came from. It lets future approved edits match even after a name changes.
+  universityTemplateId?: string;
   code: string;
   name: string;
   creditHours: number;
@@ -52,6 +55,8 @@ export type EntityAttachment = {
 
 export type DriveFile = {
   id: string;
+  // Stable link to the source item in the approved university template.
+  universityTemplateId?: string;
   name: string;
   size: number;
   type: 'folder' | 'file';
@@ -239,7 +244,7 @@ export type UniversityPendingUpdate = {
   sourceUserId: string;
   sourceUserEmail?: string;
   sourceUserName?: string;
-  type: 'add_subject' | 'update_subject' | 'delete_subject' | 'add_file' | 'delete_file';
+  type: 'add_subject' | 'update_subject' | 'delete_subject' | 'add_file' | 'update_file' | 'delete_file';
   description: string;
   data: any;
   status: 'pending' | 'approved' | 'rejected';

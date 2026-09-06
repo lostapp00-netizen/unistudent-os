@@ -1166,7 +1166,7 @@ export function AdminUniversitiesTab({
             );
             return { ...targetDb, subjects: [...filtered, newSubj] };
           } else if (update.type === 'update_subject' && update.data) {
-            const upd = update.data;
+            const { previous: _previous, ...upd } = update.data;
             const updatedDistributions = upd.distributions
               ? upd.distributions.map((d: any) => ({
                   id: d.id || uuidv4(),
@@ -1214,6 +1214,20 @@ export function AdminUniversitiesTab({
             return {
               ...targetDb,
               driveFiles: [...filteredFiles, newFile]
+            };
+          } else if (update.type === 'update_file' && update.data) {
+            const { previous: _previous, ...updatedFile } = update.data;
+            return {
+              ...targetDb,
+              driveFiles: (targetDb.driveFiles || []).map(file =>
+                file.id === updatedFile.id
+                  ? {
+                      ...file,
+                      ...updatedFile,
+                      parentId: updatedFile.parentId !== undefined ? updatedFile.parentId : file.parentId
+                    }
+                  : file
+              )
             };
           } else if (update.type === 'delete_file' && update.data) {
             const targetId = update.data.id;

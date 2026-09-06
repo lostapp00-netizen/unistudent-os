@@ -157,6 +157,8 @@ export const db = {
     if (subject.status !== undefined) payload.status = subject.status;
     if (subject.distributions !== undefined) payload.distributions = subject.distributions;
     if (subject.finalGradeLetter !== undefined) payload.final_grade_letter = subject.finalGradeLetter;
+    if (subject.universityTemplateId !== undefined) payload.university_template_id = subject.universityTemplateId;
+    if (subject.includeInGpa !== undefined) payload.include_in_gpa = subject.includeInGpa;
     
     try {
       const { error } = await supabase.from('subjects').update(payload).eq('id', id).eq('user_id', userId);
@@ -1036,8 +1038,8 @@ export const db = {
   async syncUniversityDatabaseChangesToStudents(
     universityDbId: string,
     action: {
-      type: 'add_subject' | 'update_subject' | 'delete_subject' | 'update_grading_scale' | 'full_sync';
-      subject?: Subject;
+      type: 'add_subject' | 'update_subject' | 'delete_subject' | 'add_file' | 'update_file' | 'delete_file' | 'update_grading_scale' | 'full_sync';
+      subject?: any;
       subjectId?: string;
       gradingScale?: GradeRule[];
       updatedDb?: UniversityDatabase;
@@ -1047,9 +1049,16 @@ export const db = {
       const udb = action.updatedDb || (await this.getUniversityDatabase(universityDbId));
       if (!udb) return;
 
+      // Try server-side PostgreSQL function if available in Supabase
+      try {
+        await supabase.rpc('sync_approved_university_database_to_students', {
+          p_university_database_id: universityDbId
+        });
+      } catch {}
+
       const norm = (str?: string) => normalizeSubjectName(str);
-      const matchUni = (sUni?: string) => norm(sUni) && (norm(sUni) === norm(udb.universityNameAr) || norm(sUni) === norm(udb.universityNameEn));
-      const matchCollege = (sCol?: string) => norm(sCol) && (norm(sCol) === norm(udb.collegeNameAr) || norm(sCol) === norm(udb.collegeNameEn));
+      const matchUni = (sUni?: string) => norm(sUni) && (norm(sUni) === norm(udb.universityNameAr) || norm(sUni) === norm(udb.universityNameEn) || (norm(udb.universityNameAr) && norm(sUni).includes(norm(udb.universityNameAr))));
+      const matchCollege = (sCol?: string) => norm(sCol) && (norm(sCol) === norm(udb.collegeNameAr) || norm(sCol) === norm(udb.collegeNameEn) || (norm(udb.collegeNameAr) && norm(sCol).includes(norm(udb.collegeNameAr))));
 
       // Find all students in Supabase settings or localStorage
       const studentUserIds: string[] = [];
@@ -1100,12 +1109,22 @@ export const db = {
         ? `تحديث في بيانات مادة: ${action.subject?.name || ''}`
         : action.type === 'delete_subject'
         ? `حذف مادة من الخطة: ${action.subject?.name || ''}`
+        : action.type === 'add_file'
+        ? `ملف جديد في درايف الكلية: ${action.subject?.name || ''}`
+        : action.type === 'update_file'
+        ? `تحديث ملف في درايف الكلية: ${action.subject?.name || ''}`
+        : action.type === 'delete_file'
+        ? `حذف ملف من درايف الكلية: ${action.subject?.name || ''}`
         : action.type === 'update_grading_scale'
         ? 'تحديث لائحة التقديرات المعتمدة لكليتك'
         : 'تحديث معتمد في الخطة الدراسية لقاعدة بيانات كليتك';
 
       const notifMessage = action.type === 'add_subject'
         ? `تم اعتماد إضافة مادة "${action.subject?.name || ''}" للخطة الدراسية من قِبل الإدارة.`
+        : action.type === 'delete_subject'
+        ? `تم اعتماد حذف مادة "${action.subject?.name || ''}" من الخطة الدراسية من قِبل الإدارة.`
+        : action.type === 'add_file' || action.type === 'update_file' || action.type === 'delete_file'
+        ? `تم تحديث ملفات ومجلدات الدرايف المرجعية لكليتك من قِبل الإدارة.`
         : 'تم اعتماد وتحديث الخطة الدراسية لكليتك. سيتم تطبيق التغييرات تلقائياً في حسابك.';
 
       for (const uid of studentUserIds) {
@@ -1121,7 +1140,14 @@ export const db = {
         supabase.channel('university_global_sync').send({
           type: 'broadcast',
           event: 'university_db_updated',
-          payload: { id: universityDbId, timestamp: Date.now() }
+          payload: { 
+            id: universityDbId, 
+            universityNameAr: udb.universityNameAr,
+            universityNameEn: udb.universityNameEn,
+            collegeNameAr: udb.collegeNameAr,
+            collegeNameEn: udb.collegeNameEn,
+            timestamp: Date.now() 
+          }
         }).catch(() => {});
       } catch {}
     } catch (e) {
