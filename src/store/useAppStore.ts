@@ -135,7 +135,7 @@ export interface AppState {
   addGroup: (group: Group) => void;
   updateGroup: (id: string, group: Partial<Group>) => void;
   deleteGroup: (id: string) => void;
-  importFromUniversityDatabase: (universityDbId: string, options?: { importDrive?: boolean }) => Promise<void>;
+  importFromUniversityDatabase: (universityDbId: string, options?: { importDrive?: boolean; specializationDbId?: string }) => Promise<void>;
   unlinkUniversityDatabase: () => Promise<void>;
   syncWithUniversityDatabase: () => Promise<void>;
 }
@@ -266,6 +266,19 @@ export const useAppStore = create<AppState>((set, get) => ({
             uniDbId = autoMatched.id;
             mergedSettings.universityDatabaseId = autoMatched.id;
             db.upsertSettings(userId, { universityDatabaseId: autoMatched.id }).catch(() => {});
+          }
+        }
+
+        if (uniDbId && mergedSettings.specialization && !mergedSettings.specializationDatabaseId) {
+          const allDbs = await db.getUniversityDatabases();
+          const specMatched = allDbs.find(d => 
+            d.isSpecialization && 
+            (d.parentDatabaseId === uniDbId || normalizeSubjectName(d.collegeNameAr) === normalizeSubjectName(mergedSettings.college)) &&
+            (normalizeSubjectName(d.specializationNameAr) === normalizeSubjectName(mergedSettings.specialization) || normalizeSubjectName(d.specializationNameEn) === normalizeSubjectName(mergedSettings.specialization))
+          );
+          if (specMatched) {
+            mergedSettings.specializationDatabaseId = specMatched.id;
+            db.upsertSettings(userId, { specializationDatabaseId: specMatched.id }).catch(() => {});
           }
         }
       } catch (e) {
@@ -651,7 +664,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  importFromUniversityDatabase: async (universityDbId: string, options?: { importDrive?: boolean }) => {
+  importFromUniversityDatabase: async (universityDbId: string, options?: { importDrive?: boolean; specializationDbId?: string }) => {
     const { userId, settings } = get();
     if (!userId) return;
 
@@ -662,24 +675,57 @@ export const useAppStore = create<AppState>((set, get) => ({
       const udb = await db.getUniversityDatabase(universityDbId);
       if (!udb) throw new Error('قاعدة بيانات الجامعة غير موجودة');
 
+      let parentDb: UniversityDatabase | null = null;
+      let specDb: UniversityDatabase | null = null;
+      let mainCollegeDb: UniversityDatabase = udb;
+
+      if (udb.isSpecialization) {
+        specDb = udb;
+        if (udb.parentDatabaseId) {
+          parentDb = await db.getUniversityDatabase(udb.parentDatabaseId);
+          if (parentDb) {
+            mainCollegeDb = parentDb;
+          }
+        }
+      } else if (options?.specializationDbId) {
+        specDb = await db.getUniversityDatabase(options.specializationDbId);
+      }
+
       const isAr = settings.language === 'ar';
-      const chosenUni = isAr ? (udb.universityNameAr || udb.universityNameEn) : (udb.universityNameEn || udb.universityNameAr);
-      const chosenCollege = isAr ? (udb.collegeNameAr || udb.collegeNameEn) : (udb.collegeNameEn || udb.collegeNameAr);
+      const chosenUni = isAr 
+        ? (mainCollegeDb.universityNameAr || mainCollegeDb.universityNameEn) 
+        : (mainCollegeDb.universityNameEn || mainCollegeDb.universityNameAr);
+      const chosenCollege = isAr 
+        ? (mainCollegeDb.collegeNameAr || mainCollegeDb.collegeNameEn) 
+        : (mainCollegeDb.collegeNameEn || mainCollegeDb.collegeNameAr);
+
+      const effectiveGradingScale = (specDb?.gradingScale && specDb.gradingScale.length > 0)
+        ? specDb.gradingScale
+        : (mainCollegeDb.gradingScale && mainCollegeDb.gradingScale.length > 0 ? mainCollegeDb.gradingScale : settings.gradingScale);
 
       const updatedSettings: Partial<UserSettings> = {
         university: chosenUni,
         college: chosenCollege,
-        totalYears: udb.totalYears || 4,
-        semestersPerYear: udb.semestersPerYear || 2,
-        universityDatabaseId: udb.id,
+        totalYears: mainCollegeDb.totalYears || specDb?.totalYears || 4,
+        semestersPerYear: mainCollegeDb.semestersPerYear || specDb?.semestersPerYear || 2,
+        universityDatabaseId: mainCollegeDb.id,
         deletedSubjectNames: [],
-        gradingScale: udb.gradingScale && udb.gradingScale.length > 0 ? udb.gradingScale : settings.gradingScale
+        gradingScale: effectiveGradingScale
       };
+
+      if (specDb) {
+        updatedSettings.specialization = specDb.specializationNameAr || specDb.specializationNameEn || '';
+        updatedSettings.specializationStartYear = specDb.specializationStartYear || 2;
+        updatedSettings.specializationStartSemester = specDb.specializationStartSemester || 1;
+        updatedSettings.specializationDatabaseId = specDb.id;
+      }
 
       if (!settings.semesters || settings.semesters.length === 0) {
         const newSemesters: any[] = [];
-        for (let y = 1; y <= (udb.totalYears || 4); y++) {
-          for (let s = 1; s <= (udb.semestersPerYear || 2); s++) {
+        const totY = Number(updatedSettings.totalYears || 4);
+        const semY = Number(updatedSettings.semestersPerYear || 2);
+        for (let y = 1; y <= totY; y++) {
+          for (let s = 1; s <= semY; s++) {
             newSemesters.push({
               id: uuidv4(),
               yearIndex: y,
@@ -696,10 +742,35 @@ export const useAppStore = create<AppState>((set, get) => ({
       set(state => ({ settings: { ...state.settings, ...updatedSettings } }));
       db.upsertSettings(userId, updatedSettings).catch(console.error);
 
-      if (udb.subjects && udb.subjects.length > 0) {
+      // Smart Slicing Combination
+      let rawCandidateSubjects: Subject[] = [];
+      if (specDb) {
+        const startYear = Number(specDb.specializationStartYear || 2);
+        const startSem = Number(specDb.specializationStartSemester || 1);
+
+        // Foundation subjects from parent college database (before specialization milestone)
+        const foundationSubjs = (mainCollegeDb.subjects || []).filter(s => {
+          const y = Number(s.yearIndex || 1);
+          const sm = Number(s.semesterIndex || 1);
+          return y < startYear || (y === startYear && sm < startSem);
+        });
+
+        // Specialization subjects from specialization database (from milestone onward)
+        const specializationSubjs = (specDb.subjects || []).filter(s => {
+          const y = Number(s.yearIndex || 1);
+          const sm = Number(s.semesterIndex || 1);
+          return y > startYear || (y === startYear && sm >= startSem);
+        });
+
+        rawCandidateSubjects = [...foundationSubjs, ...specializationSubjs];
+      } else {
+        rawCandidateSubjects = mainCollegeDb.subjects || [];
+      }
+
+      if (rawCandidateSubjects.length > 0) {
         await db.clearAllSubjects(userId);
 
-        const { clean: dedupedTemplateSubjs } = deduplicateSubjects(udb.subjects);
+        const { clean: dedupedTemplateSubjs } = deduplicateSubjects(rawCandidateSubjects);
 
         const importedSubjects: Subject[] = dedupedTemplateSubjs.map(s => {
           const y = s.yearIndex !== undefined && s.yearIndex !== null ? s.yearIndex : ((s as any).year_index !== undefined ? (s as any).year_index : 1);
@@ -734,32 +805,39 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
 
-      if (options?.importDrive !== false && udb.driveFiles && udb.driveFiles.length > 0) {
-        await db.clearAllDriveFiles(userId);
-        const idMap = new Map<string, string>();
-        const clonedFiles: DriveFile[] = [];
-        const sortedFiles = [...udb.driveFiles].sort((a, b) => (a.type === 'folder' ? -1 : 1));
+      if (options?.importDrive !== false) {
+        const combinedDriveFiles: DriveFile[] = [
+          ...(mainCollegeDb.driveFiles || []),
+          ...(specDb && specDb.id !== mainCollegeDb.id ? (specDb.driveFiles || []) : [])
+        ];
 
-        for (const file of sortedFiles) {
-          const newId = uuidv4();
-          idMap.set(file.id, newId);
-          const newParentId = file.parentId ? idMap.get(file.parentId) || null : null;
+        if (combinedDriveFiles.length > 0) {
+          await db.clearAllDriveFiles(userId);
+          const idMap = new Map<string, string>();
+          const clonedFiles: DriveFile[] = [];
+          const sortedFiles = [...combinedDriveFiles].sort((a, b) => (a.type === 'folder' ? -1 : 1));
 
-          const cloned: DriveFile = {
-            id: newId,
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            parentId: newParentId,
-            createdAt: new Date().toISOString(),
-            url: file.url,
-            b2FileId: file.b2FileId
-          };
-          clonedFiles.push(cloned);
-          await db.addDriveFile(userId, cloned);
+          for (const file of sortedFiles) {
+            const newId = uuidv4();
+            idMap.set(file.id, newId);
+            const newParentId = file.parentId ? idMap.get(file.parentId) || null : null;
+
+            const cloned: DriveFile = {
+              id: newId,
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              parentId: newParentId,
+              createdAt: new Date().toISOString(),
+              url: file.url,
+              b2FileId: file.b2FileId
+            };
+            clonedFiles.push(cloned);
+            await db.addDriveFile(userId, cloned);
+          }
+
+          set({ files: clonedFiles });
         }
-
-        set({ files: clonedFiles });
       }
     } finally {
       isImportInProgress = false;
@@ -787,8 +865,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const updatedSettings: Partial<UserSettings> = {
       universityDatabaseId: undefined,
+      specializationDatabaseId: undefined,
       university: 'غير محدد',
       college: 'غير محدد',
+      specialization: '',
       deletedSubjectNames: [],
       gradingScale: defaultScale
     };
@@ -859,8 +939,31 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       if (!matchedDb) return;
 
-      // CRITICAL: If current user is the source student of this database, isolate them from reverse sync
-      if (matchedDb.sourceUserId && matchedDb.sourceUserId === userId) {
+      // Check for Specialization Database
+      let specDb: UniversityDatabase | null = null;
+      const targetSpecId = settings.specializationDatabaseId;
+      if (targetSpecId) {
+        specDb = allDbs.find(d => d.id === targetSpecId) || null;
+      }
+      if (!specDb && settings.specialization && matchedDb) {
+        const norm = (str?: string) => normalizeSubjectName(str);
+        const normSpec = norm(settings.specialization);
+        specDb = allDbs.find(d => 
+          d.isSpecialization && 
+          (d.parentDatabaseId === matchedDb!.id || norm(d.collegeNameAr) === norm(matchedDb!.collegeNameAr)) &&
+          (norm(d.specializationNameAr) === normSpec || norm(d.specializationNameEn) === normSpec)
+        ) || null;
+        if (specDb) {
+          set(state => ({ settings: { ...state.settings, specializationDatabaseId: specDb!.id } }));
+          db.upsertSettings(userId, { specializationDatabaseId: specDb.id }).catch(() => {});
+        }
+      }
+
+      const isCollegeSource = !!(matchedDb.sourceUserId && matchedDb.sourceUserId === userId);
+      const isSpecSource = !!(specDb && specDb.sourceUserId && specDb.sourceUserId === userId);
+
+      // If user is source for both or source for only available database, isolate from reverse sync
+      if (isCollegeSource && (!specDb || isSpecSource)) {
         return;
       }
 
@@ -886,18 +989,46 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       // 1. Sync Grading Scale
-      if (matchedDb.gradingScale && matchedDb.gradingScale.length > 0) {
+      const effectiveDbScale = (specDb?.gradingScale && specDb.gradingScale.length > 0)
+        ? specDb.gradingScale
+        : (matchedDb.gradingScale && matchedDb.gradingScale.length > 0 ? matchedDb.gradingScale : null);
+
+      if (effectiveDbScale && effectiveDbScale.length > 0) {
         const curScaleStr = JSON.stringify(settings.gradingScale || []);
-        const tmplScaleStr = JSON.stringify(matchedDb.gradingScale);
+        const tmplScaleStr = JSON.stringify(effectiveDbScale);
         if (curScaleStr !== tmplScaleStr) {
-          set(state => ({ settings: { ...state.settings, gradingScale: matchedDb!.gradingScale } }));
-          db.upsertSettings(userId, { gradingScale: matchedDb.gradingScale }).catch(() => {});
+          set(state => ({ settings: { ...state.settings, gradingScale: effectiveDbScale } }));
+          db.upsertSettings(userId, { gradingScale: effectiveDbScale }).catch(() => {});
         }
       }
 
-      // 2. Sync Subjects with Multi-Key Matching
-      if (matchedDb.subjects && Array.isArray(matchedDb.subjects)) {
-        const { clean: templateSubjs } = deduplicateSubjects(matchedDb.subjects);
+      // 2. Dual-Sync Subjects with Smart Slicing & Multi-Key Matching
+      let rawTemplateSubjs: Subject[] = [];
+      if (specDb) {
+        const startYear = Number(specDb.specializationStartYear || settings.specializationStartYear || 2);
+        const startSem = Number(specDb.specializationStartSemester || settings.specializationStartSemester || 1);
+
+        // Foundation subjects from main college database (prior to milestone)
+        const foundationSubjs = !isCollegeSource ? (matchedDb.subjects || []).filter(s => {
+          const y = Number(s.yearIndex || 1);
+          const sm = Number(s.semesterIndex || 1);
+          return y < startYear || (y === startYear && sm < startSem);
+        }) : [];
+
+        // Specialization subjects from specDb (from milestone onward)
+        const specSubjs = !isSpecSource ? (specDb.subjects || []).filter(s => {
+          const y = Number(s.yearIndex || 1);
+          const sm = Number(s.semesterIndex || 1);
+          return y > startYear || (y === startYear && sm >= startSem);
+        }) : [];
+
+        rawTemplateSubjs = [...foundationSubjs, ...specSubjs];
+      } else {
+        rawTemplateSubjs = !isCollegeSource ? (matchedDb.subjects || []) : [];
+      }
+
+      if (rawTemplateSubjs.length > 0) {
+        const { clean: templateSubjs } = deduplicateSubjects(rawTemplateSubjs);
 
         // Multi-key matching helper function
         const findMatchingSubjectIndex = (tSub: Subject, list: Subject[]): number => {
@@ -1060,8 +1191,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       // 3. Sync Drive Files
-      if (matchedDb.driveFiles && Array.isArray(matchedDb.driveFiles)) {
-        const templateFiles = matchedDb.driveFiles;
+      const combinedDriveFiles: DriveFile[] = [
+        ...(!isCollegeSource ? (matchedDb.driveFiles || []) : []),
+        ...(!isSpecSource && specDb ? (specDb.driveFiles || []) : [])
+      ];
+
+      if (combinedDriveFiles.length > 0) {
+        const templateFiles = combinedDriveFiles;
         const templateFileMap = new Map(templateFiles.map((f: DriveFile) => [f.id, f]));
         const templateNames = new Set(templateFiles.map((f: DriveFile) => (f.name || '').trim().toLowerCase()));
 
@@ -1166,8 +1302,20 @@ async function checkAndNotifySourceUpdate(
 ) {
   try {
     const uniDbs = await db.getUniversityDatabases();
-    const matchingDb = uniDbs.find(u => u.sourceUserId === userId);
-    if (matchingDb) {
+    const matchingDbs = uniDbs.filter(u => u.sourceUserId === userId);
+    for (const matchingDb of matchingDbs) {
+      // If this is a specialization database, check if subject falls into its milestone
+      if (matchingDb.isSpecialization && data?.yearIndex) {
+        const startYr = Number(matchingDb.specializationStartYear || 2);
+        const startSm = Number(matchingDb.specializationStartSemester || 1);
+        const y = Number(data.yearIndex || 1);
+        const sm = Number(data.semesterIndex || 1);
+        if (y < startYr || (y === startYr && sm < startSm)) {
+          // This subject belongs to parent college years, not this specialization database
+          continue;
+        }
+      }
+
       let finalDescription = description;
       if (type === 'add_subject' && data?.name) {
         finalDescription = `إضافة مادة جديدة: ${data.name} (سنة ${data.yearIndex || 1} - ترم ${data.semesterIndex || 1})`;
@@ -1180,6 +1328,9 @@ async function checkAndNotifySourceUpdate(
         universityDatabaseId: matchingDb.id,
         universityName: matchingDb.universityNameAr || matchingDb.universityNameEn,
         collegeName: matchingDb.collegeNameAr || matchingDb.collegeNameEn,
+        isSpecialization: matchingDb.isSpecialization,
+        specializationName: matchingDb.specializationNameAr || matchingDb.specializationNameEn,
+        parentCollegeName: matchingDb.collegeNameAr || matchingDb.collegeNameEn,
         sourceUserId: userId,
         sourceUserEmail: userEmail || '',
         sourceUserName: userName || '',

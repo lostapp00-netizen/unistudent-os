@@ -44,6 +44,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
   // Accordion expanded university key
   const [expandedUniKey, setExpandedUniKey] = useState<string | null>(null);
   const [selectedDb, setSelectedDb] = useState<UniversityDatabase | null>(null);
+  const [selectedTrack, setSelectedTrack] = useState<string>('general');
   const [importDrive, setImportDrive] = useState(true);
   const [importing, setImporting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -54,6 +55,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
       setSuccessMessage(null);
       setExpandedUniKey(null);
       setSelectedDb(null);
+      setSelectedTrack('general');
       db.getUniversityDatabases()
         .then(dbs => {
           setDatabases(dbs);
@@ -67,6 +69,19 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
         .finally(() => setLoading(false));
     }
   }, [isOpen]);
+
+  // Specializations map grouped by parent database ID
+  const specializationsMap = useMemo(() => {
+    const map = new Map<string, UniversityDatabase[]>();
+    for (const d of databases) {
+      if (d.isSpecialization && d.parentDatabaseId) {
+        const list = map.get(d.parentDatabaseId) || [];
+        list.push(d);
+        map.set(d.parentDatabaseId, list);
+      }
+    }
+    return map;
+  }, [databases]);
 
   // Group databases by unique university name (AR or EN)
   const registered = useMemo(() => {
@@ -127,6 +142,68 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
     });
   }, [groupedUniversities, searchQuery, isOpen]);
 
+  const availableSpecs = useMemo(() => {
+    if (!selectedDb) return [];
+    return specializationsMap.get(selectedDb.id) || [];
+  }, [selectedDb, specializationsMap]);
+
+  const activeSpec = useMemo(() => {
+    if (!selectedDb || selectedTrack === 'general') return null;
+    return availableSpecs.find(s => s.id === selectedTrack) || null;
+  }, [selectedDb, selectedTrack, availableSpecs]);
+
+  const previewData = useMemo(() => {
+    if (!selectedDb) return null;
+    if (!activeSpec) {
+      return {
+        title: isAr ? selectedDb.collegeNameAr : (selectedDb.collegeNameEn || selectedDb.collegeNameAr),
+        subtitle: selectedDb.collegeNameEn && selectedDb.collegeNameEn !== selectedDb.collegeNameAr ? selectedDb.collegeNameEn : null,
+        subjects: selectedDb.subjects || [],
+        driveFiles: selectedDb.driveFiles || [],
+        totalYears: selectedDb.totalYears || 4,
+        semestersPerYear: selectedDb.semestersPerYear || 2,
+        gradingScale: selectedDb.gradingScale || [],
+        isSpecialization: false,
+        spec: null,
+        foundationCount: (selectedDb.subjects || []).length,
+        specializationCount: 0
+      };
+    }
+
+    const startYear = Number(activeSpec.specializationStartYear || 2);
+    const startSem = Number(activeSpec.specializationStartSemester || 1);
+
+    const foundation = (selectedDb.subjects || []).filter(s => {
+      const y = Number(s.yearIndex || 1);
+      const sem = Number(s.semesterIndex || 1);
+      return y < startYear || (y === startYear && sem < startSem);
+    });
+
+    const specialization = (activeSpec.subjects || []).filter(s => {
+      const y = Number(s.yearIndex || 1);
+      const sem = Number(s.semesterIndex || 1);
+      return y > startYear || (y === startYear && sem >= startSem);
+    });
+
+    const merged = [...foundation, ...specialization];
+
+    return {
+      title: isAr 
+        ? `${selectedDb.collegeNameAr} - تخصص ${activeSpec.specializationNameAr || activeSpec.collegeNameAr}`
+        : `${selectedDb.collegeNameEn || selectedDb.collegeNameAr} - ${activeSpec.specializationNameEn || activeSpec.specializationNameAr}`,
+      subtitle: activeSpec.specializationNameEn || activeSpec.specializationNameAr,
+      subjects: merged,
+      driveFiles: [...(selectedDb.driveFiles || []), ...(activeSpec.driveFiles || [])],
+      totalYears: selectedDb.totalYears || activeSpec.totalYears || 4,
+      semestersPerYear: selectedDb.semestersPerYear || activeSpec.semestersPerYear || 2,
+      gradingScale: (activeSpec.gradingScale && activeSpec.gradingScale.length > 0) ? activeSpec.gradingScale : (selectedDb.gradingScale || []),
+      isSpecialization: true,
+      spec: activeSpec,
+      foundationCount: foundation.length,
+      specializationCount: specialization.length
+    };
+  }, [selectedDb, activeSpec, isAr]);
+
   const handleToggleExpand = (key: string) => {
     setExpandedUniKey(prev => prev === key ? null : key);
   };
@@ -135,13 +212,17 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
     if (!selectedDb) return;
     try {
       setImporting(true);
-      await importFromUniversityDatabase(selectedDb.id, { importDrive });
+      const targetDbId = selectedTrack !== 'general' ? selectedTrack : selectedDb.id;
+      await importFromUniversityDatabase(targetDbId, { importDrive });
       const uniName = isAr ? selectedDb.universityNameAr : (selectedDb.universityNameEn || selectedDb.universityNameAr);
       const colName = isAr ? selectedDb.collegeNameAr : (selectedDb.collegeNameEn || selectedDb.collegeNameAr);
+      const specText = activeSpec 
+        ? (isAr ? ` (تخصص: ${activeSpec.specializationNameAr || activeSpec.collegeNameAr})` : ` (Major: ${activeSpec.specializationNameEn || activeSpec.specializationNameAr})`)
+        : '';
       setSuccessMessage(
         isAr 
-          ? `تم استرداد قاعدة البيانات بنجاح من ${uniName} - ${colName} (${selectedDb.subjects?.length || 0} مادة ولائحة التقديرات)!` 
-          : `Database successfully restored from ${uniName} - ${colName} (${selectedDb.subjects?.length || 0} subjects & grading scale)!`
+          ? `تم استرداد قاعدة البيانات بنجاح من ${uniName} - ${colName}${specText}!` 
+          : `Database successfully restored from ${uniName} - ${colName}${specText}!`
       );
       setTimeout(() => {
         if (onSuccess) onSuccess();
@@ -278,47 +359,59 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                       {isExpanded && (
                         <div className="p-4 sm:p-5 bg-zinc-50/70 dark:bg-zinc-800/30 border-t border-zinc-100 dark:border-zinc-800/80 space-y-3 animate-in fade-in duration-150">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                            {group.databases.map((dbItem) => (
-                              <div
-                                key={dbItem.id}
-                                onClick={() => setSelectedDb(dbItem)}
-                                className="p-4 sm:p-5 rounded-2xl border border-zinc-200 dark:border-zinc-700/70 bg-white dark:bg-zinc-900 hover:border-indigo-500 dark:hover:border-indigo-500 text-left rtl:text-right transition-all group flex flex-col justify-between gap-3 shadow-2xs hover:shadow-md cursor-pointer"
-                              >
-                                <div className="space-y-1.5 min-w-0">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2.5 min-w-0">
-                                      <GraduationCap size={18} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
-                                      <h5 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white truncate">
-                                        {dbItem.collegeNameAr || dbItem.collegeNameEn}
-                                      </h5>
+                            {group.databases.map((dbItem) => {
+                              const specs = specializationsMap.get(dbItem.id) || [];
+                              return (
+                                <div
+                                  key={dbItem.id}
+                                  onClick={() => {
+                                    setSelectedDb(dbItem);
+                                    setSelectedTrack('general');
+                                  }}
+                                  className="p-4 sm:p-5 rounded-2xl border border-zinc-200 dark:border-zinc-700/70 bg-white dark:bg-zinc-900 hover:border-indigo-500 dark:hover:border-indigo-500 text-left rtl:text-right transition-all group flex flex-col justify-between gap-3 shadow-2xs hover:shadow-md cursor-pointer"
+                                >
+                                  <div className="space-y-1.5 min-w-0">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2.5 min-w-0">
+                                        <GraduationCap size={18} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                        <h5 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white truncate">
+                                          {dbItem.collegeNameAr || dbItem.collegeNameEn}
+                                        </h5>
+                                      </div>
+                                      <ArrowIcon size={16} className="text-zinc-400 group-hover:text-indigo-600 transition-transform group-hover:scale-110 shrink-0" />
                                     </div>
-                                    <ArrowIcon size={16} className="text-zinc-400 group-hover:text-indigo-600 transition-transform group-hover:scale-110 shrink-0" />
+                                    {dbItem.collegeNameEn && dbItem.collegeNameAr && dbItem.collegeNameEn !== dbItem.collegeNameAr && (
+                                      <p className="text-xs text-zinc-400 font-bold truncate">
+                                        {dbItem.collegeNameEn}
+                                      </p>
+                                    )}
                                   </div>
-                                  {dbItem.collegeNameEn && dbItem.collegeNameAr && dbItem.collegeNameEn !== dbItem.collegeNameAr && (
-                                    <p className="text-xs text-zinc-400 font-bold truncate">
-                                      {dbItem.collegeNameEn}
-                                    </p>
-                                  )}
-                                </div>
 
-                                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 text-[11px] text-zinc-500 dark:text-zinc-400 font-bold">
-                                  <span className="bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-lg">
-                                    {dbItem.subjects?.length || 0} {isAr ? 'مادة دراسية' : 'subjects'}
-                                  </span>
-                                  <span className="bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-lg">
-                                    {dbItem.totalYears || 4} {isAr ? 'سنوات' : 'years'}
-                                  </span>
-                                  <span className="bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-lg">
-                                    {dbItem.driveFiles?.length || 0} {isAr ? 'ملفات درايف' : 'files'}
-                                  </span>
-                                  {dbItem.gradingScale && dbItem.gradingScale.length > 0 && (
-                                    <span className="bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2.5 py-1 rounded-lg">
-                                      {isAr ? 'لائحة تقديرات معتمدة' : 'Grading scale'}
+                                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 text-[11px] text-zinc-500 dark:text-zinc-400 font-bold">
+                                    <span className="bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-lg">
+                                      {dbItem.subjects?.length || 0} {isAr ? 'مادة دراسية' : 'subjects'}
                                     </span>
-                                  )}
+                                    {specs.length > 0 && (
+                                      <span className="bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 px-2.5 py-1 rounded-lg flex items-center gap-1 font-black">
+                                        <Sparkles size={12} className="text-purple-600 dark:text-purple-400 shrink-0" />
+                                        <span>{specs.length} {isAr ? 'تخصصات متفرعة' : 'majors'}</span>
+                                      </span>
+                                    )}
+                                    <span className="bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-lg">
+                                      {dbItem.totalYears || 4} {isAr ? 'سنوات' : 'years'}
+                                    </span>
+                                    <span className="bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-lg">
+                                      {dbItem.driveFiles?.length || 0} {isAr ? 'ملفات درايف' : 'files'}
+                                    </span>
+                                    {dbItem.gradingScale && dbItem.gradingScale.length > 0 && (
+                                      <span className="bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2.5 py-1 rounded-lg">
+                                        {isAr ? 'لائحة تقديرات معتمدة' : 'Grading scale'}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -333,16 +426,106 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                 )}
               </div>
             </div>
-          ) : (
+          ) : previewData && (
             /* STEP 2: REVIEW & CONFIRM RESTORE */
             <div className="space-y-5 animate-in fade-in duration-150">
               <button
-                onClick={() => setSelectedDb(null)}
+                onClick={() => {
+                  setSelectedDb(null);
+                  setSelectedTrack('general');
+                }}
                 className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
               >
                 <ArrowIcon size={14} className="rotate-180" />
                 <span>{isAr ? 'الرجوع لاختيار كلية أو جامعة أخرى' : 'Back to select another college'}</span>
               </button>
+
+              {/* Specialization Track Selector (if available) */}
+              {availableSpecs.length > 0 && (
+                <div className="space-y-3 bg-white dark:bg-zinc-900 p-4 sm:p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                      <Sparkles size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white">
+                        {isAr ? 'اختر مسار الكلية والتخصص الأكاديمي:' : 'Select College Track & Specialization:'}
+                      </h4>
+                      <p className="text-[11px] text-zinc-400">
+                        {isAr ? 'تتوفر تخصصات معتمدة لهذه الكلية تم تجهيز وسحب مناهجها' : 'Accredited specializations available for this college'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    {/* Track 1: General Track */}
+                    <div 
+                      onClick={() => setSelectedTrack('general')}
+                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                        selectedTrack === 'general'
+                          ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
+                          : 'bg-zinc-50/60 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700/60 hover:border-indigo-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                          selectedTrack === 'general' ? 'bg-indigo-600 text-white' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600'
+                        }`}>
+                          {selectedTrack === 'general' ? <Check size={14} /> : '1'}
+                        </div>
+                        <div className="min-w-0">
+                          <span className="font-black text-xs text-zinc-900 dark:text-white block truncate">
+                            {isAr ? 'المسار العام للكلية' : 'General College Track'}
+                          </span>
+                          <span className="text-[10px] text-zinc-400 block truncate">
+                            {isAr ? 'الخطة والسنوات الأساسية الشاملة' : 'Full foundation plan'}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-black shrink-0">
+                        {selectedDb.subjects?.length || 0} {isAr ? 'مادة' : 'subjs'}
+                      </span>
+                    </div>
+
+                    {/* Track 2..N: Specializations */}
+                    {availableSpecs.map((spec) => {
+                      const isSelected = selectedTrack === spec.id;
+                      return (
+                        <div 
+                          key={spec.id}
+                          onClick={() => setSelectedTrack(spec.id)}
+                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                            isSelected
+                              ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-500 ring-2 ring-purple-500/20 shadow-xs'
+                              : 'bg-zinc-50/60 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700/60 hover:border-purple-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                              isSelected ? 'bg-purple-600 text-white' : 'bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-300'
+                            }`}>
+                              {isSelected ? <Check size={14} /> : <Sparkles size={13} />}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="font-black text-xs text-zinc-900 dark:text-white block truncate">
+                                {spec.specializationNameAr || spec.collegeNameAr}
+                              </span>
+                              <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold block truncate">
+                                {isAr 
+                                  ? `سنة ${spec.specializationStartYear || 2} ترم ${spec.specializationStartSemester || 1} فصاعداً`
+                                  : `Year ${spec.specializationStartYear || 2} Term ${spec.specializationStartSemester || 1}+`}
+                              </span>
+                            </div>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-black shrink-0">
+                            {spec.subjects?.length || 0} {isAr ? 'مادة تخصص' : 'subjs'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Summary Card */}
               <div className="p-5 rounded-3xl bg-gradient-to-br from-indigo-50/80 to-blue-50/50 dark:from-indigo-950/40 dark:to-zinc-900 border border-indigo-200/80 dark:border-indigo-800/60 space-y-4">
@@ -355,7 +538,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                       {selectedDb.universityNameAr} {selectedDb.universityNameEn ? `(${selectedDb.universityNameEn})` : ''}
                     </h3>
                     <p className="text-xs sm:text-sm font-extrabold text-indigo-600 dark:text-indigo-400 mt-0.5">
-                      {selectedDb.collegeNameAr} {selectedDb.collegeNameEn ? `- ${selectedDb.collegeNameEn}` : ''}
+                      {previewData.title} {previewData.subtitle && previewData.subtitle !== previewData.title ? `- ${previewData.subtitle}` : ''}
                     </p>
                   </div>
                   <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25 shrink-0">
@@ -363,28 +546,41 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                   </div>
                 </div>
 
+                {previewData.isSpecialization && (
+                  <div className="p-3 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/40 flex items-start gap-2.5 text-xs text-purple-900 dark:text-purple-200 font-bold">
+                    <Sparkles size={16} className="text-purple-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span>
+                        {isAr 
+                          ? `🎯 استيراد ذكي مدمج: يشمل (${previewData.foundationCount}) مادة تمهيدية من الكلية الأساسية + (${previewData.specializationCount}) مادة تخصصية متقدمة تبدأ من سنة ${previewData.spec?.specializationStartYear} ترم ${previewData.spec?.specializationStartSemester}.`
+                          : `🎯 Smart Slicing: Includes (${previewData.foundationCount}) foundation subjects + (${previewData.specializationCount}) specialization subjects.`}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-4 gap-2 text-center pt-2 border-t border-indigo-100 dark:border-indigo-900/40">
                   <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-indigo-100 dark:border-indigo-950">
                     <span className="block text-base font-black text-indigo-600 dark:text-indigo-400">
-                      {selectedDb.subjects?.length || 0}
+                      {previewData.subjects.length}
                     </span>
                     <span className="text-[10px] font-bold text-zinc-500">{isAr ? 'مادة دراسية' : 'Subjects'}</span>
                   </div>
                   <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-indigo-100 dark:border-indigo-950">
                     <span className="block text-base font-black text-indigo-600 dark:text-indigo-400">
-                      {selectedDb.totalYears || 4}
+                      {previewData.totalYears}
                     </span>
                     <span className="text-[10px] font-bold text-zinc-500">{isAr ? 'سنوات' : 'Years'}</span>
                   </div>
                   <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-indigo-100 dark:border-indigo-950">
                     <span className="block text-base font-black text-indigo-600 dark:text-indigo-400">
-                      {selectedDb.semestersPerYear || 2}
+                      {previewData.semestersPerYear}
                     </span>
                     <span className="text-[10px] font-bold text-zinc-500">{isAr ? 'فصول/سنة' : 'Terms/Yr'}</span>
                   </div>
                   <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-indigo-100 dark:border-indigo-950">
                     <span className="block text-base font-black text-indigo-600 dark:text-indigo-400">
-                      {selectedDb.driveFiles?.length || 0}
+                      {previewData.driveFiles.length}
                     </span>
                     <span className="text-[10px] font-bold text-zinc-500">{isAr ? 'ملفات درايف' : 'Files'}</span>
                   </div>
@@ -392,7 +588,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
               </div>
 
               {/* Grading Scale Table Preview */}
-              {selectedDb.gradingScale && selectedDb.gradingScale.length > 0 && (
+              {previewData.gradingScale && previewData.gradingScale.length > 0 && (
                 <div className="space-y-2 bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xs">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-black text-zinc-900 dark:text-white flex items-center gap-1.5">
@@ -400,7 +596,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                       <span>{isAr ? 'جدول لائحة التقديرات المعتمدة التي سيتم استردادها:' : 'Accredited Grading Scale Table to Import:'}</span>
                     </h4>
                     <span className="text-[10px] font-bold text-zinc-400">
-                      {selectedDb.gradingScale.length} {isAr ? 'تقديرات' : 'rules'}
+                      {previewData.gradingScale.length} {isAr ? 'تقديرات' : 'rules'}
                     </span>
                   </div>
 
@@ -415,7 +611,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                        {selectedDb.gradingScale.map((rule, idx) => (
+                        {previewData.gradingScale.map((rule, idx) => (
                           <tr key={idx} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30">
                             <td className="py-1.5 px-3 font-black text-indigo-600">{rule.letter}</td>
                             <td className="py-1.5 px-3 font-bold text-zinc-700 dark:text-zinc-300">{isAr ? rule.nameAr : (rule.nameEn || rule.nameAr)}</td>
@@ -431,22 +627,52 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                 </div>
               )}
 
-              {/* Sample of subjects */}
-              {selectedDb.subjects && selectedDb.subjects.length > 0 && (
+              {/* Sample of subjects with Specialization Indicator */}
+              {previewData.subjects && previewData.subjects.length > 0 && (
                 <div className="space-y-2">
-                  <h4 className="text-xs font-black text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-                    <BookOpen size={14} className="text-indigo-600" />
-                    <span>{isAr ? 'عينة من المواد الجاهزة للاستيراد والخطة:' : 'Sample of subjects ready to import:'}</span>
-                  </h4>
-                  <div className="max-h-[130px] overflow-y-auto space-y-1.5 pr-1">
-                    {selectedDb.subjects.slice(0, 10).map((s, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-xs p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/70 border border-zinc-100 dark:border-zinc-700/60">
-                        <span className="font-bold text-zinc-800 dark:text-zinc-200 truncate">{s.name}</span>
-                        <span className="text-[10px] font-medium text-zinc-400 shrink-0">
-                          {s.creditHours} {isAr ? 'ساعات' : 'hrs'} • {s.totalMarks} {isAr ? 'درجة' : 'marks'} • {isAr ? `سنة ${s.yearIndex} ترم ${s.semesterIndex}` : `Y${s.yearIndex} S${s.semesterIndex}`}
-                        </span>
-                      </div>
-                    ))}
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                      <BookOpen size={14} className="text-indigo-600" />
+                      <span>{isAr ? 'عينة من المواد الجاهزة للاستيراد والخطة:' : 'Sample of subjects ready to import:'}</span>
+                    </h4>
+                    <span className="text-[10px] font-bold text-zinc-400">
+                      {previewData.subjects.length} {isAr ? 'مادة إجمالاً' : 'total subjects'}
+                    </span>
+                  </div>
+
+                  <div className="max-h-[140px] overflow-y-auto space-y-1.5 pr-1">
+                    {previewData.subjects.slice(0, 12).map((s, idx) => {
+                      const startY = Number(previewData.spec?.specializationStartYear || 2);
+                      const startS = Number(previewData.spec?.specializationStartSemester || 1);
+                      const isSpecSubj = previewData.isSpecialization && ((s.yearIndex || 1) > startY || ((s.yearIndex || 1) === startY && (s.semesterIndex || 1) >= startS));
+
+                      return (
+                        <div key={idx} className={`flex items-center justify-between text-xs p-2.5 rounded-xl border ${
+                          isSpecSubj 
+                            ? 'bg-purple-50/60 dark:bg-purple-950/30 border-purple-200/80 dark:border-purple-900/40' 
+                            : 'bg-zinc-50 dark:bg-zinc-800/70 border-zinc-100 dark:border-zinc-700/60'
+                        }`}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            {previewData.isSpecialization && (
+                              isSpecSubj ? (
+                                <span className="px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-[9px] font-black text-purple-700 dark:text-purple-300 shrink-0">
+                                  🎯 {isAr ? 'تخصص' : 'Major'}
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded-md bg-zinc-200 dark:bg-zinc-700 text-[9px] font-black text-zinc-600 dark:text-zinc-300 shrink-0">
+                                  {isAr ? 'عام' : 'General'}
+                                </span>
+                              )
+                            )}
+                            <span className="font-bold text-zinc-800 dark:text-zinc-200 truncate">{s.name}</span>
+                          </div>
+
+                          <span className="text-[10px] font-medium text-zinc-400 shrink-0">
+                            {s.creditHours} {isAr ? 'ساعات' : 'hrs'} • {s.totalMarks} {isAr ? 'درجة' : 'marks'} • {isAr ? `سنة ${s.yearIndex} ترم ${s.semesterIndex}` : `Y${s.yearIndex} S${s.semesterIndex}`}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

@@ -7,6 +7,8 @@ import { SemestersManager } from '../components/settings/SemestersManager';
 import { UserFeedbackSection } from '../components/settings/UserFeedbackSection';
 import { defaultGraduationScale } from '../store/useAppStore';
 import { supabase } from '../lib/supabase';
+import { db } from '../lib/db';
+import { UniversityDatabase } from '../types';
 import { UniversityRestoreModal } from '../components/settings/UniversityRestoreModal';
 import { 
   Lock, 
@@ -119,6 +121,27 @@ export function Settings() {
     settings.specializationStartSemester,
     settings.specializationDatabaseId
   ]);
+
+  // College Accredited Specializations
+  const [collegeSpecializations, setCollegeSpecializations] = useState<UniversityDatabase[]>([]);
+
+  useEffect(() => {
+    if (formData.college && formData.college !== 'غير محدد' && formData.college !== 'Not specified') {
+      db.getUniversityDatabases()
+        .then(allDbs => {
+          const norm = (str?: string) => (str || '').trim().toLowerCase();
+          const targetCol = norm(formData.college);
+          const specs = allDbs.filter(d => 
+            d.isSpecialization && 
+            (norm(d.collegeNameAr) === targetCol || norm(d.collegeNameEn) === targetCol)
+          );
+          setCollegeSpecializations(specs);
+        })
+        .catch(() => setCollegeSpecializations([]));
+    } else {
+      setCollegeSpecializations([]);
+    }
+  }, [formData.college]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -655,6 +678,45 @@ export function Settings() {
                       placeholder={isAr ? 'مثال: هندسة حاسبات ونظم / علوم الحاسب / نظم معلومات / محاسبة...' : 'e.g. Computer Engineering / CS / IS / Finance...'}
                       className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-indigo-300 dark:border-indigo-700 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-base sm:text-sm font-bold shadow-xs"
                     />
+
+                    {collegeSpecializations.length > 0 && (
+                      <div className="space-y-1.5 pt-1.5">
+                        <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
+                          <Sparkles size={12} className="text-purple-600 dark:text-purple-400" />
+                          <span>{isAr ? 'أو اختر من التخصصات المعتمدة لكليتك:' : 'Or choose from accredited college majors:'}</span>
+                        </span>
+                        <div className="flex flex-wrap gap-2">
+                          {collegeSpecializations.map(spec => {
+                            const isChosen = formData.specialization === (spec.specializationNameAr || spec.collegeNameAr);
+                            return (
+                              <button
+                                key={spec.id}
+                                type="button"
+                                onClick={() => {
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    specialization: spec.specializationNameAr || spec.collegeNameAr,
+                                    specializationStartYear: spec.specializationStartYear || prev.specializationStartYear || 2,
+                                    specializationStartSemester: spec.specializationStartSemester || prev.specializationStartSemester || 1,
+                                    specializationDatabaseId: spec.id
+                                  }));
+                                }}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer flex items-center gap-1.5 ${
+                                  isChosen
+                                    ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-purple-400'
+                                }`}
+                              >
+                                <span>🎯 {spec.specializationNameAr || spec.collegeNameAr}</span>
+                                <span className="text-[10px] opacity-75">
+                                  ({isAr ? `سنة ${spec.specializationStartYear || 2}` : `Y${spec.specializationStartYear || 2}`})
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
@@ -933,6 +995,17 @@ export function Settings() {
                     ? 'عند توفر قواعد بيانات تخصصية معتمدة من كليتك في لوحة تحكم الإدارة، ستتمكن من استرداد مواد التخصص وملفاتها بنقرة واحدة مع الحفاظ التام على مواد السنوات العامة السابقة.' 
                     : 'When accredited specialization curricula are configured by admin for your college, you can restore specialization subjects while retaining all common foundation subjects.'}
                 </p>
+
+                <div className="pt-1.5 flex flex-wrap gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsRestoreModalOpen(true)}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer inline-flex items-center justify-center gap-2"
+                  >
+                    <Sparkles size={15} />
+                    <span>{isAr ? 'استعراض واسترداد مواد التخصص من قاعدة البيانات' : 'Restore Specialization Curriculum'}</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 flex items-start gap-2.5 sm:gap-3 text-xs text-zinc-500 dark:text-zinc-400">
