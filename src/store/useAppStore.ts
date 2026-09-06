@@ -270,7 +270,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         userId,
         userEmail: email || null,
-        isInitialized: true,
+        isInitialized: false,
         settings: mergedSettings,
         subjects: finalSubjects,
         tasks: tasks || [],
@@ -281,9 +281,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         files: files || []
       });
 
+      // Pre-sync with university database BEFORE marking initialized so the UI displays up-to-date data on the first frame
       if (mergedSettings.universityDatabaseId || (mergedSettings.university && mergedSettings.college && mergedSettings.university !== 'غير محدد')) {
-        get().syncWithUniversityDatabase().catch(console.warn);
+        try {
+          await Promise.race([
+            get().syncWithUniversityDatabase(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Sync timeout')), 2500))
+          ]);
+        } catch (e) {
+          console.warn('Initial university pre-sync completed or timed out:', e);
+        }
       }
+
+      set({ isInitialized: true });
     } catch (err) {
       console.error('Error during initialize:', err);
       set({
@@ -1102,9 +1112,26 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       if (hasSubjectChanges) {
         set({ subjects: currentSubjects });
+        try {
+          localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(currentSubjects));
+        } catch {}
       }
       if (hasFileChanges) {
         set({ files: currentFiles });
+        try {
+          localStorage.setItem(`unistudent_files_${userId}`, JSON.stringify(currentFiles));
+        } catch {}
+      }
+
+      // Sync grading scale if template has one and it differs
+      if (matchedDb.gradingScale && Array.isArray(matchedDb.gradingScale) && matchedDb.gradingScale.length > 0) {
+        const curScaleStr = JSON.stringify(settings.gradingScale || []);
+        const tplScaleStr = JSON.stringify(matchedDb.gradingScale);
+        if (curScaleStr !== tplScaleStr) {
+          const updatedSettings = { ...settings, gradingScale: matchedDb.gradingScale };
+          set({ settings: updatedSettings });
+          db.upsertSettings(userId, { gradingScale: matchedDb.gradingScale }).catch(console.warn);
+        }
       }
     } catch (e) {
       console.warn('syncWithUniversityDatabase error:', e);
