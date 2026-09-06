@@ -228,6 +228,12 @@ export type UniversityDatabase = {
   driveFiles: DriveFile[];
   gradingScale?: GradeRule[];
   isVisible?: boolean;
+  isSpecialization?: boolean;
+  parentDatabaseId?: string;
+  specializationNameAr?: string;
+  specializationNameEn?: string;
+  specializationStartYear?: number;
+  specializationStartSemester?: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -245,6 +251,8 @@ export type UniversityPendingUpdate = {
   universityDatabaseId: string;
   universityName?: string;
   collegeName?: string;
+  isSpecialization?: boolean;
+  specializationName?: string;
   sourceUserId: string;
   sourceUserEmail?: string;
   sourceUserName?: string;

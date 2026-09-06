@@ -79,6 +79,11 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
   const groupedUniversities = useMemo(() => {
     if (!isOpen) return {};
     return databases.reduce((acc, current) => {
+      // If this is a specialization database, do not show in the general college list
+      if (current.isSpecialization) {
+        return acc;
+      }
+
       // If college is hidden by admin, do not show to students
       if (current.isVisible === false || (current as any).is_visible === false) {
         return acc;

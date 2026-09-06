@@ -738,7 +738,23 @@ export const db = {
 
     // 2. Supabase insert/upsert
     try {
-      const payload = {
+      let gradingScalePayload = dbData.gradingScale || [];
+      if (dbData.isSpecialization) {
+        gradingScalePayload = [
+          ...gradingScalePayload.filter((g: any) => g && g.id !== '__spec_meta__'),
+          {
+            id: '__spec_meta__',
+            isSpecialization: true,
+            parentDatabaseId: dbData.parentDatabaseId,
+            specializationNameAr: dbData.specializationNameAr,
+            specializationNameEn: dbData.specializationNameEn,
+            specializationStartYear: dbData.specializationStartYear,
+            specializationStartSemester: dbData.specializationStartSemester,
+          } as any
+        ];
+      }
+
+      const payload: any = {
         id: dbData.id,
         university_name_ar: dbData.universityNameAr,
         university_name_en: dbData.universityNameEn,
@@ -751,13 +767,36 @@ export const db = {
         semesters_per_year: dbData.semestersPerYear,
         subjects: dbData.subjects,
         drive_files: dbData.driveFiles,
-        grading_scale: dbData.gradingScale || [],
+        grading_scale: gradingScalePayload,
         is_visible: dbData.isVisible !== false,
         created_at: dbData.createdAt,
         updated_at: dbData.updatedAt
       };
+
+      if (dbData.isSpecialization) {
+        payload.is_specialization = true;
+        payload.parent_database_id = dbData.parentDatabaseId || null;
+        payload.specialization_name_ar = dbData.specializationNameAr || null;
+        payload.specialization_name_en = dbData.specializationNameEn || null;
+        payload.specialization_start_year = dbData.specializationStartYear || null;
+        payload.specialization_start_semester = dbData.specializationStartSemester || null;
+      }
+
       const { error } = await supabase.from('university_databases').upsert(payload);
-      if (error) console.warn('Supabase createUniversityDatabase error:', error);
+      if (error) {
+        if (error.message && (error.message.includes('column') || error.message.includes('does not exist'))) {
+          delete payload.is_specialization;
+          delete payload.parent_database_id;
+          delete payload.specialization_name_ar;
+          delete payload.specialization_name_en;
+          delete payload.specialization_start_year;
+          delete payload.specialization_start_semester;
+          const { error: retryErr } = await supabase.from('university_databases').upsert(payload);
+          if (retryErr) console.warn('Supabase createUniversityDatabase fallback error:', retryErr);
+        } else {
+          console.warn('Supabase createUniversityDatabase error:', error);
+        }
+      }
     } catch (e) {
       console.warn('Supabase createUniversityDatabase failed:', e);
     }
@@ -774,11 +813,6 @@ export const db = {
         throw new Error('لم يتم العثور على قاعدة بيانات الجامعة المطلوب تحديثها.');
       }
 
-      // Use UPDATE, not UPSERT. An UPSERT containing only `id` and the changed
-      // fields fails on this table because university_name_ar and
-      // college_name_ar are required on INSERT. The old code hid that error by
-      // updating localStorage first, so the admin saw the new material while
-      // every restored student kept reading the old remote database.
       const payload: any = { updated_at: updatedAt };
       if (partialData.universityNameAr !== undefined) payload.university_name_ar = partialData.universityNameAr;
       if (partialData.universityNameEn !== undefined) payload.university_name_en = partialData.universityNameEn;
@@ -791,15 +825,59 @@ export const db = {
       if (partialData.semestersPerYear !== undefined) payload.semesters_per_year = partialData.semestersPerYear;
       if (partialData.subjects !== undefined) payload.subjects = partialData.subjects;
       if (partialData.driveFiles !== undefined) payload.drive_files = partialData.driveFiles;
-      if (partialData.gradingScale !== undefined) payload.grading_scale = partialData.gradingScale;
       if (partialData.isVisible !== undefined) payload.is_visible = partialData.isVisible;
 
-      const { data, error } = await supabase
+      // Specialization columns
+      if (partialData.isSpecialization !== undefined) payload.is_specialization = partialData.isSpecialization;
+      if (partialData.parentDatabaseId !== undefined) payload.parent_database_id = partialData.parentDatabaseId;
+      if (partialData.specializationNameAr !== undefined) payload.specialization_name_ar = partialData.specializationNameAr;
+      if (partialData.specializationNameEn !== undefined) payload.specialization_name_en = partialData.specializationNameEn;
+      if (partialData.specializationStartYear !== undefined) payload.specialization_start_year = partialData.specializationStartYear;
+      if (partialData.specializationStartSemester !== undefined) payload.specialization_start_semester = partialData.specializationStartSemester;
+
+      const isSpec = partialData.isSpecialization !== undefined ? partialData.isSpecialization : existing.isSpecialization;
+      if (partialData.gradingScale !== undefined || isSpec) {
+        let scale = partialData.gradingScale !== undefined ? [...partialData.gradingScale] : [...(existing.gradingScale || [])];
+        if (isSpec) {
+          scale = [
+            ...scale.filter((g: any) => g && g.id !== '__spec_meta__'),
+            {
+              id: '__spec_meta__',
+              isSpecialization: true,
+              parentDatabaseId: partialData.parentDatabaseId || existing.parentDatabaseId,
+              specializationNameAr: partialData.specializationNameAr || existing.specializationNameAr,
+              specializationNameEn: partialData.specializationNameEn || existing.specializationNameEn,
+              specializationStartYear: partialData.specializationStartYear || existing.specializationStartYear,
+              specializationStartSemester: partialData.specializationStartSemester || existing.specializationStartSemester,
+            } as any
+          ];
+        }
+        payload.grading_scale = scale;
+      }
+
+      let { data, error } = await supabase
         .from('university_databases')
         .update(payload)
         .eq('id', id)
         .select('id')
         .maybeSingle();
+
+      if (error && error.message && (error.message.includes('column') || error.message.includes('does not exist'))) {
+        delete payload.is_specialization;
+        delete payload.parent_database_id;
+        delete payload.specialization_name_ar;
+        delete payload.specialization_name_en;
+        delete payload.specialization_start_year;
+        delete payload.specialization_start_semester;
+        const retry = await supabase
+          .from('university_databases')
+          .update(payload)
+          .eq('id', id)
+          .select('id')
+          .maybeSingle();
+        data = retry.data;
+        error = retry.error;
+      }
 
       if (error) throw error;
       if (!data) {
@@ -829,14 +907,195 @@ export const db = {
   async deleteUniversityDatabase(id: string): Promise<void> {
     try {
       const current = await this.getUniversityDatabases();
-      localStorage.setItem('unistudent_university_databases', JSON.stringify(current.filter(u => u.id !== id)));
-    } catch {}
+      const remaining = current.filter(u => u.id !== id && u.parentDatabaseId !== id);
+      const toDelete = current.filter(u => u.id === id || u.parentDatabaseId === id);
+      localStorage.setItem('unistudent_university_databases', JSON.stringify(remaining));
 
-    try {
-      await supabase.from('university_databases').delete().eq('id', id);
+      for (const item of toDelete) {
+        await supabase.from('university_databases').delete().eq('id', item.id);
+      }
     } catch (e) {
       console.warn('Supabase deleteUniversityDatabase failed:', e);
     }
+  },
+
+  async getSpecializationsForCollege(parentCollegeDbId: string): Promise<UniversityDatabase[]> {
+    const all = await this.getUniversityDatabases();
+    return all.filter(d => d.isSpecialization && d.parentDatabaseId === parentCollegeDbId);
+  },
+
+  async getRegisteredCollegesWithSpecializations(): Promise<{
+    college: UniversityDatabase;
+    specializations: UniversityDatabase[];
+  }[]> {
+    const all = await this.getUniversityDatabases();
+    const colleges = all.filter(d => !d.isSpecialization);
+    const specializations = all.filter(d => d.isSpecialization);
+    return colleges.map(college => ({
+      college,
+      specializations: specializations.filter(s => s.parentDatabaseId === college.id)
+    }));
+  },
+
+  async getStudentsWithSpecialization(collegeName: string, specializationName?: string): Promise<Array<{
+    userId: string;
+    name: string;
+    email: string;
+    university: string;
+    college: string;
+    specialization?: string;
+    specializationStartYear?: number;
+    specializationStartSemester?: number;
+    subjectsCount: number;
+    subjects: Subject[];
+    matchesSpecPreference: boolean;
+  }>> {
+    const norm = (str?: string) => normalizeSubjectName(str);
+    const targetCol = norm(collegeName);
+
+    const settingsMap = new Map<string, any>();
+    try {
+      const { data: dbSettings } = await supabase.from('settings').select('*');
+      if (dbSettings) {
+        dbSettings.forEach(s => {
+          if (s.user_id) settingsMap.set(s.user_id, s);
+        });
+      }
+    } catch {}
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('unistudent_settings_')) {
+        const uid = key.replace('unistudent_settings_', '');
+        try {
+          const st = JSON.parse(localStorage.getItem(key) || '{}');
+          if (st) {
+            const existing = settingsMap.get(uid) || {};
+            settingsMap.set(uid, { ...existing, ...st, user_id: uid });
+          }
+        } catch {}
+      }
+    }
+
+    const matchingStudents: any[] = [];
+    for (const [uid, s] of settingsMap.entries()) {
+      const studentCol = norm(s.college);
+      const isColMatch = studentCol && (studentCol === targetCol || studentCol.includes(targetCol) || targetCol.includes(studentCol));
+      if (!isColMatch) continue;
+
+      const studentSpec = s.specialization || '';
+      const normSpec = norm(studentSpec);
+      const targetSpec = specializationName ? norm(specializationName) : '';
+
+      const matchesSpec = !targetSpec || (normSpec && (normSpec === targetSpec || normSpec.includes(targetSpec) || targetSpec.includes(normSpec)));
+
+      let studentSubjects: Subject[] = [];
+      try {
+        studentSubjects = await this.getSubjects(uid);
+      } catch {}
+
+      const savedEmail = localStorage.getItem(`unistudent_user_email_${uid}`) || '';
+      const email = s.email || savedEmail || '';
+
+      matchingStudents.push({
+        userId: uid,
+        name: s.name || 'طالب',
+        email,
+        university: s.university || '',
+        college: s.college || '',
+        specialization: s.specialization || '',
+        specializationStartYear: s.specialization_start_year || s.specializationStartYear || 1,
+        specializationStartSemester: s.specialization_start_semester || s.specializationStartSemester || 1,
+        subjectsCount: studentSubjects.length,
+        subjects: studentSubjects,
+        matchesSpecPreference: Boolean(matchesSpec)
+      });
+    }
+
+    return matchingStudents.sort((a, b) => {
+      if (a.matchesSpecPreference && !b.matchesSpecPreference) return -1;
+      if (!a.matchesSpecPreference && b.matchesSpecPreference) return 1;
+      return b.subjectsCount - a.subjectsCount;
+    });
+  },
+
+  async createSpecializationDatabase(params: {
+    parentCollegeDbId: string;
+    specializationNameAr: string;
+    specializationNameEn?: string;
+    specializationStartYear: number;
+    specializationStartSemester: number;
+    sourceUserId: string;
+    sourceUserEmail?: string;
+    sourceUserName?: string;
+    subjects?: Subject[];
+    driveFiles?: DriveFile[];
+  }): Promise<UniversityDatabase> {
+    const parentDb = await this.getUniversityDatabase(params.parentCollegeDbId);
+    if (!parentDb) {
+      throw new Error('لم يتم العثور على قاعدة بيانات الكلية التابعة.');
+    }
+
+    let rawSubjects = params.subjects;
+    if (!rawSubjects || rawSubjects.length === 0) {
+      try {
+        rawSubjects = await this.getSubjects(params.sourceUserId);
+      } catch {
+        rawSubjects = [];
+      }
+    }
+
+    let rawFiles = params.driveFiles;
+    if (!rawFiles || rawFiles.length === 0) {
+      try {
+        rawFiles = await this.getDriveFiles(params.sourceUserId);
+      } catch {
+        rawFiles = [];
+      }
+    }
+
+    // Smart Slicing: Only subjects from specializationStartYear & specializationStartSemester onward
+    const filteredSubjects = (rawSubjects || []).filter(s => {
+      const y = Number(s.yearIndex || 1);
+      const sem = Number(s.semesterIndex || 1);
+      return y > params.specializationStartYear ||
+             (y === params.specializationStartYear && sem >= params.specializationStartSemester);
+    });
+
+    const filteredFiles = rawFiles || [];
+
+    const specId = crypto.randomUUID();
+    const specDb: UniversityDatabase = {
+      id: specId,
+      universityNameAr: parentDb.universityNameAr,
+      universityNameEn: parentDb.universityNameEn,
+      collegeNameAr: `${parentDb.collegeNameAr} - ${params.specializationNameAr}`,
+      collegeNameEn: parentDb.collegeNameEn ? `${parentDb.collegeNameEn} - ${params.specializationNameEn || params.specializationNameAr}` : '',
+      sourceUserId: params.sourceUserId,
+      sourceUserEmail: params.sourceUserEmail || '',
+      sourceUserName: params.sourceUserName || '',
+      totalYears: parentDb.totalYears,
+      semestersPerYear: parentDb.semestersPerYear,
+      subjects: filteredSubjects,
+      driveFiles: filteredFiles,
+      gradingScale: parentDb.gradingScale || [],
+      isVisible: true,
+      isSpecialization: true,
+      parentDatabaseId: parentDb.id,
+      specializationNameAr: params.specializationNameAr,
+      specializationNameEn: params.specializationNameEn || '',
+      specializationStartYear: params.specializationStartYear,
+      specializationStartSemester: params.specializationStartSemester,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.createUniversityDatabase(specDb);
+    return specDb;
+  },
+
+  async deleteSpecializationDatabase(id: string): Promise<void> {
+    await this.deleteUniversityDatabase(id);
   },
 
   // --- Pending Updates for University Databases ---
@@ -1068,20 +1327,39 @@ export const db = {
         });
       } catch {}
 
+      const isSpec = Boolean(udb.isSpecialization);
       const norm = (str?: string) => normalizeSubjectName(str);
       const matchUni = (sUni?: string) => norm(sUni) && (norm(sUni) === norm(udb.universityNameAr) || norm(sUni) === norm(udb.universityNameEn) || (norm(udb.universityNameAr) && norm(sUni).includes(norm(udb.universityNameAr))));
       const matchCollege = (sCol?: string) => norm(sCol) && (norm(sCol) === norm(udb.collegeNameAr) || norm(sCol) === norm(udb.collegeNameEn) || (norm(udb.collegeNameAr) && norm(sCol).includes(norm(udb.collegeNameAr))));
 
       // Find all students in Supabase settings or localStorage
       const studentUserIds: string[] = [];
+      const checkStudentSubscription = (s: any) => {
+        if (isSpec) {
+          if (s.specialization_database_id === universityDbId || s.specializationDatabaseId === universityDbId) {
+            return true;
+          }
+          if (matchUni(s.university) && (matchCollege(s.college) || (udb.parentDatabaseId && (s.university_database_id === udb.parentDatabaseId || s.universityDatabaseId === udb.parentDatabaseId)))) {
+            const spec = s.specialization || '';
+            if (norm(spec) === norm(udb.specializationNameAr) || norm(spec) === norm(udb.specializationNameEn)) {
+              return true;
+            }
+          }
+          return false;
+        } else {
+          return (
+            s.university_database_id === universityDbId ||
+            s.universityDatabaseId === universityDbId ||
+            (matchUni(s.university) && matchCollege(s.college))
+          );
+        }
+      };
+
       try {
         const { data: dbSettings } = await supabase.from('settings').select('*');
         if (dbSettings) {
           dbSettings.forEach(s => {
-            if (
-              s.university_database_id === universityDbId ||
-              (matchUni(s.university) && matchCollege(s.college))
-            ) {
+            if (checkStudentSubscription(s)) {
               if (s.user_id && !studentUserIds.includes(s.user_id)) {
                 // Isolate source student: never target source student for reverse sync
                 if (udb.sourceUserId && s.user_id === udb.sourceUserId) return;
@@ -1100,10 +1378,7 @@ export const db = {
           if (udb.sourceUserId && uid === udb.sourceUserId) continue;
           try {
             const st = JSON.parse(localStorage.getItem(key) || '{}');
-            if (
-              st.universityDatabaseId === universityDbId ||
-              (matchUni(st.university) && matchCollege(st.college))
-            ) {
+            if (checkStudentSubscription(st)) {
               if (!studentUserIds.includes(uid)) studentUserIds.push(uid);
             }
           } catch {}
@@ -1118,29 +1393,54 @@ export const db = {
       }
 
       // 2. Notify students of approved changes (In-App notifications)
-      const notifTitle = action.type === 'add_subject'
-        ? `مادة جديدة مضافة للخطة: ${action.subject?.name || ''}`
-        : action.type === 'update_subject'
-        ? `تحديث في بيانات مادة: ${action.subject?.name || ''}`
-        : action.type === 'delete_subject'
-        ? `حذف مادة من الخطة: ${action.subject?.name || ''}`
-        : action.type === 'add_file'
-        ? `ملف جديد في درايف الكلية: ${action.subject?.name || ''}`
-        : action.type === 'update_file'
-        ? `تحديث ملف في درايف الكلية: ${action.subject?.name || ''}`
-        : action.type === 'delete_file'
-        ? `حذف ملف من درايف الكلية: ${action.subject?.name || ''}`
-        : action.type === 'update_grading_scale'
-        ? 'تحديث لائحة التقديرات المعتمدة لكليتك'
-        : 'تحديث معتمد في الخطة الدراسية لقاعدة بيانات كليتك';
+      const specLabel = udb.specializationNameAr ? `تخصص ${udb.specializationNameAr}` : 'التخصص';
+      const notifTitle = isSpec
+        ? (action.type === 'add_subject'
+          ? `مادة تخصص جديدة: ${action.subject?.name || ''}`
+          : action.type === 'update_subject'
+          ? `تحديث في مادة التخصص: ${action.subject?.name || ''}`
+          : action.type === 'delete_subject'
+          ? `حذف مادة تخصص: ${action.subject?.name || ''}`
+          : action.type === 'add_file'
+          ? `ملف جديد في درايف ${specLabel}: ${action.subject?.name || ''}`
+          : action.type === 'update_file'
+          ? `تحديث ملف في درايف ${specLabel}: ${action.subject?.name || ''}`
+          : action.type === 'delete_file'
+          ? `حذف ملف من درايف ${specLabel}: ${action.subject?.name || ''}`
+          : action.type === 'update_grading_scale'
+          ? `تحديث لائحة التقديرات المعتمدة لـ ${specLabel}`
+          : `تحديث معتمد في الخطة الدراسية لـ ${specLabel}`)
+        : (action.type === 'add_subject'
+          ? `مادة جديدة مضافة للخطة: ${action.subject?.name || ''}`
+          : action.type === 'update_subject'
+          ? `تحديث في بيانات مادة: ${action.subject?.name || ''}`
+          : action.type === 'delete_subject'
+          ? `حذف مادة من الخطة: ${action.subject?.name || ''}`
+          : action.type === 'add_file'
+          ? `ملف جديد في درايف الكلية: ${action.subject?.name || ''}`
+          : action.type === 'update_file'
+          ? `تحديث ملف في درايف الكلية: ${action.subject?.name || ''}`
+          : action.type === 'delete_file'
+          ? `حذف ملف من درايف الكلية: ${action.subject?.name || ''}`
+          : action.type === 'update_grading_scale'
+          ? 'تحديث لائحة التقديرات المعتمدة لكليتك'
+          : 'تحديث معتمد في الخطة الدراسية لقاعدة بيانات كليتك');
 
-      const notifMessage = action.type === 'add_subject'
-        ? `تم اعتماد إضافة مادة "${action.subject?.name || ''}" للخطة الدراسية من قِبل الإدارة.`
-        : action.type === 'delete_subject'
-        ? `تم اعتماد حذف مادة "${action.subject?.name || ''}" من الخطة الدراسية من قِبل الإدارة.`
-        : action.type === 'add_file' || action.type === 'update_file' || action.type === 'delete_file'
-        ? `تم تحديث ملفات ومجلدات الدرايف المرجعية لكليتك من قِبل الإدارة.`
-        : 'تم اعتماد وتحديث الخطة الدراسية لكليتك. سيتم تطبيق التغييرات تلقائياً في حسابك.';
+      const notifMessage = isSpec
+        ? (action.type === 'add_subject'
+          ? `تم اعتماد إضافة مادة التخصص "${action.subject?.name || ''}" لخطة ${specLabel} من قِبل الإدارة.`
+          : action.type === 'delete_subject'
+          ? `تم اعتماد حذف مادة التخصص "${action.subject?.name || ''}" من خطة ${specLabel} من قِبل الإدارة.`
+          : action.type === 'add_file' || action.type === 'update_file' || action.type === 'delete_file'
+          ? `تم تحديث ملفات ومجلدات درايف ${specLabel} المرجعية من قِبل الإدارة.`
+          : `تم اعتماد وتحديث الخطة الدراسية لـ ${specLabel}. سيتم تطبيق التغييرات تلقائياً في حسابك.`)
+        : (action.type === 'add_subject'
+          ? `تم اعتماد إضافة مادة "${action.subject?.name || ''}" للخطة الدراسية من قِبل الإدارة.`
+          : action.type === 'delete_subject'
+          ? `تم اعتماد حذف مادة "${action.subject?.name || ''}" من الخطة الدراسية من قِبل الإدارة.`
+          : action.type === 'add_file' || action.type === 'update_file' || action.type === 'delete_file'
+          ? `تم تحديث ملفات ومجلدات الدرايف المرجعية لكليتك من قِبل الإدارة.`
+          : 'تم اعتماد وتحديث الخطة الدراسية لكليتك. سيتم تطبيق التغييرات تلقائياً في حسابك.');
 
       for (const uid of studentUserIds) {
         await this.sendStudentNotification(uid, {
@@ -1161,6 +1461,9 @@ export const db = {
             universityNameEn: udb.universityNameEn,
             collegeNameAr: udb.collegeNameAr,
             collegeNameEn: udb.collegeNameEn,
+            isSpecialization: isSpec,
+            parentDatabaseId: udb.parentDatabaseId,
+            specializationNameAr: udb.specializationNameAr,
             timestamp: Date.now() 
           }
         }).catch(() => {});
@@ -1973,6 +2276,26 @@ function mapDriveFileFromDB(row: any): DriveFile {
 }
 
 function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
+  const specMeta = Array.isArray(row.grading_scale)
+    ? row.grading_scale.find((g: any) => g && g.id === '__spec_meta__')
+    : null;
+
+  const isSpecialization = Boolean(
+    row.is_specialization !== undefined
+      ? row.is_specialization
+      : (specMeta?.isSpecialization || row.isSpecialization)
+  );
+
+  const parentDatabaseId = row.parent_database_id || specMeta?.parentDatabaseId || row.parentDatabaseId || undefined;
+  const specializationNameAr = row.specialization_name_ar || specMeta?.specializationNameAr || row.specializationNameAr || undefined;
+  const specializationNameEn = row.specialization_name_en || specMeta?.specializationNameEn || row.specializationNameEn || undefined;
+  const specializationStartYear = Number(row.specialization_start_year || specMeta?.specializationStartYear || row.specializationStartYear || 1);
+  const specializationStartSemester = Number(row.specialization_start_semester || specMeta?.specializationStartSemester || row.specializationStartSemester || 1);
+
+  const cleanGradingScale = Array.isArray(row.grading_scale)
+    ? row.grading_scale.filter((g: any) => g && g.id !== '__spec_meta__')
+    : [];
+
   return {
     id: row.id,
     universityNameAr: row.university_name_ar || '',
@@ -1985,6 +2308,12 @@ function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
     totalYears: row.total_years || 4,
     semestersPerYear: row.semesters_per_year || 2,
     isVisible: row.is_visible !== false && row.isVisible !== false,
+    isSpecialization,
+    parentDatabaseId,
+    specializationNameAr,
+    specializationNameEn,
+    specializationStartYear: isSpecialization ? specializationStartYear : undefined,
+    specializationStartSemester: isSpecialization ? specializationStartSemester : undefined,
     subjects: (row.subjects || []).map((s: any) => ({
       id: s.id,
       code: s.code || '',
@@ -2007,7 +2336,7 @@ function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
       url: f.url || '',
       b2FileId: f.b2FileId || f.b2_file_id
     })),
-    gradingScale: row.grading_scale || [],
+    gradingScale: cleanGradingScale,
     createdAt: row.created_at || new Date().toISOString(),
     updatedAt: row.updated_at || new Date().toISOString()
   };
@@ -2017,6 +2346,10 @@ function mapPendingUpdateFromDB(row: any): UniversityPendingUpdate {
   return {
     id: row.id,
     universityDatabaseId: row.university_database_id,
+    universityName: row.university_name,
+    collegeName: row.college_name,
+    isSpecialization: row.is_specialization || false,
+    specializationName: row.specialization_name,
     sourceUserId: row.source_user_id,
     sourceUserEmail: row.source_user_email || '',
     sourceUserName: row.source_user_name || '',
