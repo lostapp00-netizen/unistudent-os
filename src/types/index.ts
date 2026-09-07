@@ -224,6 +224,7 @@ export type UniversityDatabase = {
   sourceUserName?: string;
   totalYears: number;
   semestersPerYear: number;
+  availableYears?: number[];
   subjects: Subject[];
   driveFiles: DriveFile[];
   gradingScale?: GradeRule[];

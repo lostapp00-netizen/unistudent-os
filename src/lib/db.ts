@@ -765,6 +765,9 @@ export const db = {
         source_user_name: dbData.sourceUserName || '',
         total_years: dbData.totalYears,
         semesters_per_year: dbData.semestersPerYear,
+        available_years: dbData.availableYears || [1],
+        specialization_start_year: dbData.specializationStartYear || 2,
+        specialization_start_semester: dbData.specializationStartSemester || 1,
         subjects: dbData.subjects,
         drive_files: dbData.driveFiles,
         grading_scale: gradingScalePayload,
@@ -778,8 +781,8 @@ export const db = {
         payload.parent_database_id = dbData.parentDatabaseId || null;
         payload.specialization_name_ar = dbData.specializationNameAr || null;
         payload.specialization_name_en = dbData.specializationNameEn || null;
-        payload.specialization_start_year = dbData.specializationStartYear || null;
-        payload.specialization_start_semester = dbData.specializationStartSemester || null;
+        payload.specialization_start_year = dbData.specializationStartYear || 2;
+        payload.specialization_start_semester = dbData.specializationStartSemester || 1;
       }
 
       const { error } = await supabase.from('university_databases').upsert(payload);
@@ -826,6 +829,7 @@ export const db = {
       if (partialData.subjects !== undefined) payload.subjects = partialData.subjects;
       if (partialData.driveFiles !== undefined) payload.drive_files = partialData.driveFiles;
       if (partialData.isVisible !== undefined) payload.is_visible = partialData.isVisible;
+      if (partialData.availableYears !== undefined) payload.available_years = partialData.availableYears;
 
       // Specialization columns
       if (partialData.isSpecialization !== undefined) payload.is_specialization = partialData.isSpecialization;
@@ -937,7 +941,12 @@ export const db = {
     }));
   },
 
-  async getStudentsWithSpecialization(collegeName: string, specializationName?: string): Promise<Array<{
+  async getStudentsWithSpecialization(
+    collegeName: string, 
+    specializationName?: string,
+    sourceUserId?: string,
+    existingStudentsList?: any[]
+  ): Promise<Array<{
     userId: string;
     name: string;
     email: string;
@@ -949,16 +958,41 @@ export const db = {
     subjectsCount: number;
     subjects: Subject[];
     matchesSpecPreference: boolean;
+    isCollegeSource?: boolean;
   }>> {
     const norm = (str?: string) => normalizeSubjectName(str);
     const targetCol = norm(collegeName);
 
     const settingsMap = new Map<string, any>();
+
+    // Seed from existingStudentsList if passed
+    if (existingStudentsList && Array.isArray(existingStudentsList)) {
+      for (const st of existingStudentsList) {
+        const uid = st.id || st.userId;
+        if (uid) {
+          settingsMap.set(uid, {
+            user_id: uid,
+            name: st.name,
+            email: st.email,
+            university: st.university,
+            college: st.college,
+            specialization: st.specialization,
+            specializationStartYear: st.specializationStartYear || st.specialization_start_year,
+            specializationStartSemester: st.specializationStartSemester || st.specialization_start_semester,
+            subjects: st.subjects || st.raw?.subjects || []
+          });
+        }
+      }
+    }
+
     try {
       const { data: dbSettings } = await supabase.from('settings').select('*');
       if (dbSettings) {
         dbSettings.forEach(s => {
-          if (s.user_id) settingsMap.set(s.user_id, s);
+          if (s.user_id) {
+            const existing = settingsMap.get(s.user_id) || {};
+            settingsMap.set(s.user_id, { ...existing, ...s });
+          }
         });
       }
     } catch {}
@@ -979,20 +1013,23 @@ export const db = {
 
     const matchingStudents: any[] = [];
     for (const [uid, s] of settingsMap.entries()) {
+      const isSourceUser = Boolean(sourceUserId && uid === sourceUserId);
       const studentCol = norm(s.college);
-      const isColMatch = studentCol && (studentCol === targetCol || studentCol.includes(targetCol) || targetCol.includes(studentCol));
+      const isColMatch = isSourceUser || !targetCol || (studentCol && (studentCol === targetCol || studentCol.includes(targetCol) || targetCol.includes(studentCol)));
       if (!isColMatch) continue;
 
       const studentSpec = s.specialization || '';
       const normSpec = norm(studentSpec);
       const targetSpec = specializationName ? norm(specializationName) : '';
 
-      const matchesSpec = !targetSpec || (normSpec && (normSpec === targetSpec || normSpec.includes(targetSpec) || targetSpec.includes(normSpec)));
+      const matchesSpec = isSourceUser || !targetSpec || (normSpec && (normSpec === targetSpec || normSpec.includes(targetSpec) || targetSpec.includes(normSpec)));
 
-      let studentSubjects: Subject[] = [];
-      try {
-        studentSubjects = await this.getSubjects(uid);
-      } catch {}
+      let studentSubjects: Subject[] = Array.isArray(s.subjects) && s.subjects.length > 0 ? s.subjects : [];
+      if (studentSubjects.length === 0) {
+        try {
+          studentSubjects = await this.getSubjects(uid);
+        } catch {}
+      }
 
       const savedEmail = localStorage.getItem(`unistudent_user_email_${uid}`) || '';
       const email = s.email || savedEmail || '';
@@ -1004,15 +1041,18 @@ export const db = {
         university: s.university || '',
         college: s.college || '',
         specialization: s.specialization || '',
-        specializationStartYear: s.specialization_start_year || s.specializationStartYear || 1,
+        specializationStartYear: s.specialization_start_year || s.specializationStartYear || 2,
         specializationStartSemester: s.specialization_start_semester || s.specializationStartSemester || 1,
         subjectsCount: studentSubjects.length,
         subjects: studentSubjects,
-        matchesSpecPreference: Boolean(matchesSpec)
+        matchesSpecPreference: Boolean(matchesSpec),
+        isCollegeSource: isSourceUser
       });
     }
 
     return matchingStudents.sort((a, b) => {
+      if (a.isCollegeSource && !b.isCollegeSource) return -1;
+      if (!a.isCollegeSource && b.isCollegeSource) return 1;
       if (a.matchesSpecPreference && !b.matchesSpecPreference) return -1;
       if (!a.matchesSpecPreference && b.matchesSpecPreference) return 1;
       return b.subjectsCount - a.subjectsCount;
@@ -1028,6 +1068,7 @@ export const db = {
     sourceUserId: string;
     sourceUserEmail?: string;
     sourceUserName?: string;
+    availableYears?: number[];
     subjects?: Subject[];
     driveFiles?: DriveFile[];
   }): Promise<UniversityDatabase> {
@@ -1076,6 +1117,7 @@ export const db = {
       sourceUserName: params.sourceUserName || '',
       totalYears: parentDb.totalYears,
       semestersPerYear: parentDb.semestersPerYear,
+      availableYears: params.availableYears || [params.specializationStartYear],
       subjects: filteredSubjects,
       driveFiles: filteredFiles,
       gradingScale: parentDb.gradingScale || [],
@@ -2311,13 +2353,16 @@ function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
     sourceUserName: row.source_user_name || '',
     totalYears: row.total_years || 4,
     semestersPerYear: row.semesters_per_year || 2,
+    availableYears: Array.isArray(row.available_years) 
+      ? row.available_years 
+      : (Array.isArray(row.availableYears) ? row.availableYears : [1]),
     isVisible: row.is_visible !== false && row.isVisible !== false,
     isSpecialization,
     parentDatabaseId,
     specializationNameAr,
     specializationNameEn,
-    specializationStartYear: isSpecialization ? specializationStartYear : undefined,
-    specializationStartSemester: isSpecialization ? specializationStartSemester : undefined,
+    specializationStartYear: Number(row.specialization_start_year || specMeta?.specializationStartYear || row.specializationStartYear || 2),
+    specializationStartSemester: Number(row.specialization_start_semester || specMeta?.specializationStartSemester || row.specializationStartSemester || 1),
     subjects: (row.subjects || []).map((s: any) => ({
       id: s.id,
       code: s.code || '',

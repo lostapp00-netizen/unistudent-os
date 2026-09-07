@@ -412,47 +412,39 @@ export function Settings() {
         </div>
       )}
 
-      {/* Responsive Tab Navigation: Ultra-sleek, Auto-fitting on Phones, Flexible on Tablets & Full on Laptops */}
+      {/* Responsive Tab Navigation: Smooth horizontal scroll, full unclipped labels */}
       <nav 
         aria-label="Settings Tabs"
-        className="flex items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 bg-zinc-100/90 dark:bg-zinc-800/70 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-x-auto no-scrollbar scroll-smooth shadow-2xs"
+        className="flex items-center gap-2 p-1.5 bg-zinc-100/90 dark:bg-zinc-800/70 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-x-auto no-scrollbar scroll-smooth shadow-2xs"
       >
         {/* Tab 1: Profile & Academic Plan */}
         <button
           type="button"
           onClick={() => setActiveTab('profile')}
-          className={`flex-1 min-w-[76px] sm:min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 rounded-xl font-bold transition-all cursor-pointer select-none ${
+          className={`shrink-0 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer select-none ${
             activeTab === 'profile'
               ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm border border-zinc-200/80 dark:border-zinc-700/80'
               : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
           }`}
         >
-          <GraduationCap size={16} className="shrink-0 sm:w-[17px] sm:h-[17px]" />
-          <span className="truncate">
-            <span className="inline sm:hidden text-[11px]">{isAr ? 'الخطة' : 'Plan'}</span>
-            <span className="hidden sm:inline lg:hidden text-xs">{isAr ? 'الملف والخطة' : 'Academic Plan'}</span>
-            <span className="hidden lg:inline text-xs lg:text-sm">{isAr ? 'الملف الشخصي والخطة الأكاديمية' : 'Profile & Academic Plan'}</span>
-          </span>
+          <GraduationCap size={17} className="shrink-0" />
+          <span>{isAr ? 'الملف الشخصي والخطة' : 'Profile & Plan'}</span>
         </button>
 
         {/* Tab 2: Databases & Restore */}
         <button
           type="button"
           onClick={() => setActiveTab('databases')}
-          className={`flex-1 min-w-[76px] sm:min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 rounded-xl font-bold transition-all cursor-pointer select-none ${
+          className={`shrink-0 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer select-none ${
             activeTab === 'databases'
               ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm border border-zinc-200/80 dark:border-zinc-700/80'
               : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
           }`}
         >
-          <Database size={16} className="shrink-0 sm:w-[17px] sm:h-[17px]" />
-          <span className="truncate">
-            <span className="inline sm:hidden text-[11px]">{isAr ? 'البيانات' : 'Databases'}</span>
-            <span className="hidden sm:inline lg:hidden text-xs">{isAr ? 'قواعد البيانات' : 'Databases'}</span>
-            <span className="hidden lg:inline text-xs lg:text-sm">{isAr ? 'قواعد البيانات والاسترداد' : 'Databases & Restore'}</span>
-          </span>
+          <Database size={17} className="shrink-0" />
+          <span>{isAr ? 'قواعد البيانات' : 'Databases'}</span>
           {settings.universityDatabaseId && (
-            <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-500 shrink-0"></span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
           )}
         </button>
 
@@ -460,36 +452,28 @@ export function Settings() {
         <button
           type="button"
           onClick={() => setActiveTab('security')}
-          className={`flex-1 min-w-[76px] sm:min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 rounded-xl font-bold transition-all cursor-pointer select-none ${
+          className={`shrink-0 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer select-none ${
             activeTab === 'security'
               ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm border border-zinc-200/80 dark:border-zinc-700/80'
               : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
           }`}
         >
-          <Shield size={16} className="shrink-0 sm:w-[17px] sm:h-[17px]" />
-          <span className="truncate">
-            <span className="inline sm:hidden text-[11px]">{isAr ? 'الأمان' : 'Security'}</span>
-            <span className="hidden sm:inline lg:hidden text-xs">{isAr ? 'الأمان والباسورد' : 'Security & Password'}</span>
-            <span className="hidden lg:inline text-xs lg:text-sm">{isAr ? 'الأمان وكلمة المرور' : 'Security & Password'}</span>
-          </span>
+          <Shield size={17} className="shrink-0" />
+          <span>{isAr ? 'الأمان وكلمة المرور' : 'Security & Password'}</span>
         </button>
 
         {/* Tab 4: Feedback & Support */}
         <button
           type="button"
           onClick={() => setActiveTab('feedback')}
-          className={`flex-1 min-w-[76px] sm:min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 lg:px-4 py-2 sm:py-2.5 rounded-xl font-bold transition-all cursor-pointer select-none ${
+          className={`shrink-0 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl font-bold text-xs sm:text-sm whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer select-none ${
             activeTab === 'feedback'
               ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm border border-zinc-200/80 dark:border-zinc-700/80'
               : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
           }`}
         >
-          <MessageSquare size={16} className="shrink-0 sm:w-[17px] sm:h-[17px]" />
-          <span className="truncate">
-            <span className="inline sm:hidden text-[11px]">{isAr ? 'المقترحات' : 'Feedback'}</span>
-            <span className="hidden sm:inline lg:hidden text-xs">{isAr ? 'الدعم والمقترحات' : 'Feedback'}</span>
-            <span className="hidden lg:inline text-xs lg:text-sm">{isAr ? 'الدعم والمقترحات' : 'Support & Feedback'}</span>
-          </span>
+          <MessageSquare size={17} className="shrink-0" />
+          <span>{isAr ? 'المقترحات والدعم' : 'Feedback & Support'}</span>
         </button>
       </nav>
 
@@ -880,30 +864,18 @@ export function Settings() {
         <div className="space-y-4 sm:space-y-6 animate-in fade-in">
           {/* Main College Database Card */}
           <section className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-3.5 sm:p-6 lg:p-7 space-y-4 sm:space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-3 sm:pb-4">
-              <div className="flex items-center gap-2.5 sm:gap-3">
-                <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 shrink-0">
-                  <Building2 size={18} className="sm:w-5 sm:h-5" />
-                </div>
-                <div>
-                  <h2 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white">
-                    {isAr ? 'قاعدة بيانات الكلية والمنهج الدراسي العام' : 'College Curriculum Database'}
-                  </h2>
-                  <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5">
-                    {isAr ? 'استرداد المواد، التقديرات، وملفات الدرايف المعتمدة لكليتك بنقرة واحدة' : 'Restore accredited subjects, grading rules, and drive files'}
-                  </p>
-                </div>
+            <div className="flex items-center gap-2.5 sm:gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-3 sm:pb-4">
+              <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 shrink-0">
+                <Building2 size={18} className="sm:w-5 sm:h-5" />
               </div>
-
-              <button
-                type="button"
-                onClick={() => setIsRestoreModalOpen(true)}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2.5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-500/20 transition-all cursor-pointer shrink-0"
-              >
-                <Building2 size={16} />
-                <Sparkles size={14} className="text-amber-300" />
-                <span>{isAr ? 'استرداد من قاعدة بيانات الجامعات' : 'Restore from University Database'}</span>
-              </button>
+              <div>
+                <h2 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white">
+                  {isAr ? 'قاعدة بيانات الكلية والمنهج الدراسي العام' : 'College Curriculum Database'}
+                </h2>
+                <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5">
+                  {isAr ? 'استرداد المواد، التقديرات، وملفات الدرايف المعتمدة للسنوات التمهيدية والعامة' : 'Restore accredited subjects, grading rules, and drive files for foundation years'}
+                </p>
+              </div>
             </div>
 
             {/* Linked Status */}
@@ -924,8 +896,8 @@ export function Settings() {
                     </div>
                     <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed">
                       {isAr 
-                        ? `الخطة مربوطة تلقائياً (${settings.totalYears} سنوات، ${settings.semestersPerYear} فصول/سنة). أي تحديثات تعتمدها إدارة الكلية تظهر في حسابك تلقائياً وبشكل فوري.` 
-                        : `Linked template (${settings.totalYears} yrs, ${settings.semestersPerYear} terms/yr). Approved updates reflect instantly.`}
+                        ? `الخطة مربوطة تلقائياً (${settings.totalYears} سنوات، ${settings.semestersPerYear} فصول/سنة). التحديثات تظهر في حسابك تلقائياً وبشكل فوري.` 
+                        : `Linked template (${settings.totalYears} yrs, ${settings.semestersPerYear} terms/yr). Updates reflect instantly.`}
                     </p>
                   </div>
                 </div>
@@ -934,9 +906,10 @@ export function Settings() {
                   <button
                     type="button"
                     onClick={() => setIsRestoreModalOpen(true)}
-                    className="w-full sm:w-auto text-center px-3.5 py-2.5 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-white dark:bg-zinc-900 hover:bg-indigo-50 dark:hover:bg-zinc-800 border border-indigo-200 dark:border-indigo-800 transition-all cursor-pointer shadow-xs"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-white dark:bg-zinc-900 hover:bg-indigo-50 dark:hover:bg-zinc-800 border border-indigo-200 dark:border-indigo-800 transition-all cursor-pointer shadow-xs"
                   >
-                    {isAr ? 'تغيير أو إعادة استرداد' : 'Change / Re-import'}
+                    <Building2 size={15} />
+                    <span>{isAr ? 'تغيير أو إعادة استرداد الكلية' : 'Change / Re-import College'}</span>
                   </button>
 
                   <button
@@ -965,10 +938,10 @@ export function Settings() {
                 <button
                   type="button"
                   onClick={() => setIsRestoreModalOpen(true)}
-                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 cursor-pointer inline-flex items-center justify-center gap-2"
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 cursor-pointer inline-flex items-center justify-center gap-2"
                 >
-                  <Sparkles size={14} className="text-amber-300" />
-                  <span>{isAr ? 'استعراض الجامعات والكليات المتاحة' : 'Browse Available Databases'}</span>
+                  <Building2 size={16} />
+                  <span>{isAr ? 'استرداد قاعدة بيانات الكلية العامة' : 'Restore General College Database'}</span>
                 </button>
               </div>
             )}

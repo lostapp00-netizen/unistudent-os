@@ -549,7 +549,7 @@ export function Schedule() {
           </div>
           
           <div className="overflow-x-auto flex-1">
-            <div className="min-w-[950px]">
+            <div className="min-w-[1200px]">
               <div className="grid grid-cols-7 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/40">
                 {days.map(day => (
                   <div key={day} className="py-3 text-center text-xs font-black text-zinc-700 dark:text-zinc-300">
@@ -568,67 +568,99 @@ export function Schedule() {
                   return (
                     <div 
                       key={day.toString()} 
-                      className={`min-h-[230px] p-2 transition-colors flex flex-col justify-between ${
+                      className={`min-h-[420px] p-2.5 transition-colors flex flex-col justify-between ${
                         !isCurrentMonth ? 'bg-zinc-50/70 dark:bg-zinc-900/40 text-zinc-400 dark:text-zinc-600' : 'bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200'
                       }`}
                     >
                       <div className="flex-1 flex flex-col min-w-0">
                         {/* Day Header */}
-                        <div className="flex justify-between items-center mb-1.5 pb-1 border-b border-zinc-100 dark:border-zinc-800/60">
-                          <span className={`inline-flex items-center justify-center w-6 h-6 rounded-lg text-xs font-bold ${
+                        <div className="flex justify-between items-center mb-2 pb-1.5 border-b border-zinc-100 dark:border-zinc-800/60">
+                          <span className={`inline-flex items-center justify-center w-7 h-7 rounded-xl text-xs font-black ${
                             isToday 
-                              ? 'bg-blue-600 text-white font-black shadow-md shadow-blue-500/30' 
+                              ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' 
                               : 'text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800'
                           }`}>
                             {format(day, 'd')}
                           </span>
 
-                          <button
-                            onClick={() => openAdd(dayOfWeek)}
-                            className="p-1 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition-colors cursor-pointer"
-                            title={isAr ? 'إضافة إلى هذا اليوم' : 'Add to this day'}
-                          >
-                            <Plus size={13} />
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            {dayItems.length > 0 && (
+                              <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
+                                {dayItems.length} {isAr ? 'حصص' : 'classes'}
+                              </span>
+                            )}
+                            <button
+                              onClick={() => openAdd(dayOfWeek)}
+                              className="p-1 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition-colors cursor-pointer"
+                              title={isAr ? 'إضافة إلى هذا اليوم' : 'Add to this day'}
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </div>
                         </div>
 
-                        {/* Slim Pills Items List */}
-                        <div className="flex flex-col gap-1 overflow-y-auto max-h-[175px] pr-0.5 space-y-0.5">
+                        {/* Rich Event Cards List (Fits 5-8 items comfortably) */}
+                        <div className="flex flex-col gap-2 overflow-y-auto max-h-[350px] pr-1 space-y-0.5">
                           {dayItems.map(item => {
                             const subject = subjects.find(s => s.id === item.subjectId);
-                            let pillStyle = 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800';
-                            let typeText = isAr ? 'محاضرة' : 'Lec';
+                            let pillStyle = 'bg-blue-50/90 text-blue-900 border-blue-200/80 dark:bg-blue-950/40 dark:text-blue-200 dark:border-blue-800/60';
+                            let badgeStyle = 'bg-blue-200/70 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200';
+                            let typeText = isAr ? 'محاضرة' : 'Lecture';
                             
                             if (item.type === 'tutorial') {
-                              pillStyle = 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:border-sky-800';
-                              typeText = isAr ? 'سكشن' : 'Sec';
+                              pillStyle = 'bg-sky-50/90 text-sky-900 border-sky-200/80 dark:bg-sky-950/40 dark:text-sky-200 dark:border-sky-800/60';
+                              badgeStyle = 'bg-sky-200/70 text-sky-800 dark:bg-sky-900/60 dark:text-sky-200';
+                              typeText = isAr ? 'سكشن' : 'Section';
                             } else if (item.type === 'lab') {
-                              pillStyle = 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/50 dark:text-teal-300 dark:border-teal-800';
+                              pillStyle = 'bg-teal-50/90 text-teal-900 border-teal-200/80 dark:bg-teal-950/40 dark:text-teal-200 dark:border-teal-800/60';
+                              badgeStyle = 'bg-teal-200/70 text-teal-800 dark:bg-teal-900/60 dark:text-teal-200';
                               typeText = isAr ? 'معمل' : 'Lab';
                             }
 
                             return (
                               <div 
                                 key={item.id}
-                                title={`${subject?.name || 'مادة'} (${typeText}) ${item.startTime}-${item.endTime}`}
-                                className={`text-[11px] py-0.5 px-1.5 rounded-md border flex items-center justify-between gap-1 transition-all hover:scale-[1.02] cursor-pointer truncate ${pillStyle}`}
-                                onClick={() => openEdit(item)}
+                                onClick={() => setPreviewEntity({ type: 'schedule', id: item.id })}
+                                title={isAr ? 'انقر لعرض تفاصيل المحاضرة' : 'Click to view class details'}
+                                className={`p-2.5 rounded-2xl border transition-all hover:scale-[1.01] hover:shadow-md cursor-pointer flex flex-col justify-between gap-1.5 ${pillStyle}`}
                               >
-                                <div className="flex items-center gap-1 truncate min-w-0">
-                                  <Clock size={10} className="shrink-0" />
-                                  <span className="font-bold shrink-0 text-[10px] opacity-80">{item.startTime}</span>
-                                  <span className="font-bold truncate">{subject?.name || 'مادة'}</span>
+                                <div className="space-y-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-md shrink-0 ${badgeStyle}`}>
+                                      {typeText}
+                                    </span>
+                                    <span className="flex items-center gap-1 font-black text-[10px] opacity-90 shrink-0">
+                                      <Clock size={10} /> {item.startTime} - {item.endTime}
+                                    </span>
+                                  </div>
+                                  <h4 className="font-black text-xs sm:text-sm text-zinc-900 dark:text-white leading-tight line-clamp-2">
+                                    {subject?.name || (isAr ? 'مادة دراسية' : 'Course')}
+                                  </h4>
                                 </div>
-                                <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-white/70 dark:bg-zinc-800/80 shrink-0">
-                                  {typeText}
-                                </span>
+
+                                {(item.doctorName || item.location) && (
+                                  <div className="pt-1.5 border-t border-black/5 dark:border-white/10 flex flex-col gap-0.5 text-[10px] font-bold text-zinc-600 dark:text-zinc-300">
+                                    {item.doctorName && (
+                                      <div className="flex items-center gap-1.5 truncate">
+                                        <User size={11} className="shrink-0 opacity-70 text-blue-600 dark:text-blue-400" />
+                                        <span className="truncate">{item.doctorName}</span>
+                                      </div>
+                                    )}
+                                    {item.location && (
+                                      <div className="flex items-center gap-1.5 truncate">
+                                        <MapPin size={11} className="shrink-0 opacity-70 text-amber-600 dark:text-amber-400" />
+                                        <span className="truncate">{item.location}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
 
                           {dayItems.length === 0 && (
-                            <div className="h-full flex items-center justify-center py-8 opacity-20">
-                              <span className="text-[10px] text-zinc-400 font-medium">{isAr ? 'لا توجد حصص' : 'Empty'}</span>
+                            <div className="h-full min-h-[140px] flex items-center justify-center opacity-25">
+                              <span className="text-xs text-zinc-400 font-bold">{isAr ? 'لا توجد حصص' : 'Empty'}</span>
                             </div>
                           )}
                         </div>
@@ -806,6 +838,12 @@ export function Schedule() {
       <EntityPreviewModal
         preview={previewEntity}
         onClose={() => setPreviewEntity(null)}
+        onEdit={(ent) => {
+          if (ent.type === 'schedule') {
+            const itm = scheduleItems.find(s => s.id === ent.id);
+            if (itm) openEdit(itm);
+          }
+        }}
       />
     </div>
   );

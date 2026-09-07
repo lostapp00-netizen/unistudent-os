@@ -742,29 +742,56 @@ export const useAppStore = create<AppState>((set, get) => ({
       set(state => ({ settings: { ...state.settings, ...updatedSettings } }));
       db.upsertSettings(userId, updatedSettings).catch(console.error);
 
-      // Smart Slicing Combination
+      // Smart Slicing & Non-Destructive Dual-Database Merging
       let rawCandidateSubjects: Subject[] = [];
+      const currentSubjects = get().subjects || [];
+
       if (specDb) {
         const startYear = Number(specDb.specializationStartYear || 2);
         const startSem = Number(specDb.specializationStartSemester || 1);
 
-        // Foundation subjects from parent college database (before specialization milestone)
-        const foundationSubjs = (mainCollegeDb.subjects || []).filter(s => {
+        // 1. Preserve existing foundation subjects of the student (before specialization milestone)
+        let preservedFoundationSubjs = currentSubjects.filter(s => {
           const y = Number(s.yearIndex || 1);
-          const sm = Number(s.semesterIndex || 1);
-          return y < startYear || (y === startYear && sm < startSem);
+          const sem = Number(s.semesterIndex || 1);
+          return y < startYear || (y === startYear && sem < startSem);
         });
 
-        // Specialization subjects from specialization database (from milestone onward)
+        // If student had no foundation subjects yet, pull them from the parent college database
+        if (preservedFoundationSubjs.length === 0 && mainCollegeDb) {
+          preservedFoundationSubjs = (mainCollegeDb.subjects || []).filter(s => {
+            const y = Number(s.yearIndex || 1);
+            const sem = Number(s.semesterIndex || 1);
+            return y < startYear || (y === startYear && sem < startSem);
+          });
+        }
+
+        // 2. Specialized courses from the specialization database
         const specializationSubjs = (specDb.subjects || []).filter(s => {
           const y = Number(s.yearIndex || 1);
-          const sm = Number(s.semesterIndex || 1);
-          return y > startYear || (y === startYear && sm >= startSem);
+          const sem = Number(s.semesterIndex || 1);
+          return y > startYear || (y === startYear && sem >= startSem);
         });
 
-        rawCandidateSubjects = [...foundationSubjs, ...specializationSubjs];
+        rawCandidateSubjects = [...preservedFoundationSubjs, ...specializationSubjs];
       } else {
-        rawCandidateSubjects = mainCollegeDb.subjects || [];
+        // General College Restore: Restore foundation subjects while PRESERVING any existing specialization courses
+        const startYear = Number(mainCollegeDb.specializationStartYear || 2);
+        const startSem = Number(mainCollegeDb.specializationStartSemester || 1);
+
+        const existingSpecializationSubjs = currentSubjects.filter(s => {
+          const y = Number(s.yearIndex || 1);
+          const sem = Number(s.semesterIndex || 1);
+          return y > startYear || (y === startYear && sem >= startSem);
+        });
+
+        const foundationSubjs = (mainCollegeDb.subjects || []).filter(s => {
+          const y = Number(s.yearIndex || 1);
+          const sem = Number(s.semesterIndex || 1);
+          return y < startYear || (y === startYear && sem < startSem);
+        });
+
+        rawCandidateSubjects = [...foundationSubjs, ...existingSpecializationSubjs];
       }
 
       if (rawCandidateSubjects.length > 0) {
@@ -805,19 +832,24 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
 
+      // Drive files: Non-destructive append & merge
       if (options?.importDrive !== false) {
-        const combinedDriveFiles: DriveFile[] = [
-          ...(mainCollegeDb.driveFiles || []),
-          ...(specDb && specDb.id !== mainCollegeDb.id ? (specDb.driveFiles || []) : [])
-        ];
+        const incomingDriveFiles: DriveFile[] = specDb 
+          ? (specDb.driveFiles || [])
+          : (mainCollegeDb.driveFiles || []);
 
-        if (combinedDriveFiles.length > 0) {
-          await db.clearAllDriveFiles(userId);
+        if (incomingDriveFiles.length > 0) {
+          const currentDrive = get().files || [];
+          const existingNames = new Set(currentDrive.map(f => `${f.name}-${f.type}-${f.parentId || 'root'}`));
+
           const idMap = new Map<string, string>();
           const clonedFiles: DriveFile[] = [];
-          const sortedFiles = [...combinedDriveFiles].sort((a, b) => (a.type === 'folder' ? -1 : 1));
+          const sortedFiles = [...incomingDriveFiles].sort((a, b) => (a.type === 'folder' ? -1 : 1));
 
           for (const file of sortedFiles) {
+            const signature = `${file.name}-${file.type}-${file.parentId || 'root'}`;
+            if (existingNames.has(signature)) continue;
+
             const newId = uuidv4();
             idMap.set(file.id, newId);
             const newParentId = file.parentId ? idMap.get(file.parentId) || null : null;
@@ -836,7 +868,9 @@ export const useAppStore = create<AppState>((set, get) => ({
             await db.addDriveFile(userId, cloned);
           }
 
-          set({ files: clonedFiles });
+          if (clonedFiles.length > 0) {
+            set(state => ({ files: [...state.files, ...clonedFiles] }));
+          }
         }
       }
     } finally {

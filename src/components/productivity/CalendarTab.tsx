@@ -160,7 +160,7 @@ export function CalendarTab() {
         
         {/* Horizontal scroll container for full visibility */}
         <div className="overflow-x-auto flex-1">
-          <div className="min-w-[950px]">
+          <div className="min-w-[1200px]">
             {/* Days of Week Header */}
             <div className="grid grid-cols-7 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/40">
               {weekDays.map(day => (
@@ -181,7 +181,7 @@ export function CalendarTab() {
                 return (
                   <div 
                     key={day.toString()} 
-                    className={`min-h-[230px] p-2 transition-colors flex flex-col justify-between ${
+                    className={`min-h-[420px] p-2.5 transition-colors flex flex-col justify-between ${
                       !isCurrentMonth 
                         ? 'bg-zinc-50/70 dark:bg-zinc-900/40 text-zinc-400 dark:text-zinc-600' 
                         : 'bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200'
@@ -189,80 +189,129 @@ export function CalendarTab() {
                   >
                     <div className="flex-1 flex flex-col min-w-0">
                       {/* Day Header */}
-                      <div className="flex justify-between items-center mb-1.5 pb-1 border-b border-zinc-100 dark:border-zinc-800/60">
-                        <span className={`inline-flex items-center justify-center w-6 h-6 rounded-lg text-xs font-bold ${
+                      <div className="flex justify-between items-center mb-2 pb-1.5 border-b border-zinc-100 dark:border-zinc-800/60">
+                        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-xl text-xs font-black ${
                           isToday 
-                            ? 'bg-blue-600 text-white font-black shadow-md shadow-blue-500/30' 
+                            ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' 
                             : 'text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800'
                         }`}>
                           {format(day, 'd')}
                         </span>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setForm(prev => ({ ...prev, date: dayFormatted }));
-                            setShowQuickAdd(true);
-                          }}
-                          className="p-1 text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition-colors cursor-pointer"
-                          title={isAr ? 'إضافة إلى هذا اليوم' : 'Add to this day'}
-                        >
-                          <Plus size={13} />
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          {events.length > 0 && (
+                            <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                              {events.length}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForm(prev => ({ ...prev, date: dayFormatted }));
+                              setShowQuickAdd(true);
+                            }}
+                            className="p-1 text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition-colors cursor-pointer"
+                            title={isAr ? 'إضافة إلى هذا اليوم' : 'Add to this day'}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
                       </div>
 
-                      {/* Events Slim Pills List */}
-                      <div className="flex flex-col gap-1 overflow-y-auto max-h-[175px] pr-0.5 space-y-0.5">
+                      {/* Rich Events List (Fits 5-8 items comfortably) */}
+                      <div className="flex flex-col gap-2 overflow-y-auto max-h-[350px] pr-1 space-y-0.5">
                         {events.map(event => {
                           const isTask = event.eventType === 'task';
                           const isNote = event.eventType === 'note';
                           const isAppt = event.eventType === 'appointment';
                           const isSchedule = event.eventType === 'schedule';
 
-                          let pillStyle = 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700';
+                          let pillStyle = 'bg-zinc-50 border-zinc-200/80 text-zinc-800 dark:bg-zinc-800/60 dark:border-zinc-700 dark:text-zinc-200';
+                          let badgeStyle = 'bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200';
+                          let tagLabel = isAr ? 'عنصر' : 'Item';
                           let icon = <FileText size={11} className="shrink-0" />;
 
                           if (isSchedule) {
                             if (event.type === 'lecture') {
-                              pillStyle = 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800';
+                              pillStyle = 'bg-blue-50/90 border-blue-200/80 text-blue-900 dark:bg-blue-950/40 dark:border-blue-800/60 dark:text-blue-200';
+                              badgeStyle = 'bg-blue-200/70 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200';
+                              tagLabel = isAr ? 'محاضرة' : 'Lecture';
                               icon = <Clock size={11} className="shrink-0 text-blue-600 dark:text-blue-400" />;
                             } else if (event.type === 'tutorial') {
-                              pillStyle = 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:border-sky-800';
+                              pillStyle = 'bg-sky-50/90 border-sky-200/80 text-sky-900 dark:bg-sky-950/40 dark:border-sky-800/60 dark:text-sky-200';
+                              badgeStyle = 'bg-sky-200/70 text-sky-800 dark:bg-sky-900/60 dark:text-sky-200';
+                              tagLabel = isAr ? 'سكشن' : 'Section';
                               icon = <Clock size={11} className="shrink-0 text-sky-600 dark:text-sky-400" />;
                             } else {
-                              pillStyle = 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/50 dark:text-teal-300 dark:border-teal-800';
+                              pillStyle = 'bg-teal-50/90 border-teal-200/80 text-teal-900 dark:bg-teal-950/40 dark:border-teal-800/60 dark:text-teal-200';
+                              badgeStyle = 'bg-teal-200/70 text-teal-800 dark:bg-teal-900/60 dark:text-teal-200';
+                              tagLabel = isAr ? 'معمل' : 'Lab';
                               icon = <Clock size={11} className="shrink-0 text-teal-600 dark:text-teal-400" />;
                             }
                           } else if (isTask) {
-                            pillStyle = 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800';
+                            pillStyle = 'bg-emerald-50/90 border-emerald-200/80 text-emerald-900 dark:bg-emerald-950/40 dark:border-emerald-800/60 dark:text-emerald-200';
+                            badgeStyle = 'bg-emerald-200/70 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200';
+                            tagLabel = isAr ? 'مهمة' : 'Task';
                             icon = <CheckSquare size={11} className="shrink-0 text-emerald-600 dark:text-emerald-400" />;
                           } else if (isAppt) {
-                            pillStyle = 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800';
+                            pillStyle = 'bg-amber-50/90 border-amber-200/80 text-amber-900 dark:bg-amber-950/40 dark:border-amber-800/60 dark:text-amber-200';
+                            badgeStyle = 'bg-amber-200/70 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200';
+                            tagLabel = isAr ? 'موعد' : 'Appointment';
                             icon = <CalendarIcon size={11} className="shrink-0 text-amber-600 dark:text-amber-400" />;
                           } else if (isNote) {
-                            pillStyle = 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800';
-                            icon = <StickyNote size={11} className="shrink-0 text-indigo-600 dark:text-indigo-400" />;
+                            pillStyle = 'bg-purple-50/90 border-purple-200/80 text-purple-900 dark:bg-purple-950/40 dark:border-purple-800/60 dark:text-purple-200';
+                            badgeStyle = 'bg-purple-200/70 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200';
+                            tagLabel = isAr ? 'ملاحظة' : 'Note';
+                            icon = <StickyNote size={11} className="shrink-0 text-purple-600 dark:text-purple-400" />;
                           }
 
                           return (
                             <div 
                               key={`${event.eventType}-${event.id}`}
                               onClick={() => setPreviewEntity({ type: event.eventType as any, id: event.id })}
-                              title={`${event.title}${event.time ? ` (${event.time})` : ''}`}
-                              className={`text-[11px] py-0.5 px-1.5 rounded-md border flex items-center gap-1 transition-all hover:scale-[1.02] cursor-pointer truncate ${pillStyle}`}
+                              title={isAr ? 'انقر لعرض التفاصيل الكاملة' : 'Click to view full details'}
+                              className={`p-2.5 rounded-2xl border transition-all hover:scale-[1.01] hover:shadow-md cursor-pointer flex flex-col justify-between gap-1.5 ${pillStyle}`}
                             >
-                              {icon}
-                              {event.time && (
-                                <span className="font-bold shrink-0 text-[10px] opacity-80">{event.time}</span>
+                              <div className="space-y-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0 ${badgeStyle}`}>
+                                    {icon}
+                                    <span>{tagLabel}</span>
+                                  </span>
+                                  {event.time && (
+                                    <span className="flex items-center gap-1 font-black text-[10px] opacity-90 shrink-0">
+                                      <Clock size={10} /> {event.time} {event.endTime ? `- ${event.endTime}` : ''}
+                                    </span>
+                                  )}
+                                </div>
+                                <h4 className="font-black text-xs sm:text-sm text-zinc-900 dark:text-white leading-tight line-clamp-2">
+                                  {event.title}
+                                </h4>
+                              </div>
+
+                              {(event.doctorName || event.location) && (
+                                <div className="pt-1.5 border-t border-black/5 dark:border-white/10 flex flex-col gap-0.5 text-[10px] font-bold text-zinc-600 dark:text-zinc-300">
+                                  {event.doctorName && (
+                                    <div className="flex items-center gap-1.5 truncate">
+                                      <User size={11} className="shrink-0 opacity-70 text-blue-600 dark:text-blue-400" />
+                                      <span className="truncate">{event.doctorName}</span>
+                                    </div>
+                                  )}
+                                  {event.location && (
+                                    <div className="flex items-center gap-1.5 truncate">
+                                      <MapPin size={11} className="shrink-0 opacity-70 text-amber-600 dark:text-amber-400" />
+                                      <span className="truncate">{event.location}</span>
+                                    </div>
+                                  )}
+                                </div>
                               )}
-                              <span className="font-bold truncate">{event.title}</span>
                             </div>
                           );
                         })}
 
                         {events.length === 0 && (
-                          <div className="h-full flex items-center justify-center py-8 opacity-25">
-                            <span className="text-[10px] text-zinc-400 font-medium">{isAr ? 'لا توجد عناصر' : 'Empty'}</span>
+                          <div className="h-full min-h-[140px] flex items-center justify-center opacity-25">
+                            <span className="text-xs text-zinc-400 font-bold">{isAr ? 'لا توجد عناصر' : 'Empty'}</span>
                           </div>
                         )}
                       </div>

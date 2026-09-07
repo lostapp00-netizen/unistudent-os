@@ -54,17 +54,12 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
     if (isOpen) {
       setLoading(true);
       setSuccessMessage(null);
-      setExpandedUniKey(null);
+      setExpandedUniKey(null); // Collapsed by default - user clicks chevron to expand
       setSelectedDb(null);
       setSelectedTrack('general');
       db.getUniversityDatabases()
         .then(dbs => {
           setDatabases(dbs);
-          // If search matches or single uni, expand first
-          if (dbs.length > 0) {
-            const firstKey = dbs[0].universityNameAr || dbs[0].universityNameEn || 'جامعة';
-            setExpandedUniKey(firstKey);
-          }
         })
         .catch(console.error)
         .finally(() => setLoading(false));
@@ -162,6 +157,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
         subjects: selectedDb.subjects || [],
         driveFiles: selectedDb.driveFiles || [],
         totalYears: selectedDb.totalYears || 4,
+        availableYears: selectedDb.availableYears || [1],
         semestersPerYear: selectedDb.semestersPerYear || 2,
         gradingScale: selectedDb.gradingScale || [],
         isSpecialization: false,
@@ -196,6 +192,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
       subjects: merged,
       driveFiles: [...(selectedDb.driveFiles || []), ...(activeSpec.driveFiles || [])],
       totalYears: selectedDb.totalYears || activeSpec.totalYears || 4,
+      availableYears: selectedDb.availableYears || activeSpec.availableYears || [1],
       semestersPerYear: selectedDb.semestersPerYear || activeSpec.semestersPerYear || 2,
       gradingScale: (activeSpec.gradingScale && activeSpec.gradingScale.length > 0) ? activeSpec.gradingScale : (selectedDb.gradingScale || []),
       isSpecialization: true,
@@ -398,8 +395,8 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                                         <span>{specs.length} {isAr ? 'تخصصات متفرعة' : 'majors'}</span>
                                       </span>
                                     )}
-                                    <span className="bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-lg">
-                                      {dbItem.totalYears || 4} {isAr ? 'سنوات' : 'years'}
+                                    <span className="bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60 px-2.5 py-1 rounded-lg font-bold">
+                                      {isAr ? `عدد السنين المتاحة: ${dbItem.availableYears && dbItem.availableYears.length > 0 ? dbItem.availableYears.length : 1} من ${dbItem.totalYears || 4} (يتم التحديث سنوياً)` : `Available: ${dbItem.availableYears && dbItem.availableYears.length > 0 ? dbItem.availableYears.length : 1} of ${dbItem.totalYears || 4} yrs (Updated annually)`}
                                     </span>
                                     <span className="bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-lg">
                                       {dbItem.driveFiles?.length || 0} {isAr ? 'ملفات درايف' : 'files'}
@@ -559,6 +556,21 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                     </div>
                   </div>
                 )}
+
+                {/* Available Years Notice */}
+                <div className="p-3 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 flex items-center justify-between gap-3 text-xs font-bold text-amber-800 dark:text-amber-300">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Calendar size={16} className="text-amber-600 shrink-0" />
+                    <span>
+                      {isAr 
+                        ? `عدد السنوات الدراسية المتاحة حالياً: ${previewData.availableYears?.length || 1} من إجمالي ${previewData.totalYears} سنوات` 
+                        : `Currently available years: ${previewData.availableYears?.length || 1} of ${previewData.totalYears} years`}
+                    </span>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-200/70 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200 shrink-0">
+                    {isAr ? 'يتم التحديث سنوياً' : 'Updated annually'}
+                  </span>
+                </div>
 
                 <div className="grid grid-cols-4 gap-2 text-center pt-2 border-t border-indigo-100 dark:border-indigo-900/40">
                   <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-indigo-100 dark:border-indigo-950">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Calendar, Clock, BookOpen, User, MapPin, CheckSquare, StickyNote, Calendar as CalendarIcon, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Calendar, Clock, BookOpen, User, MapPin, CheckSquare, StickyNote, Calendar as CalendarIcon, FileText, CheckCircle2, AlertCircle, Edit2 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { Priority } from '../../types';
 
@@ -12,9 +12,10 @@ export type PreviewEntity =
 interface EntityPreviewModalProps {
   preview: PreviewEntity | null;
   onClose: () => void;
+  onEdit?: (entity: PreviewEntity) => void;
 }
 
-export function EntityPreviewModal({ preview, onClose }: EntityPreviewModalProps) {
+export function EntityPreviewModal({ preview, onClose, onEdit }: EntityPreviewModalProps) {
   const { notes, tasks, appointments, scheduleItems, subjects, settings } = useAppStore();
   const isAr = settings.language === 'ar';
 
@@ -39,13 +40,13 @@ export function EntityPreviewModal({ preview, onClose }: EntityPreviewModalProps
       const linkedSubs = subjects.filter(s => (note.linkedSubjectIds || []).includes(s.id));
       content = (
         <div className="space-y-4">
-          <div className="flex items-center gap-3 text-xs text-zinc-500 flex-wrap">
+          <div className="flex items-center gap-2 text-xs text-zinc-500 flex-wrap">
             {note.date && (
-              <span className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-lg">
+              <span className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-xl font-bold">
                 <Calendar size={13} /> {note.date}
               </span>
             )}
-            <span className={`px-2.5 py-1 rounded-lg font-bold ${
+            <span className={`px-2.5 py-1 rounded-xl font-bold ${
               note.priority === 'high' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400' :
               note.priority === 'low' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' :
               'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400'
@@ -63,7 +64,7 @@ export function EntityPreviewModal({ preview, onClose }: EntityPreviewModalProps
               <p className="text-xs font-bold text-zinc-400 mb-1.5">{isAr ? 'المواد المرتبطة' : 'Linked Subjects'}</p>
               <div className="flex flex-wrap gap-1.5">
                 {linkedSubs.map(s => (
-                  <span key={s.id} className="text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                  <span key={s.id} className="text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 px-2.5 py-1 rounded-lg flex items-center gap-1">
                     <BookOpen size={12} /> {s.name}
                   </span>
                 ))}
@@ -83,17 +84,24 @@ export function EntityPreviewModal({ preview, onClose }: EntityPreviewModalProps
       badgeIcon = <CheckSquare size={18} className="text-emerald-500" />;
       content = (
         <div className="space-y-4">
-          <div className="flex items-center gap-3 text-xs text-zinc-500 flex-wrap">
+          <div className="flex items-center gap-2 text-xs text-zinc-500 flex-wrap">
             {task.date && (
-              <span className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-lg">
+              <span className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-xl font-bold">
                 <Calendar size={13} /> {task.date}
               </span>
             )}
-            <span className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold ${
+            <span className={`flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold ${
               task.isCompleted ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400'
             }`}>
               {task.isCompleted ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}
               {task.isCompleted ? (isAr ? 'مكتملة' : 'Completed') : (isAr ? 'قيد الانتظار' : 'Pending')}
+            </span>
+            <span className={`px-2.5 py-1 rounded-xl font-bold ${
+              task.priority === 'high' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400' :
+              task.priority === 'low' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' :
+              'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400'
+            }`}>
+              {task.priority === 'high' ? (isAr ? 'أولوية عالية' : 'High Priority') : task.priority === 'low' ? (isAr ? 'أولوية منخفضة' : 'Low Priority') : (isAr ? 'أولوية متوسطة' : 'Medium Priority')}
             </span>
           </div>
 
@@ -115,15 +123,22 @@ export function EntityPreviewModal({ preview, onClose }: EntityPreviewModalProps
       badgeIcon = <CalendarIcon size={18} className="text-blue-500" />;
       content = (
         <div className="space-y-4">
-          <div className="flex items-center gap-3 text-xs text-zinc-500 flex-wrap">
-            <span className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-lg">
+          <div className="flex items-center gap-2 text-xs text-zinc-500 flex-wrap">
+            <span className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-xl font-bold">
               <Calendar size={13} /> {app.date}
             </span>
             {app.time && (
-              <span className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-lg">
+              <span className="flex items-center gap-1 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 px-2.5 py-1 rounded-xl font-bold">
                 <Clock size={13} /> {app.time}
               </span>
             )}
+            <span className={`px-2.5 py-1 rounded-xl font-bold ${
+              app.priority === 'high' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400' :
+              app.priority === 'low' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' :
+              'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400'
+            }`}>
+              {app.priority === 'high' ? (isAr ? 'أولوية عالية' : 'High Priority') : app.priority === 'low' ? (isAr ? 'أولوية منخفضة' : 'Low Priority') : (isAr ? 'أولوية متوسطة' : 'Medium Priority')}
+            </span>
           </div>
 
           {app.description && (
@@ -147,36 +162,40 @@ export function EntityPreviewModal({ preview, onClose }: EntityPreviewModalProps
       content = (
         <div className="space-y-4">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-bold px-3 py-1 bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 rounded-xl">
+            <span className="text-xs font-black px-3 py-1 bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 rounded-xl">
               {typeLabel}
             </span>
             <span className="text-xs font-bold px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl">
               {days[item.dayOfWeek]}
             </span>
-            <span className="text-xs font-bold px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl flex items-center gap-1">
-              <Clock size={12} /> {item.startTime} - {item.endTime}
+            <span className="text-xs font-black px-3 py-1 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl flex items-center gap-1.5">
+              <Clock size={13} /> {item.startTime} - {item.endTime}
             </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {item.doctorName && (
-              <div className="p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700/50 flex items-center gap-2 text-xs">
-                <User size={15} className="text-zinc-400" />
+            {item.doctorName ? (
+              <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-700/50 flex items-center gap-3 text-xs">
+                <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                  <User size={16} />
+                </div>
                 <div>
-                  <p className="text-[10px] text-zinc-400 font-bold">{isAr ? 'المحاضر/الدكتور' : 'Instructor'}</p>
-                  <p className="font-bold text-zinc-800 dark:text-zinc-200">{item.doctorName}</p>
+                  <p className="text-[10px] text-zinc-400 font-bold">{isAr ? 'المحاضر / الدكتور' : 'Instructor'}</p>
+                  <p className="font-extrabold text-sm text-zinc-900 dark:text-white">{item.doctorName}</p>
                 </div>
               </div>
-            )}
-            {item.location && (
-              <div className="p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700/50 flex items-center gap-2 text-xs">
-                <MapPin size={15} className="text-zinc-400" />
+            ) : null}
+            {item.location ? (
+              <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-700/50 flex items-center gap-3 text-xs">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                  <MapPin size={16} />
+                </div>
                 <div>
                   <p className="text-[10px] text-zinc-400 font-bold">{isAr ? 'المكان / القاعة' : 'Location'}</p>
-                  <p className="font-bold text-zinc-800 dark:text-zinc-200">{item.location}</p>
+                  <p className="font-extrabold text-sm text-zinc-900 dark:text-white">{item.location}</p>
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       );
@@ -184,14 +203,14 @@ export function EntityPreviewModal({ preview, onClose }: EntityPreviewModalProps
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 w-full max-w-md shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-150">
+      <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 w-full max-w-md shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-150">
         <div className="flex items-center justify-between pb-4 mb-4 border-b border-zinc-100 dark:border-zinc-800">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl shrink-0">
+            <div className="p-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-2xl shrink-0">
               {badgeIcon}
             </div>
-            <h3 className="font-bold text-lg text-zinc-900 dark:text-white truncate">{title}</h3>
+            <h3 className="font-black text-lg text-zinc-900 dark:text-white truncate">{title}</h3>
           </div>
           <button
             type="button"
@@ -206,7 +225,22 @@ export function EntityPreviewModal({ preview, onClose }: EntityPreviewModalProps
           {content}
         </div>
 
-        <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end">
+        <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-3">
+          {onEdit ? (
+            <button
+              type="button"
+              onClick={() => {
+                const ent = preview;
+                onClose();
+                onEdit(ent);
+              }}
+              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-blue-500/20"
+            >
+              <Edit2 size={13} />
+              <span>{isAr ? 'تعديل البيانات' : 'Edit Details'}</span>
+            </button>
+          ) : <div />}
+
           <button
             type="button"
             onClick={onClose}
@@ -219,3 +253,4 @@ export function EntityPreviewModal({ preview, onClose }: EntityPreviewModalProps
     </div>
   );
 }
+

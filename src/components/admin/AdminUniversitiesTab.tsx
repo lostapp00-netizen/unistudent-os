@@ -210,7 +210,19 @@ export function AdminUniversitiesTab({
 
   // College Academic Structure Modal State
   const [isStructureModalOpen, setIsStructureModalOpen] = useState(false);
-  const [structureForm, setStructureForm] = useState<{ totalYears: number | ''; semestersPerYear: number | '' }>({ totalYears: 4, semestersPerYear: 2 });
+  const [structureForm, setStructureForm] = useState<{ 
+    totalYears: number | ''; 
+    semestersPerYear: number | '';
+    specializationStartYear: number;
+    specializationStartSemester: number;
+    availableYears: number[];
+  }>({ 
+    totalYears: 4, 
+    semestersPerYear: 2,
+    specializationStartYear: 2,
+    specializationStartSemester: 1,
+    availableYears: [1]
+  });
 
   // Switch Source Student Modal State
   const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
@@ -283,12 +295,18 @@ export function AdminUniversitiesTab({
     sourceUserId: string;
     customYears: number | '';
     customSemesters: number | '';
+    specializationStartYear: number;
+    specializationStartSemester: number;
+    availableYears: number[];
   }>({
     collegeNameAr: '',
     collegeNameEn: '',
     sourceUserId: '',
     customYears: 4,
-    customSemesters: 2
+    customSemesters: 2,
+    specializationStartYear: 2,
+    specializationStartSemester: 1,
+    availableYears: [1]
   });
   const [collegeStudentSearchQuery, setCollegeStudentSearchQuery] = useState('');
   const [showAllStudentsForCollege, setShowAllStudentsForCollege] = useState(false);
@@ -568,12 +586,17 @@ export function AdminUniversitiesTab({
   // Handle Student Selection in Create College Modal (Pulls College name, study years & semesters)
   const handleSelectStudentForCollege = (st: any) => {
     const colAr = st.college && st.college !== 'غير محدد' && st.college !== 'Not specified' ? st.college : '';
+    const specStartYear = st.specializationStartYear || st.specialization_start_year || st.raw?.settings?.specialization_start_year || 2;
+    const specStartSem = st.specializationStartSemester || st.specialization_start_semester || st.raw?.settings?.specialization_start_semester || 1;
     setCreateCollegeForm({
       sourceUserId: st.id,
       collegeNameAr: colAr,
       collegeNameEn: autoTranslateCollege(colAr),
       customYears: st.totalYears || 4,
-      customSemesters: st.semestersPerYear || 2
+      customSemesters: st.semestersPerYear || 2,
+      specializationStartYear: Number(specStartYear || 2),
+      specializationStartSemester: Number(specStartSem || 1),
+      availableYears: [1]
     });
   };
 
@@ -595,8 +618,18 @@ export function AdminUniversitiesTab({
       const studentSubjs = source?.subjects || source?.raw?.subjects || [];
       const studentFiles = source?.files || source?.raw?.files || [];
 
-      // Clone subjects cleanly with exact yearIndex and semesterIndex
-      const clonedSubjects: Subject[] = studentSubjs.map((s: any) => ({
+      const startYear = Number(createCollegeForm.specializationStartYear || 2);
+      const startSem = Number(createCollegeForm.specializationStartSemester || 1);
+
+      // Smart Foundation Slicing: Only clone general foundation subjects prior to specialization milestone
+      const foundationSubjs = studentSubjs.filter((s: any) => {
+        const y = Number(s.yearIndex || s.year_index || 1);
+        const sem = Number(s.semesterIndex || s.semester_index || 1);
+        return y < startYear || (y === startYear && sem < startSem);
+      });
+
+      // Clone foundation subjects cleanly with exact yearIndex and semesterIndex
+      const clonedSubjects: Subject[] = foundationSubjs.map((s: any) => ({
         id: uuidv4(),
         code: (s.code || '').trim(),
         name: s.name,
@@ -638,6 +671,9 @@ export function AdminUniversitiesTab({
         sourceUserName: source?.name || '',
         totalYears: Number(createCollegeForm.customYears) || source?.totalYears || 4,
         semestersPerYear: Number(createCollegeForm.customSemesters) || source?.semestersPerYear || 2,
+        specializationStartYear: startYear,
+        specializationStartSemester: startSem,
+        availableYears: createCollegeForm.availableYears && createCollegeForm.availableYears.length > 0 ? createCollegeForm.availableYears : [1],
         subjects: clonedSubjects,
         driveFiles: clonedDrive,
         gradingScale: (source?.gradingScale && source.gradingScale.length > 0) ? source.gradingScale : (source?.raw?.settings?.grading_scale || []),
@@ -653,7 +689,10 @@ export function AdminUniversitiesTab({
         collegeNameEn: '',
         sourceUserId: '',
         customYears: 4,
-        customSemesters: 2
+        customSemesters: 2,
+        specializationStartYear: 2,
+        specializationStartSemester: 1,
+        availableYears: [1]
       });
       await loadUniData();
     } catch (e) {
@@ -669,8 +708,8 @@ export function AdminUniversitiesTab({
     setSpecForm({
       specializationNameAr: '',
       specializationNameEn: '',
-      specializationStartYear: 2,
-      specializationStartSemester: 1,
+      specializationStartYear: selectedCollegeDb.specializationStartYear || 2,
+      specializationStartSemester: selectedCollegeDb.specializationStartSemester || 1,
       sourceUserId: '',
       sourceUserName: '',
       sourceUserEmail: ''
@@ -680,7 +719,12 @@ export function AdminUniversitiesTab({
     setIsCreateSpecModalOpen(true);
     setLoadingSpecStudents(true);
     try {
-      const candidates = await db.getStudentsWithSpecialization(selectedCollegeDb.collegeNameAr);
+      const candidates = await db.getStudentsWithSpecialization(
+        selectedCollegeDb.collegeNameAr,
+        undefined,
+        selectedCollegeDb.sourceUserId,
+        studentsList
+      );
       setSpecStudentsList(candidates);
     } catch (e) {
       console.error('Error fetching candidate students for specialization:', e);
@@ -745,13 +789,16 @@ export function AdminUniversitiesTab({
     }
   };
 
-  // Update College Structure (Years & Semesters)
+  // Update College Structure (Years, Semesters, Specialization Timing & Available Years)
   const handleSaveStructure = async () => {
     if (!selectedCollegeDb) return;
     try {
       await db.updateUniversityDatabase(selectedCollegeDb.id, {
         totalYears: Number(structureForm.totalYears || 4),
-        semestersPerYear: Number(structureForm.semestersPerYear || 2)
+        semestersPerYear: Number(structureForm.semestersPerYear || 2),
+        specializationStartYear: Number(structureForm.specializationStartYear || 2),
+        specializationStartSemester: Number(structureForm.specializationStartSemester || 1),
+        availableYears: structureForm.availableYears && structureForm.availableYears.length > 0 ? structureForm.availableYears : [1]
       });
       setIsStructureModalOpen(false);
       await loadUniData();
@@ -760,7 +807,7 @@ export function AdminUniversitiesTab({
     }
   };
 
-  // Switch Source Student Action (Clean Wipe & Overwrite: No Merging)
+  // Switch Source Student Action (Clean Wipe & Overwrite with Foundation Slicing)
   const handleSwitchSourceStudent = async (newStudent: any) => {
     if (!selectedCollegeDb) return;
     try {
@@ -770,8 +817,18 @@ export function AdminUniversitiesTab({
         ? newStudent.gradingScale
         : (newStudent?.raw?.settings?.grading_scale || selectedCollegeDb.gradingScale || []);
 
+      const startYear = Number(selectedCollegeDb.specializationStartYear || 2);
+      const startSem = Number(selectedCollegeDb.specializationStartSemester || 1);
+
+      // Smart Foundation Slicing for General College: Only clone subjects prior to specialization
+      const foundationSubjs = studentSubjs.filter((s: any) => {
+        const y = Number(s.yearIndex || s.year_index || 1);
+        const sem = Number(s.semesterIndex || s.semester_index || 1);
+        return y < startYear || (y === startYear && sem < startSem);
+      });
+
       // Clone subjects cleanly with fresh template IDs
-      const clonedSubjects: Subject[] = studentSubjs.map((s: any) => ({
+      const clonedSubjects: Subject[] = foundationSubjs.map((s: any) => ({
         id: s.id || uuidv4(),
         code: (s.code || '').trim(),
         name: s.name,
@@ -2306,7 +2363,10 @@ export function AdminUniversitiesTab({
                     onClick={() => {
                       setStructureForm({
                         totalYears: selectedCollegeDb.totalYears || 4,
-                        semestersPerYear: selectedCollegeDb.semestersPerYear || 2
+                        semestersPerYear: selectedCollegeDb.semestersPerYear || 2,
+                        specializationStartYear: selectedCollegeDb.specializationStartYear || 2,
+                        specializationStartSemester: selectedCollegeDb.specializationStartSemester || 1,
+                        availableYears: selectedCollegeDb.availableYears && selectedCollegeDb.availableYears.length > 0 ? selectedCollegeDb.availableYears : [1]
                       });
                       setIsStructureModalOpen(true);
                     }}
@@ -2315,6 +2375,34 @@ export function AdminUniversitiesTab({
                     <Sliders size={14} />
                     <span>{selectedCollegeDb.totalYears || 4} {isAr ? 'سنوات' : 'Yrs'} • {selectedCollegeDb.semestersPerYear || 2} {isAr ? 'فصول/سنة' : 'Sem/Yr'}</span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStructureForm({
+                        totalYears: selectedCollegeDb.totalYears || 4,
+                        semestersPerYear: selectedCollegeDb.semestersPerYear || 2,
+                        specializationStartYear: selectedCollegeDb.specializationStartYear || 2,
+                        specializationStartSemester: selectedCollegeDb.specializationStartSemester || 1,
+                        availableYears: selectedCollegeDb.availableYears && selectedCollegeDb.availableYears.length > 0 ? selectedCollegeDb.availableYears : [1]
+                      });
+                      setIsStructureModalOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 hover:bg-amber-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  >
+                    <span>{isAr ? 'السنين المتاحة:' : 'Available:'}</span>
+                    <span className="underline font-black">
+                      {(selectedCollegeDb.availableYears && selectedCollegeDb.availableYears.length > 0 ? selectedCollegeDb.availableYears : [1]).map(y => isAr ? `سنة ${y}` : `Y${y}`).join('، ')}
+                    </span>
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400">({isAr ? 'يتم التحديث سنوياً' : 'Updated annually'})</span>
+                  </button>
+
+                  {!selectedCollegeDb.isSpecialization && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/50 rounded-xl text-xs font-bold">
+                      <Compass size={13} />
+                      <span>{isAr ? `تخصص يبدأ: سنة ${selectedCollegeDb.specializationStartYear || 2} ترم ${selectedCollegeDb.specializationStartSemester || 1}` : `Spec starts: Y${selectedCollegeDb.specializationStartYear || 2} T${selectedCollegeDb.specializationStartSemester || 1}`}</span>
+                    </span>
+                  )}
 
                   <button
                     onClick={() => {
@@ -3414,6 +3502,99 @@ export function AdminUniversitiesTab({
                 </div>
               </div>
 
+              {/* Step 4: Specialization Milestone Timing */}
+              <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white block">
+                    {isAr ? '4. نقطة بداية التخصص الأكاديمي بالكلية' : '4. Specialization Milestone (Year & Term)'}
+                  </label>
+                  <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-0.5 rounded-lg">
+                    {isAr ? 'سحب المنهج العام التأسيسي' : 'General Foundation Slice'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-500 mb-1">
+                      {isAr ? 'يبدأ التخصص في السنة:' : 'Specialization Starts Year:'}
+                    </label>
+                    <select
+                      value={createCollegeForm.specializationStartYear}
+                      onChange={(e) => setCreateCollegeForm(prev => ({ ...prev, specializationStartYear: Number(e.target.value) }))}
+                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      {Array.from({ length: Number(createCollegeForm.customYears) || 4 }, (_, i) => i + 1).map(y => (
+                        <option key={y} value={y}>{isAr ? `السنة الدراسية ${y}` : `Year ${y}`}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-500 mb-1">
+                      {isAr ? 'يبدأ التخصص في الترم:' : 'Specialization Starts Term:'}
+                    </label>
+                    <select
+                      value={createCollegeForm.specializationStartSemester}
+                      onChange={(e) => setCreateCollegeForm(prev => ({ ...prev, specializationStartSemester: Number(e.target.value) }))}
+                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      {Array.from({ length: Number(createCollegeForm.customSemesters) || 2 }, (_, i) => i + 1).map(s => (
+                        <option key={s} value={s}>{isAr ? `الفصل ${s} (الترم ${s})` : `Term ${s}`}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 bg-amber-50/70 dark:bg-amber-950/30 p-2.5 rounded-xl border border-amber-200/60 dark:border-amber-900/40 flex items-start gap-2">
+                  <Info size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                  <span>
+                    {isAr 
+                      ? `سيتم سحب مواد السنوات العامة فقط السابقة لسنة ${createCollegeForm.specializationStartYear} ترم ${createCollegeForm.specializationStartSemester}. مواد التخصص اللاحقة ستُسحب في قواعد بيانات تخصصات منفصلة ولن تظهر للطالب العام إلا عند اختياره تخصصاً.` 
+                      : `Only common foundation courses prior to Year ${createCollegeForm.specializationStartYear} Term ${createCollegeForm.specializationStartSemester} will be pulled.`}
+                  </span>
+                </p>
+              </div>
+
+              {/* Step 5: Available Years with Annual Update Note */}
+              <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white block">
+                    {isAr ? '5. السنين المتاحة في قاعدة البيانات حالياً' : '5. Currently Available Years in Database'}
+                  </label>
+                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                    ({isAr ? 'يتم التحديث سنوياً' : 'Updated annually'})
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {Array.from({ length: Number(createCollegeForm.customYears) || 4 }, (_, i) => i + 1).map(yr => {
+                    const isChecked = (createCollegeForm.availableYears || []).includes(yr);
+                    return (
+                      <button
+                        key={yr}
+                        type="button"
+                        onClick={() => {
+                          const curr = createCollegeForm.availableYears || [];
+                          const next = isChecked ? curr.filter(y => y !== yr) : [...curr, yr].sort((a, b) => a - b);
+                          setCreateCollegeForm(prev => ({
+                            ...prev,
+                            availableYears: next.length > 0 ? next : [yr]
+                          }));
+                        }}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                          isChecked 
+                            ? 'bg-amber-500 text-white border-amber-500 shadow-xs' 
+                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-amber-400'
+                        }`}
+                      >
+                        <span>{isAr ? `السنة ${yr}` : `Year ${yr}`}</span>
+                        {isChecked && <Check size={13} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
             </div>
 
             <div className="p-5 sm:p-6 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
@@ -3758,6 +3939,76 @@ export function AdminUniversitiesTab({
                   onChange={(e) => setStructureForm({ ...structureForm, semestersPerYear: e.target.value === '' ? '' : Number(e.target.value) })}
                   className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold"
                 />
+              </div>
+
+              {/* Specialization Timing */}
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <div>
+                  <label className="block text-[11px] font-bold text-zinc-500 mb-1">
+                    {isAr ? 'سنة بداية التخصص:' : 'Spec Start Year:'}
+                  </label>
+                  <select
+                    value={structureForm.specializationStartYear}
+                    onChange={(e) => setStructureForm({ ...structureForm, specializationStartYear: Number(e.target.value) })}
+                    className="w-full px-4 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold cursor-pointer"
+                  >
+                    {Array.from({ length: Number(structureForm.totalYears) || 4 }, (_, i) => i + 1).map(y => (
+                      <option key={y} value={y}>{isAr ? `السنة ${y}` : `Year ${y}`}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-zinc-500 mb-1">
+                    {isAr ? 'ترم بداية التخصص:' : 'Spec Start Term:'}
+                  </label>
+                  <select
+                    value={structureForm.specializationStartSemester}
+                    onChange={(e) => setStructureForm({ ...structureForm, specializationStartSemester: Number(e.target.value) })}
+                    className="w-full px-4 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold cursor-pointer"
+                  >
+                    {Array.from({ length: Number(structureForm.semestersPerYear) || 2 }, (_, i) => i + 1).map(s => (
+                      <option key={s} value={s}>{isAr ? `الترم ${s}` : `Term ${s}`}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Available Years Checkboxes */}
+              <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                    {isAr ? 'السنين المتاحة في قاعدة البيانات:' : 'Available Years in DB:'}
+                  </label>
+                  <span className="text-[11px] font-bold text-amber-600">
+                    ({isAr ? 'يتم التحديث سنوياً' : 'Updated annually'})
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {Array.from({ length: Number(structureForm.totalYears) || 4 }, (_, i) => i + 1).map(yr => {
+                    const isChecked = (structureForm.availableYears || []).includes(yr);
+                    return (
+                      <button
+                        key={yr}
+                        type="button"
+                        onClick={() => {
+                          const current = structureForm.availableYears || [];
+                          const next = isChecked ? current.filter(y => y !== yr) : [...current, yr].sort((a, b) => a - b);
+                          setStructureForm({ ...structureForm, availableYears: next.length > 0 ? next : [yr] });
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                          isChecked 
+                            ? 'bg-amber-500 text-white border-amber-500 shadow-xs' 
+                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-amber-400'
+                        }`}
+                      >
+                        <span>{isAr ? `السنة ${yr}` : `Year ${yr}`}</span>
+                        {isChecked && <Check size={13} />}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 

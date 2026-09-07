@@ -361,7 +361,7 @@ export function Appointments() {
             </div>
             
             <div className="overflow-x-auto flex-1">
-              <div className="min-w-[950px]">
+              <div className="min-w-[1200px]">
                 <div className="grid grid-cols-7 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/40">
                   {days.map(day => (
                     <div key={day} className="py-3 text-center text-xs font-black text-zinc-700 dark:text-zinc-300">
@@ -380,52 +380,74 @@ export function Appointments() {
                     return (
                       <div 
                         key={day.toString()} 
-                        className={`min-h-[230px] p-2 transition-colors flex flex-col justify-between ${
+                        className={`min-h-[420px] p-2.5 transition-colors flex flex-col justify-between ${
                           !isCurrentMonth ? 'bg-zinc-50/70 dark:bg-zinc-900/40 text-zinc-400 dark:text-zinc-600' : 'bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200'
                         }`}
                       >
                         <div className="flex-1 flex flex-col min-w-0">
                           {/* Day Header */}
-                          <div className="flex justify-between items-center mb-1.5 pb-1 border-b border-zinc-100 dark:border-zinc-800/60">
-                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-lg text-xs font-bold ${
+                          <div className="flex justify-between items-center mb-2 pb-1.5 border-b border-zinc-100 dark:border-zinc-800/60">
+                            <span className={`inline-flex items-center justify-center w-7 h-7 rounded-xl text-xs font-black ${
                               isToday 
-                                ? 'bg-blue-600 text-white font-black shadow-md shadow-blue-500/30' 
+                                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' 
                                 : 'text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800'
                             }`}>
                               {format(day, 'd')}
                             </span>
 
-                            <button
-                              onClick={() => openAdd(formattedDate)}
-                              className="p-1 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition-colors cursor-pointer"
-                              title={isAr ? 'إضافة موعد لهذا اليوم' : 'Add appointment on this day'}
-                            >
-                              <Plus size={13} />
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              {dayAppointments.length > 0 && (
+                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
+                                  {dayAppointments.length}
+                                </span>
+                              )}
+                              <button
+                                onClick={() => openAdd(formattedDate)}
+                                className="p-1 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition-colors cursor-pointer"
+                                title={isAr ? 'إضافة موعد لهذا اليوم' : 'Add appointment on this day'}
+                              >
+                                <Plus size={14} />
+                              </button>
+                            </div>
                           </div>
 
-                          {/* Slim Pills Items List */}
-                          <div className="flex flex-col gap-1 overflow-y-auto max-h-[175px] pr-0.5 space-y-0.5">
+                          {/* Rich Appointments List (Fits 5-8 items comfortably) */}
+                          <div className="flex flex-col gap-2 overflow-y-auto max-h-[350px] pr-1 space-y-0.5">
                             {dayAppointments.map(app => (
                               <div 
                                 key={app.id}
-                                title={`${app.title}${app.time ? ` (${app.time})` : ''}`}
-                                className="text-[11px] py-0.5 px-1.5 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 flex items-center justify-between gap-1 transition-all hover:scale-[1.02] cursor-pointer truncate"
-                                onClick={() => openEdit(app)}
+                                onClick={() => setPreviewEntity({ type: 'appointment', id: app.id })}
+                                title={isAr ? 'انقر لعرض تفاصيل الموعد' : 'Click to view appointment details'}
+                                className="p-2.5 rounded-2xl border border-amber-200/80 dark:border-amber-800/60 bg-amber-50/90 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 transition-all hover:scale-[1.01] hover:shadow-md cursor-pointer flex flex-col justify-between gap-1.5"
                               >
-                                <div className="flex items-center gap-1 truncate min-w-0">
-                                  <CalendarIcon size={10} className="shrink-0 text-amber-600 dark:text-amber-400" />
-                                  {app.time && (
-                                    <span className="font-bold shrink-0 text-[10px] opacity-80">{app.time}</span>
-                                  )}
-                                  <span className="font-bold truncate">{app.title}</span>
+                                <div className="space-y-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-200/70 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 flex items-center gap-1 shrink-0">
+                                      <CalendarIcon size={10} />
+                                      <span>{isAr ? 'موعد' : 'Appt'}</span>
+                                    </span>
+                                    {app.time && (
+                                      <span className="flex items-center gap-1 font-black text-[10px] opacity-90 shrink-0">
+                                        <Clock size={10} /> {app.time}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <h4 className="font-black text-xs sm:text-sm text-zinc-900 dark:text-white leading-tight line-clamp-2">
+                                    {app.title}
+                                  </h4>
                                 </div>
+
+                                {app.description && (
+                                  <div className="pt-1.5 border-t border-black/5 dark:border-white/10 text-[10px] font-bold text-zinc-600 dark:text-zinc-300 line-clamp-1">
+                                    {app.description}
+                                  </div>
+                                )}
                               </div>
                             ))}
 
                             {dayAppointments.length === 0 && (
-                              <div className="h-full flex items-center justify-center py-8 opacity-20">
-                                <span className="text-[10px] text-zinc-400 font-medium">{isAr ? 'لا توجد مواعيد' : 'Empty'}</span>
+                              <div className="h-full min-h-[140px] flex items-center justify-center opacity-25">
+                                <span className="text-xs text-zinc-400 font-bold">{isAr ? 'لا توجد مواعيد' : 'Empty'}</span>
                               </div>
                             )}
                           </div>
@@ -452,7 +474,6 @@ export function Appointments() {
                 <X size={20} />
               </button>
             </div>
-            
             <div className="overflow-y-auto pr-2 space-y-4 flex-1 hide-scrollbar">
               <div>
                 <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">{t('title')}</label>
@@ -591,6 +612,12 @@ export function Appointments() {
       <EntityPreviewModal
         preview={previewEntity}
         onClose={() => setPreviewEntity(null)}
+        onEdit={(ent) => {
+          if (ent.type === 'appointment') {
+            const app = appointments.find(a => a.id === ent.id);
+            if (app) openEdit(app);
+          }
+        }}
       />
     </div>
   );
