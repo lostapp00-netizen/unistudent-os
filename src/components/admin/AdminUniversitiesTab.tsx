@@ -776,7 +776,7 @@ export function AdminUniversitiesTab({
       sourceUserEmail: student.email,
       specializationStartYear: student.specializationStartYear || prev.specializationStartYear || 2,
       specializationStartSemester: student.specializationStartSemester || prev.specializationStartSemester || 1,
-      specializationNameAr: prev.specializationNameAr || student.specialization || ''
+      specializationNameAr: student.specialization ? student.specialization : prev.specializationNameAr
     }));
   };
 
@@ -1513,6 +1513,41 @@ export function AdminUniversitiesTab({
           return targetDb;
         });
       }
+      if (status === 'approved' && update.universityDatabaseId) {
+        setDatabases(prev => prev.map(d => {
+          if (d.id === update.universityDatabaseId) {
+            if (update.type === 'add_subject' && update.data) {
+              const subjectId = update.data.id || uuidv4();
+              const newSubj: Subject = {
+                id: subjectId,
+                code: (update.data.code || '').trim(),
+                name: (update.data.name || '').trim(),
+                creditHours: Number(update.data.creditHours || update.data.credit_hours || 3),
+                totalMarks: Number(update.data.totalMarks || update.data.total_marks || 100),
+                yearIndex: Number(update.data.yearIndex || update.data.year_index || 1),
+                semesterIndex: Number(update.data.semesterIndex || update.data.semester_index || 1),
+                distributions: update.data.distributions || [],
+                status: 'current',
+                includeInGpa: update.data.includeInGpa !== false && update.data.include_in_gpa !== false
+              };
+              const filtered = (d.subjects || []).filter(s => s.id !== subjectId && s.name !== newSubj.name);
+              return { ...d, subjects: [...filtered, newSubj] };
+            } else if (update.type === 'update_subject' && update.data) {
+              const upd = update.data;
+              return {
+                ...d,
+                subjects: (d.subjects || []).map(s => (s.id === upd.id || s.name === upd.name) ? { ...s, ...upd } : s)
+              };
+            } else if (update.type === 'delete_subject' && update.data) {
+              return {
+                ...d,
+                subjects: (d.subjects || []).filter(s => s.id !== update.data.id && s.name !== update.data.name)
+              };
+            }
+          }
+          return d;
+        }));
+      }
       try {
         if (supabase) {
           supabase.channel('university_global_sync').send({
@@ -1523,6 +1558,7 @@ export function AdminUniversitiesTab({
         }
       } catch {}
       await loadUniData();
+      await onRefreshAllData();
     } catch (e) {
       console.error('Error resolving pending update:', e);
     }
@@ -3848,10 +3884,14 @@ export function AdminUniversitiesTab({
                                     <span className="font-black text-xs text-zinc-900 dark:text-white truncate">
                                       {st.name}
                                     </span>
-                                    {st.specialization && (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-black shrink-0">
+                                    {st.specialization ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-black shrink-0 border border-purple-200 dark:border-purple-800">
                                         <Compass size={11} />
                                         <span>{st.specialization}</span>
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 text-[10px] font-medium shrink-0">
+                                        <span>{isAr ? 'بدون تخصص مسجل' : 'No Major'}</span>
                                       </span>
                                     )}
                                   </div>

@@ -218,13 +218,17 @@ export const useAppStore = create<AppState>((set, get) => ({
           name: mergedSettings.name,
           university: mergedSettings.university,
           college: mergedSettings.college,
+          specialization: mergedSettings.specialization || '',
+          specializationStartYear: mergedSettings.specializationStartYear || 2,
+          specializationStartSemester: mergedSettings.specializationStartSemester || 1,
+          specializationDatabaseId: mergedSettings.specializationDatabaseId || '',
           gradingScale: mergedSettings.gradingScale,
           semesters: mergedSettings.semesters,
           lastSeen: new Date().toISOString()
         };
         const existingIdx = knownList.findIndex((u: any) => u.id === userId);
         if (existingIdx >= 0) {
-          knownList[existingIdx] = userProfile;
+          knownList[existingIdx] = { ...knownList[existingIdx], ...userProfile };
         } else {
           knownList.push(userProfile);
         }
@@ -358,6 +362,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ settings: updated });
     if (userId) {
       db.upsertSettings(userId, updated);
+      try {
+        const knownRaw = localStorage.getItem('unistudent_known_users');
+        if (knownRaw) {
+          const knownList = JSON.parse(knownRaw);
+          const existingIdx = knownList.findIndex((u: any) => u.id === userId);
+          if (existingIdx >= 0) {
+            knownList[existingIdx] = {
+              ...knownList[existingIdx],
+              specialization: updated.specialization !== undefined ? updated.specialization : knownList[existingIdx].specialization,
+              specializationStartYear: updated.specializationStartYear !== undefined ? updated.specializationStartYear : knownList[existingIdx].specializationStartYear,
+              specializationStartSemester: updated.specializationStartSemester !== undefined ? updated.specializationStartSemester : knownList[existingIdx].specializationStartSemester,
+              specializationDatabaseId: updated.specializationDatabaseId !== undefined ? updated.specializationDatabaseId : knownList[existingIdx].specializationDatabaseId,
+              university: updated.university || knownList[existingIdx].university,
+              college: updated.college || knownList[existingIdx].college,
+              name: updated.name || knownList[existingIdx].name
+            };
+            localStorage.setItem('unistudent_known_users', JSON.stringify(knownList));
+          }
+        }
+      } catch {}
     }
   },
   updateTheme: (theme) => {

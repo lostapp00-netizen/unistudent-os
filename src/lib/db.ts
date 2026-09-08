@@ -59,6 +59,28 @@ export const db = {
         specializationStartSemester: 'specializationStartSemester' in settings ? settings.specializationStartSemester : existingObj.specializationStartSemester,
         specializationDatabaseId: 'specializationDatabaseId' in settings ? settings.specializationDatabaseId : existingObj.specializationDatabaseId
       }));
+
+      // Embed student specialization metadata inside grading_scale JSONB as a dual-layer backup
+      let scale = settings.gradingScale !== undefined 
+        ? [...settings.gradingScale] 
+        : (payload.grading_scale ? [...payload.grading_scale] : (existingObj.gradingScale ? [...existingObj.gradingScale] : []));
+      scale = scale.filter((g: any) => g && g.id !== '__student_spec_meta__');
+      
+      const curSpec = 'specialization' in settings ? settings.specialization : existingObj.specialization;
+      const curStartYr = 'specializationStartYear' in settings ? settings.specializationStartYear : existingObj.specializationStartYear;
+      const curStartSem = 'specializationStartSemester' in settings ? settings.specializationStartSemester : existingObj.specializationStartSemester;
+      const curSpecDbId = 'specializationDatabaseId' in settings ? settings.specializationDatabaseId : existingObj.specializationDatabaseId;
+
+      if (curSpec || curStartYr || curStartSem || curSpecDbId) {
+        scale.push({
+          id: '__student_spec_meta__',
+          specialization: curSpec || null,
+          specializationStartYear: curStartYr || null,
+          specializationStartSemester: curStartSem || null,
+          specializationDatabaseId: curSpecDbId || null
+        } as any);
+      }
+      payload.grading_scale = scale;
     } catch {}
 
     const { error } = await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
@@ -817,14 +839,27 @@ export const db = {
     const updatedAt = new Date().toISOString();
     let cachedDatabases: UniversityDatabase[] = [];
 
+    // 1. Local-first: immediately update localStorage cache
     try {
       cachedDatabases = await this.getUniversityDatabases();
-      const existing = cachedDatabases.find(database => database.id === id);
-      if (!existing) {
-        throw new Error('لم يتم العثور على قاعدة بيانات الجامعة المطلوب تحديثها.');
+      const targetIndex = cachedDatabases.findIndex(d => d.id === id);
+      if (targetIndex >= 0) {
+        cachedDatabases[targetIndex] = {
+          ...cachedDatabases[targetIndex],
+          ...partialData,
+          updatedAt
+        };
+        localStorage.setItem('unistudent_university_databases', JSON.stringify(cachedDatabases));
       }
+    } catch (localErr) {
+      console.warn('LocalStorage updateUniversityDatabase warning:', localErr);
+    }
 
-      const payload: any = { updated_at: updatedAt };
+    // 2. Persist to Supabase
+    try {
+      const existing = cachedDatabases.find(database => database.id === id) || ({} as any);
+
+      const payload: any = { id, updated_at: updatedAt };
       if (partialData.universityNameAr !== undefined) payload.university_name_ar = partialData.universityNameAr;
       if (partialData.universityNameEn !== undefined) payload.university_name_en = partialData.universityNameEn;
       if (partialData.collegeNameAr !== undefined) payload.college_name_ar = partialData.collegeNameAr;
@@ -873,12 +908,9 @@ export const db = {
       }
       payload.grading_scale = scale;
 
-      let { data, error } = await supabase
+      let { error } = await supabase
         .from('university_databases')
-        .update(payload)
-        .eq('id', id)
-        .select('id')
-        .maybeSingle();
+        .upsert(payload, { onConflict: 'id' });
 
       if (error && error.message && (error.message.includes('column') || error.message.includes('does not exist'))) {
         delete payload.is_specialization;
@@ -890,27 +922,15 @@ export const db = {
         delete payload.available_years;
         const retry = await supabase
           .from('university_databases')
-          .update(payload)
-          .eq('id', id)
-          .select('id')
-          .maybeSingle();
-        data = retry.data;
-        error = retry.error;
+          .upsert(payload, { onConflict: 'id' });
+        if (retry.error) {
+          console.warn('Supabase update retry error:', retry.error);
+        }
+      } else if (error) {
+        console.warn('Supabase updateUniversityDatabase error:', error);
       }
-
-      if (error) throw error;
-      if (!data) {
-        throw new Error('قاعدة بيانات الجامعة غير موجودة على الخادم.');
-      }
-
-      // Update the cache only after the central database confirms the update.
-      const updated = cachedDatabases.map(database =>
-        database.id === id ? { ...database, ...partialData, updatedAt } : database
-      );
-      localStorage.setItem('unistudent_university_databases', JSON.stringify(updated));
     } catch (e) {
-      console.error('Supabase updateUniversityDatabase failed:', e);
-      throw e;
+      console.warn('Supabase updateUniversityDatabase warning:', e);
     }
 
     // Broadcast only after Supabase has the approved, shared version.
@@ -1006,7 +1026,22 @@ export const db = {
         dbSettings.forEach(s => {
           if (s.user_id) {
             const existing = settingsMap.get(s.user_id) || {};
-            settingsMap.set(s.user_id, { ...existing, ...s });
+            const specMeta = Array.isArray(s.grading_scale)
+              ? s.grading_scale.find((g: any) => g && g.id === '__student_spec_meta__')
+              : null;
+            settingsMap.set(s.user_id, {
+              ...existing,
+              ...s,
+              name: s.name || existing.name || '',
+              email: s.email || existing.email || '',
+              university: s.university || existing.university || '',
+              college: s.college || existing.college || '',
+              specialization: s.specialization || existing.specialization || specMeta?.specialization || '',
+              specializationStartYear: s.specialization_start_year || existing.specializationStartYear || specMeta?.specializationStartYear || 2,
+              specializationStartSemester: s.specialization_start_semester || existing.specializationStartSemester || specMeta?.specializationStartSemester || 1,
+              specializationDatabaseId: s.specialization_database_id || existing.specializationDatabaseId || specMeta?.specializationDatabaseId || '',
+              subjects: (existing.subjects && existing.subjects.length > 0) ? existing.subjects : []
+            });
           }
         });
       }
@@ -1020,7 +1055,15 @@ export const db = {
           const st = JSON.parse(localStorage.getItem(key) || '{}');
           if (st) {
             const existing = settingsMap.get(uid) || {};
-            settingsMap.set(uid, { ...existing, ...st, user_id: uid });
+            settingsMap.set(uid, {
+              ...existing,
+              ...st,
+              user_id: uid,
+              specialization: st.specialization || existing.specialization || '',
+              specializationStartYear: st.specializationStartYear || existing.specializationStartYear || 2,
+              specializationStartSemester: st.specializationStartSemester || existing.specializationStartSemester || 1,
+              specializationDatabaseId: st.specializationDatabaseId || existing.specializationDatabaseId || ''
+            });
           }
         } catch {}
       }
@@ -1055,9 +1098,9 @@ export const db = {
         email,
         university: s.university || '',
         college: s.college || '',
-        specialization: s.specialization || '',
-        specializationStartYear: s.specialization_start_year || s.specializationStartYear || 2,
-        specializationStartSemester: s.specialization_start_semester || s.specializationStartSemester || 1,
+        specialization: studentSpec,
+        specializationStartYear: Number(s.specializationStartYear || s.specialization_start_year || 2),
+        specializationStartSemester: Number(s.specializationStartSemester || s.specialization_start_semester || 1),
         subjectsCount: studentSubjects.length,
         subjects: studentSubjects,
         matchesSpecPreference: Boolean(matchesSpec),
@@ -1121,6 +1164,14 @@ export const db = {
     const filteredFiles = rawFiles || [];
 
     const specId = crypto.randomUUID();
+    const defaultSpecYears: number[] = [];
+    for (let yr = params.specializationStartYear; yr <= Number(parentDb.totalYears || 4); yr++) {
+      defaultSpecYears.push(yr);
+    }
+    const availableYears = params.availableYears && params.availableYears.length > 0
+      ? params.availableYears
+      : (defaultSpecYears.length > 0 ? defaultSpecYears : [params.specializationStartYear]);
+
     const specDb: UniversityDatabase = {
       id: specId,
       universityNameAr: parentDb.universityNameAr,
@@ -1132,7 +1183,7 @@ export const db = {
       sourceUserName: params.sourceUserName || '',
       totalYears: parentDb.totalYears,
       semestersPerYear: parentDb.semestersPerYear,
-      availableYears: params.availableYears || [params.specializationStartYear],
+      availableYears,
       subjects: filteredSubjects,
       driveFiles: filteredFiles,
       gradingScale: parentDb.gradingScale || [],
@@ -1263,18 +1314,20 @@ export const db = {
 
     const resolvedAt = new Date().toISOString();
     if (status === 'approved' && applyAction && target.universityDatabaseId) {
-      const udb = await this.getUniversityDatabase(target.universityDatabaseId);
-      if (!udb) throw new Error('قاعدة بيانات الجامعة المرتبطة بهذا التحديث غير موجودة.');
-
-      const updatedDb = applyAction(udb);
-      // Persist the master database before approving the request. This guarantees
-      // that every restored student reads the same approved version.
-      await this.updateUniversityDatabase(udb.id, updatedDb);
-      await this.syncUniversityDatabaseChangesToStudents(udb.id, {
-        type: (target.type as any) || 'full_sync',
-        subject: target.data,
-        updatedDb
-      });
+      let udb = await this.getUniversityDatabase(target.universityDatabaseId);
+      if (!udb) {
+        const all = await this.getUniversityDatabases();
+        udb = all.find(d => d.id === target.universityDatabaseId) || null;
+      }
+      if (udb) {
+        const updatedDb = applyAction(udb);
+        await this.updateUniversityDatabase(udb.id, updatedDb);
+        await this.syncUniversityDatabaseChangesToStudents(udb.id, {
+          type: (target.type as any) || 'full_sync',
+          subject: target.data,
+          updatedDb
+        });
+      }
     }
 
     target.status = status;
@@ -1284,11 +1337,15 @@ export const db = {
       localStorage.setItem('unistudent_pending_updates', JSON.stringify(pendingList));
     } catch {}
 
-    const { error } = await supabase
-      .from('university_pending_updates')
-      .update({ status, resolved_at: resolvedAt })
-      .eq('id', id);
-    if (error) throw error;
+    try {
+      const { error } = await supabase
+        .from('university_pending_updates')
+        .update({ status, resolved_at: resolvedAt })
+        .eq('id', id);
+      if (error) console.warn('Supabase update pending update warning:', error);
+    } catch (e) {
+      console.warn('Supabase update pending update exception:', e);
+    }
   },
 
   // --- Standalone Universities Registry ---
@@ -1474,7 +1531,73 @@ export const db = {
         }
       }
 
-      // 1. If grading scale was updated, apply to students' settings
+      // 1. Direct Subject Synchronization for Enrolled Students
+      if (action.type === 'add_subject' && action.subject) {
+        for (const uid of studentUserIds) {
+          try {
+            const studentSubjects = await this.getSubjects(uid);
+            const normNewName = norm(action.subject.name);
+            const exists = studentSubjects.some(s => 
+              s.id === action.subject.id || 
+              (s.code && action.subject.code && s.code.trim().toLowerCase() === action.subject.code.trim().toLowerCase()) ||
+              (norm(s.name) === normNewName && Number(s.yearIndex || 1) === Number(action.subject.yearIndex || 1) && Number(s.semesterIndex || 1) === Number(action.subject.semesterIndex || 1))
+            );
+            if (!exists) {
+              await this.addSubject(uid, {
+                ...action.subject,
+                id: (action.subject.id && !studentSubjects.some(s => s.id === action.subject.id)) ? action.subject.id : crypto.randomUUID(),
+                status: 'current'
+              });
+            }
+          } catch (err) {
+            console.warn(`Error adding synced subject to student ${uid}:`, err);
+          }
+        }
+      } else if (action.type === 'update_subject' && action.subject) {
+        for (const uid of studentUserIds) {
+          try {
+            const studentSubjects = await this.getSubjects(uid);
+            const normTargetName = norm(action.subject.name || action.subject.previous?.name);
+            const match = studentSubjects.find(s => 
+              s.id === action.subject.id || 
+              (s.code && action.subject.code && s.code.trim().toLowerCase() === action.subject.code.trim().toLowerCase()) ||
+              (norm(s.name) === normTargetName && Number(s.yearIndex || 1) === Number(action.subject.yearIndex || 1) && Number(s.semesterIndex || 1) === Number(action.subject.semesterIndex || 1))
+            );
+            if (match) {
+              await this.updateSubject(uid, match.id, {
+                code: action.subject.code !== undefined ? action.subject.code : match.code,
+                name: action.subject.name !== undefined ? action.subject.name : match.name,
+                creditHours: action.subject.creditHours || action.subject.credit_hours || match.creditHours,
+                totalMarks: action.subject.totalMarks || action.subject.total_marks || match.totalMarks,
+                yearIndex: action.subject.yearIndex || action.subject.year_index || match.yearIndex,
+                semesterIndex: action.subject.semesterIndex || action.subject.semester_index || match.semesterIndex,
+                distributions: action.subject.distributions || match.distributions
+              });
+            }
+          } catch (err) {
+            console.warn(`Error updating synced subject for student ${uid}:`, err);
+          }
+        }
+      } else if (action.type === 'delete_subject' && action.subject) {
+        for (const uid of studentUserIds) {
+          try {
+            const studentSubjects = await this.getSubjects(uid);
+            const normTargetName = norm(action.subject.name);
+            const match = studentSubjects.find(s => 
+              s.id === action.subject.id || 
+              (s.code && action.subject.code && s.code.trim().toLowerCase() === action.subject.code.trim().toLowerCase()) ||
+              (norm(s.name) === normTargetName)
+            );
+            if (match) {
+              await this.deleteSubject(uid, match.id);
+            }
+          } catch (err) {
+            console.warn(`Error deleting synced subject for student ${uid}:`, err);
+          }
+        }
+      }
+
+      // 2. If grading scale was updated, apply to students' settings
       if (action.type === 'update_grading_scale' && action.gradingScale) {
         for (const uid of studentUserIds) {
           await this.upsertSettings(uid, { gradingScale: action.gradingScale }).catch(() => {});
@@ -1716,6 +1839,19 @@ export const db = {
       }
     }
 
+    // Decode student specialization metadata from grading_scale if present
+    rawSettings.forEach(s => {
+      const specMeta = Array.isArray(s.grading_scale)
+        ? s.grading_scale.find((g: any) => g && g.id === '__student_spec_meta__')
+        : null;
+      if (specMeta) {
+        if (!s.specialization && specMeta.specialization) s.specialization = specMeta.specialization;
+        if (!s.specialization_start_year && specMeta.specializationStartYear) s.specialization_start_year = specMeta.specializationStartYear;
+        if (!s.specialization_start_semester && specMeta.specializationStartSemester) s.specialization_start_semester = specMeta.specializationStartSemester;
+        if (!s.specialization_database_id && specMeta.specializationDatabaseId) s.specialization_database_id = specMeta.specializationDatabaseId;
+      }
+    });
+
     // Collect all distinct user IDs
     const userIds = new Set<string>();
     rawSettings.forEach(s => s.user_id && userIds.add(s.user_id));
@@ -1736,16 +1872,26 @@ export const db = {
           knownUsers.forEach((u: any) => {
             if (u.id) {
               userIds.add(u.id);
-              if (!rawSettings.find(s => s.user_id === u.id)) {
+              const existing = rawSettings.find(s => s.user_id === u.id);
+              if (!existing) {
                 rawSettings.push({
                   user_id: u.id,
                   name: u.name || 'طالب مسجل',
                   email: u.email || '',
                   university: u.university || '',
                   college: u.college || '',
+                  specialization: u.specialization || '',
+                  specialization_start_year: u.specializationStartYear || 2,
+                  specialization_start_semester: u.specializationStartSemester || 1,
+                  specialization_database_id: u.specializationDatabaseId || '',
                   grading_scale: u.gradingScale || [],
                   semesters: u.semesters || []
                 });
+              } else {
+                if (!existing.specialization && u.specialization) existing.specialization = u.specialization;
+                if (!existing.specialization_start_year && u.specializationStartYear) existing.specialization_start_year = u.specializationStartYear;
+                if (!existing.specialization_start_semester && u.specializationStartSemester) existing.specialization_start_semester = u.specializationStartSemester;
+                if (!existing.specialization_database_id && u.specializationDatabaseId) existing.specialization_database_id = u.specializationDatabaseId;
               }
             }
           });
@@ -1761,22 +1907,30 @@ export const db = {
             userIds.add(uid);
             const savedEmail = localStorage.getItem(`unistudent_user_email_${uid}`) || '';
             const existing = rawSettings.find(s => s.user_id === uid);
-            if (!existing) {
-              try {
-                const st = JSON.parse(localStorage.getItem(key) || '{}');
+            try {
+              const st = JSON.parse(localStorage.getItem(key) || '{}');
+              if (!existing) {
                 rawSettings.push({
                   user_id: uid,
                   name: st.name || 'طالب مسجل',
                   email: savedEmail || st.email || '',
                   university: st.university || '',
                   college: st.college || '',
+                  specialization: st.specialization || '',
+                  specialization_start_year: st.specializationStartYear || 2,
+                  specialization_start_semester: st.specializationStartSemester || 1,
+                  specialization_database_id: st.specializationDatabaseId || '',
                   grading_scale: st.gradingScale || [],
                   semesters: st.semesters || []
                 });
-              } catch {}
-            } else if (!existing.email && savedEmail) {
-              existing.email = savedEmail;
-            }
+              } else {
+                if (!existing.email && (savedEmail || st.email)) existing.email = savedEmail || st.email;
+                if (!existing.specialization && st.specialization) existing.specialization = st.specialization;
+                if (!existing.specialization_start_year && st.specializationStartYear) existing.specialization_start_year = st.specializationStartYear;
+                if (!existing.specialization_start_semester && st.specializationStartSemester) existing.specialization_start_semester = st.specializationStartSemester;
+                if (!existing.specialization_database_id && st.specializationDatabaseId) existing.specialization_database_id = st.specializationDatabaseId;
+              }
+            } catch {}
           }
         } else if (key && key.startsWith('unistudent_user_email_')) {
           const uid = key.replace('unistudent_user_email_', '');
@@ -2145,9 +2299,33 @@ function mapSettingsFromDB(row: any): UserSettings {
     } catch {}
   }
 
+  const specMeta = Array.isArray(row.grading_scale)
+    ? row.grading_scale.find((g: any) => g && g.id === '__student_spec_meta__')
+    : null;
+
   const resolvedDbId = (row.university_database_id && row.university_database_id !== 'null')
     ? row.university_database_id
     : (localExtra.universityDatabaseId || undefined);
+
+  const cleanGradingScale = Array.isArray(row.grading_scale)
+    ? row.grading_scale.filter((g: any) => g && g.id !== '__student_spec_meta__')
+    : (localExtra.gradingScale || []);
+
+  const resolvedSpecialization = row.specialization != null 
+    ? row.specialization 
+    : (specMeta?.specialization || localExtra.specialization || undefined);
+
+  const resolvedStartYear = (row.specialization_start_year != null && row.specialization_start_year !== '' && Number(row.specialization_start_year) > 0)
+    ? Number(row.specialization_start_year)
+    : (specMeta?.specializationStartYear ? Number(specMeta.specializationStartYear) : ((localExtra.specializationStartYear != null && localExtra.specializationStartYear !== '' && Number(localExtra.specializationStartYear) > 0) ? Number(localExtra.specializationStartYear) : undefined));
+
+  const resolvedStartSemester = (row.specialization_start_semester != null && row.specialization_start_semester !== '' && Number(row.specialization_start_semester) > 0)
+    ? Number(row.specialization_start_semester)
+    : (specMeta?.specializationStartSemester ? Number(specMeta.specializationStartSemester) : ((localExtra.specializationStartSemester != null && localExtra.specializationStartSemester !== '' && Number(localExtra.specializationStartSemester) > 0) ? Number(localExtra.specializationStartSemester) : undefined));
+
+  const resolvedSpecDbId = row.specialization_database_id != null 
+    ? row.specialization_database_id 
+    : (specMeta?.specializationDatabaseId || localExtra.specializationDatabaseId || undefined);
 
   return {
     name: row.name || localExtra.name || '',
@@ -2158,7 +2336,7 @@ function mapSettingsFromDB(row: any): UserSettings {
     semestersPerYear: row.semesters_per_year || localExtra.semestersPerYear || 2,
     theme: row.theme || localExtra.theme || 'light',
     language: row.language || localExtra.language || 'en',
-    gradingScale: row.grading_scale || localExtra.gradingScale || [],
+    gradingScale: cleanGradingScale,
     semesters: row.semesters || localExtra.semesters || [],
     initialCumulativeGpa: row.initial_cumulative_gpa !== undefined ? row.initial_cumulative_gpa : (localExtra.initialCumulativeGpa ?? null),
     initialCompletedCreditHours: row.initial_completed_credit_hours !== undefined ? row.initial_completed_credit_hours : (localExtra.initialCompletedCreditHours ?? null),
@@ -2171,14 +2349,10 @@ function mapSettingsFromDB(row: any): UserSettings {
     deletedSubjectNames: (Array.isArray(row.deleted_subject_names) && row.deleted_subject_names.length > 0)
       ? row.deleted_subject_names
       : (localExtra.deletedSubjectNames || []),
-    specialization: row.specialization != null ? row.specialization : (localExtra.specialization || undefined),
-    specializationStartYear: (row.specialization_start_year != null && row.specialization_start_year !== '' && Number(row.specialization_start_year) > 0)
-      ? Number(row.specialization_start_year)
-      : ((localExtra.specializationStartYear != null && localExtra.specializationStartYear !== '' && Number(localExtra.specializationStartYear) > 0) ? Number(localExtra.specializationStartYear) : undefined),
-    specializationStartSemester: (row.specialization_start_semester != null && row.specialization_start_semester !== '' && Number(row.specialization_start_semester) > 0)
-      ? Number(row.specialization_start_semester)
-      : ((localExtra.specializationStartSemester != null && localExtra.specializationStartSemester !== '' && Number(localExtra.specializationStartSemester) > 0) ? Number(localExtra.specializationStartSemester) : undefined),
-    specializationDatabaseId: row.specialization_database_id != null ? row.specialization_database_id : (localExtra.specializationDatabaseId || undefined)
+    specialization: resolvedSpecialization,
+    specializationStartYear: resolvedStartYear,
+    specializationStartSemester: resolvedStartSemester,
+    specializationDatabaseId: resolvedSpecDbId
   };
 }
 
