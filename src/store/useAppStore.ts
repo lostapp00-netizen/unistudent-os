@@ -999,25 +999,26 @@ export const useAppStore = create<AppState>((set, get) => ({
 
         // 2. Self-Healing: If not found by ID, but user has university & college specified (or stale ID)
         if (!matchedDb && settings.university && settings.college && settings.university !== 'غير محدد' && settings.university !== 'Not specified') {
-        const norm = (str?: string) => normalizeSubjectName(str);
-        const normUni = norm(settings.university);
-        const normCol = norm(settings.college);
+          const norm = (str?: string) => normalizeSubjectName(str);
+          const normUni = norm(settings.university);
+          const normCol = norm(settings.college);
 
-        matchedDb = allDbs.find(d => {
-          const uAr = norm(d.universityNameAr);
-          const uEn = norm(d.universityNameEn);
-          const cAr = norm(d.collegeNameAr);
-          const cEn = norm(d.collegeNameEn);
-          const uniMatches = (uAr && normUni.includes(uAr)) || (uEn && normUni.includes(uEn)) || (uAr && uAr.includes(normUni)) || uAr === normUni || uEn === normUni;
-          const colMatches = (cAr && normCol.includes(cAr)) || (cEn && normCol.includes(cEn)) || (cAr && cAr.includes(normCol)) || cAr === normCol || cEn === normCol;
-          return uniMatches && colMatches;
-        }) || null;
+          matchedDb = allDbs.find(d => {
+            const uAr = norm(d.universityNameAr);
+            const uEn = norm(d.universityNameEn);
+            const cAr = norm(d.collegeNameAr);
+            const cEn = norm(d.collegeNameEn);
+            const uniMatches = (uAr && normUni.includes(uAr)) || (uEn && normUni.includes(uEn)) || (uAr && uAr.includes(normUni)) || uAr === normUni || uEn === normUni;
+            const colMatches = (cAr && normCol.includes(cAr)) || (cEn && normCol.includes(cEn)) || (cAr && cAr.includes(normCol)) || cAr === normCol || cEn === normCol;
+            return uniMatches && colMatches;
+          }) || null;
 
-        // Auto-heal the database ID immediately in Store, Supabase settings, and localStorage
-        if (matchedDb) {
-          targetDbId = matchedDb.id;
-          set(state => ({ settings: { ...state.settings, universityDatabaseId: matchedDb!.id } }));
-          db.upsertSettings(userId, { universityDatabaseId: matchedDb.id }).catch(() => {});
+          // Auto-heal the database ID immediately in Store, Supabase settings, and localStorage
+          if (matchedDb) {
+            targetDbId = matchedDb.id;
+            set(state => ({ settings: { ...state.settings, universityDatabaseId: matchedDb!.id } }));
+            db.upsertSettings(userId, { universityDatabaseId: matchedDb.id }).catch(() => {});
+          }
         }
       }
 

@@ -2,6 +2,28 @@ import { supabase } from './supabase';
 import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, DatabaseBackup, EmailBackupConfig, UniversityDatabase, UniversityPendingUpdate, GradeRule, GradeDistributionItem } from '../types';
 import { normalizeSubjectName } from './academicTranslation';
 
+export async function broadcastUniversityDatabaseUpdate(payload: any): Promise<void> {
+  try {
+    const ch = supabase.channel('university_global_sync');
+    await new Promise<void>((resolve) => {
+      ch.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          ch.send({
+            type: 'broadcast',
+            event: 'university_db_updated',
+            payload
+          }).then(() => resolve()).catch(() => resolve());
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          resolve();
+        }
+      });
+      setTimeout(resolve, 1500);
+    });
+  } catch (err) {
+    console.warn('Realtime broadcast error:', err);
+  }
+}
+
 export const db = {
   // --- Settings ---
   async getSettings(userId: string) {
@@ -834,28 +856,6 @@ export const db = {
       console.warn('Supabase createUniversityDatabase failed:', e);
     }
   },
-
-export async function broadcastUniversityDatabaseUpdate(payload: any): Promise<void> {
-  try {
-    const ch = supabase.channel('university_global_sync');
-    await new Promise<void>((resolve) => {
-      ch.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          ch.send({
-            type: 'broadcast',
-            event: 'university_db_updated',
-            payload
-          }).then(() => resolve()).catch(() => resolve());
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          resolve();
-        }
-      });
-      setTimeout(resolve, 1500);
-    });
-  } catch (err) {
-    console.warn('Realtime broadcast error:', err);
-  }
-}
 
   async updateUniversityDatabase(id: string, partialData: Partial<UniversityDatabase>): Promise<void> {
     const updatedAt = new Date().toISOString();
