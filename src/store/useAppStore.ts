@@ -703,6 +703,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? specDb.gradingScale
         : (mainCollegeDb.gradingScale && mainCollegeDb.gradingScale.length > 0 ? mainCollegeDb.gradingScale : settings.gradingScale);
 
+      const specStartYr = Number(specDb?.specializationStartYear || mainCollegeDb.specializationStartYear || 2);
+      const specStartSem = Number(specDb?.specializationStartSemester || mainCollegeDb.specializationStartSemester || 1);
+
       const updatedSettings: Partial<UserSettings> = {
         university: chosenUni,
         college: chosenCollege,
@@ -710,23 +713,40 @@ export const useAppStore = create<AppState>((set, get) => ({
         semestersPerYear: mainCollegeDb.semestersPerYear || specDb?.semestersPerYear || 2,
         universityDatabaseId: mainCollegeDb.id,
         deletedSubjectNames: [],
-        gradingScale: effectiveGradingScale
+        gradingScale: effectiveGradingScale,
+        specializationStartYear: specStartYr,
+        specializationStartSemester: specStartSem,
       };
 
       if (specDb) {
         updatedSettings.specialization = specDb.specializationNameAr || specDb.specializationNameEn || '';
-        updatedSettings.specializationStartYear = specDb.specializationStartYear || 2;
-        updatedSettings.specializationStartSemester = specDb.specializationStartSemester || 1;
         updatedSettings.specializationDatabaseId = specDb.id;
       }
 
-      if (!settings.semesters || settings.semesters.length === 0) {
-        const newSemesters: any[] = [];
-        const totY = Number(updatedSettings.totalYears || 4);
-        const semY = Number(updatedSettings.semestersPerYear || 2);
-        for (let y = 1; y <= totY; y++) {
-          for (let s = 1; s <= semY; s++) {
-            newSemesters.push({
+      // Generate or update semesters based on Foundation vs Specialization scope
+      const totY = Number(updatedSettings.totalYears || 4);
+      const semY = Number(updatedSettings.semestersPerYear || 2);
+
+      let targetYears: number[] = [];
+      if (specDb) {
+        // Full years: 1 to totY (foundation + specialization)
+        for (let y = 1; y <= totY; y++) targetYears.push(y);
+      } else {
+        // Foundation years only: 1 to maxFoundationYear
+        const maxFoundationYear = Math.max(1, specStartSem === 1 ? specStartYr - 1 : specStartYr);
+        for (let y = 1; y <= maxFoundationYear; y++) targetYears.push(y);
+      }
+
+      const existingSemesters = settings.semesters || [];
+      const updatedSemesters: any[] = [];
+
+      for (const y of targetYears) {
+        for (let s = 1; s <= semY; s++) {
+          const existing = existingSemesters.find(sm => sm.yearIndex === y && sm.semesterIndex === s);
+          if (existing) {
+            updatedSemesters.push(existing);
+          } else {
+            updatedSemesters.push({
               id: uuidv4(),
               yearIndex: y,
               semesterIndex: s,
@@ -736,8 +756,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             });
           }
         }
-        updatedSettings.semesters = newSemesters;
       }
+      updatedSettings.semesters = updatedSemesters;
 
       set(state => ({ settings: { ...state.settings, ...updatedSettings } }));
       db.upsertSettings(userId, updatedSettings).catch(console.error);
@@ -1338,15 +1358,22 @@ async function checkAndNotifySourceUpdate(
     const uniDbs = await db.getUniversityDatabases();
     const matchingDbs = uniDbs.filter(u => u.sourceUserId === userId);
     for (const matchingDb of matchingDbs) {
-      // If this is a specialization database, check if subject falls into its milestone
-      if (matchingDb.isSpecialization && data?.yearIndex) {
+      if (data?.yearIndex) {
         const startYr = Number(matchingDb.specializationStartYear || 2);
         const startSm = Number(matchingDb.specializationStartSemester || 1);
         const y = Number(data.yearIndex || 1);
         const sm = Number(data.semesterIndex || 1);
-        if (y < startYr || (y === startYr && sm < startSm)) {
-          // This subject belongs to parent college years, not this specialization database
-          continue;
+
+        if (matchingDb.isSpecialization) {
+          // If this is a specialization database, ignore subjects before specialization start
+          if (y < startYr || (y === startYr && sm < startSm)) {
+            continue;
+          }
+        } else {
+          // If this is the general college database, ignore subjects at or after specialization start
+          if (y > startYr || (y === startYr && sm >= startSm)) {
+            continue;
+          }
         }
       }
 

@@ -194,7 +194,7 @@ export function Admin() {
             { event: '*', schema: 'public', table: 'university_pending_updates' },
             () => {
               import('../lib/db').then(({ db }) => {
-                db.getUniversityPendingUpdates().then(updates => {
+                db.getPendingUpdates().then(updates => {
                   setPendingUniUpdatesCount(updates.filter(u => u.status === 'pending').length);
                 });
               });

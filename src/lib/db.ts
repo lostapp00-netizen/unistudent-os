@@ -738,20 +738,27 @@ export const db = {
 
     // 2. Supabase insert/upsert
     try {
-      let gradingScalePayload = dbData.gradingScale || [];
+      let gradingScalePayload = dbData.gradingScale ? [...dbData.gradingScale] : [];
+      gradingScalePayload = gradingScalePayload.filter((g: any) => g && g.id !== '__spec_meta__' && g.id !== '__college_meta__');
       if (dbData.isSpecialization) {
-        gradingScalePayload = [
-          ...gradingScalePayload.filter((g: any) => g && g.id !== '__spec_meta__'),
-          {
-            id: '__spec_meta__',
-            isSpecialization: true,
-            parentDatabaseId: dbData.parentDatabaseId,
-            specializationNameAr: dbData.specializationNameAr,
-            specializationNameEn: dbData.specializationNameEn,
-            specializationStartYear: dbData.specializationStartYear,
-            specializationStartSemester: dbData.specializationStartSemester,
-          } as any
-        ];
+        gradingScalePayload.push({
+          id: '__spec_meta__',
+          isSpecialization: true,
+          parentDatabaseId: dbData.parentDatabaseId,
+          specializationNameAr: dbData.specializationNameAr,
+          specializationNameEn: dbData.specializationNameEn,
+          specializationStartYear: dbData.specializationStartYear,
+          specializationStartSemester: dbData.specializationStartSemester,
+          availableYears: dbData.availableYears,
+        } as any);
+      } else {
+        gradingScalePayload.push({
+          id: '__college_meta__',
+          isSpecialization: false,
+          availableYears: dbData.availableYears,
+          specializationStartYear: dbData.specializationStartYear,
+          specializationStartSemester: dbData.specializationStartSemester,
+        } as any);
       }
 
       const payload: any = {
@@ -794,6 +801,7 @@ export const db = {
           delete payload.specialization_name_en;
           delete payload.specialization_start_year;
           delete payload.specialization_start_semester;
+          delete payload.available_years;
           const { error: retryErr } = await supabase.from('university_databases').upsert(payload);
           if (retryErr) console.warn('Supabase createUniversityDatabase fallback error:', retryErr);
         } else {
@@ -840,24 +848,30 @@ export const db = {
       if (partialData.specializationStartSemester !== undefined) payload.specialization_start_semester = partialData.specializationStartSemester;
 
       const isSpec = partialData.isSpecialization !== undefined ? partialData.isSpecialization : existing.isSpecialization;
-      if (partialData.gradingScale !== undefined || isSpec) {
-        let scale = partialData.gradingScale !== undefined ? [...partialData.gradingScale] : [...(existing.gradingScale || [])];
-        if (isSpec) {
-          scale = [
-            ...scale.filter((g: any) => g && g.id !== '__spec_meta__'),
-            {
-              id: '__spec_meta__',
-              isSpecialization: true,
-              parentDatabaseId: partialData.parentDatabaseId || existing.parentDatabaseId,
-              specializationNameAr: partialData.specializationNameAr || existing.specializationNameAr,
-              specializationNameEn: partialData.specializationNameEn || existing.specializationNameEn,
-              specializationStartYear: partialData.specializationStartYear || existing.specializationStartYear,
-              specializationStartSemester: partialData.specializationStartSemester || existing.specializationStartSemester,
-            } as any
-          ];
-        }
-        payload.grading_scale = scale;
+      let scale = partialData.gradingScale !== undefined ? [...partialData.gradingScale] : [...(existing.gradingScale || [])];
+      scale = scale.filter((g: any) => g && g.id !== '__spec_meta__' && g.id !== '__college_meta__');
+
+      if (isSpec) {
+        scale.push({
+          id: '__spec_meta__',
+          isSpecialization: true,
+          parentDatabaseId: partialData.parentDatabaseId !== undefined ? partialData.parentDatabaseId : existing.parentDatabaseId,
+          specializationNameAr: partialData.specializationNameAr !== undefined ? partialData.specializationNameAr : existing.specializationNameAr,
+          specializationNameEn: partialData.specializationNameEn !== undefined ? partialData.specializationNameEn : existing.specializationNameEn,
+          specializationStartYear: partialData.specializationStartYear !== undefined ? partialData.specializationStartYear : existing.specializationStartYear,
+          specializationStartSemester: partialData.specializationStartSemester !== undefined ? partialData.specializationStartSemester : existing.specializationStartSemester,
+          availableYears: partialData.availableYears !== undefined ? partialData.availableYears : existing.availableYears,
+        } as any);
+      } else {
+        scale.push({
+          id: '__college_meta__',
+          isSpecialization: false,
+          availableYears: partialData.availableYears !== undefined ? partialData.availableYears : existing.availableYears,
+          specializationStartYear: partialData.specializationStartYear !== undefined ? partialData.specializationStartYear : existing.specializationStartYear,
+          specializationStartSemester: partialData.specializationStartSemester !== undefined ? partialData.specializationStartSemester : existing.specializationStartSemester,
+        } as any);
       }
+      payload.grading_scale = scale;
 
       let { data, error } = await supabase
         .from('university_databases')
@@ -873,6 +887,7 @@ export const db = {
         delete payload.specialization_name_en;
         delete payload.specialization_start_year;
         delete payload.specialization_start_semester;
+        delete payload.available_years;
         const retry = await supabase
           .from('university_databases')
           .update(payload)
@@ -1164,6 +1179,10 @@ export const db = {
     }
   },
 
+  async getUniversityPendingUpdates(universityDbId?: string): Promise<UniversityPendingUpdate[]> {
+    return this.getPendingUpdates(universityDbId);
+  },
+
   async updateUniversityName(oldName: string, newNameAr: string, newNameEn: string): Promise<void> {
     const current = await this.getUniversityDatabases();
     const toUpdate = current.filter(u => (u.universityNameAr && u.universityNameAr.trim() === oldName.trim()) || (u.universityNameEn && u.universityNameEn.trim() === oldName.trim()));
@@ -1186,11 +1205,39 @@ export const db = {
   async recordPendingUpdate(update: UniversityPendingUpdate): Promise<void> {
     try {
       const current = await this.getPendingUpdates();
+      const isDuplicate = current.some(p => 
+        p.status === 'pending' &&
+        p.universityDatabaseId === update.universityDatabaseId &&
+        p.type === update.type &&
+        ((p.data?.id && p.data?.id === update.data?.id) || 
+         (p.data?.name && p.data?.name === update.data?.name && p.data?.yearIndex === update.data?.yearIndex && p.data?.semesterIndex === update.data?.semesterIndex))
+      );
+      if (isDuplicate) {
+        return;
+      }
       const updated = [update, ...current.filter(u => u.id !== update.id)];
       localStorage.setItem('unistudent_pending_updates', JSON.stringify(updated.slice(0, 100)));
     } catch {}
 
     try {
+      const { data: existing } = await supabase
+        .from('university_pending_updates')
+        .select('id, data')
+        .eq('university_database_id', update.universityDatabaseId)
+        .eq('type', update.type)
+        .eq('status', 'pending');
+
+      if (existing && existing.length > 0) {
+        const hasDup = existing.some(e => {
+          const d = e.data;
+          return (d?.id && d?.id === update.data?.id) ||
+                 (d?.name && d?.name === update.data?.name && d?.yearIndex === update.data?.yearIndex && d?.semesterIndex === update.data?.semesterIndex);
+        });
+        if (hasDup) {
+          return;
+        }
+      }
+
       const payload = {
         id: update.id,
         university_database_id: update.universityDatabaseId,
@@ -2325,6 +2372,9 @@ function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
   const specMeta = Array.isArray(row.grading_scale)
     ? row.grading_scale.find((g: any) => g && g.id === '__spec_meta__')
     : null;
+  const collegeMeta = Array.isArray(row.grading_scale)
+    ? row.grading_scale.find((g: any) => g && g.id === '__college_meta__')
+    : null;
 
   const isSpecialization = Boolean(
     row.is_specialization !== undefined
@@ -2335,12 +2385,21 @@ function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
   const parentDatabaseId = row.parent_database_id || specMeta?.parentDatabaseId || row.parentDatabaseId || undefined;
   const specializationNameAr = row.specialization_name_ar || specMeta?.specializationNameAr || row.specializationNameAr || undefined;
   const specializationNameEn = row.specialization_name_en || specMeta?.specializationNameEn || row.specializationNameEn || undefined;
-  const specializationStartYear = Number(row.specialization_start_year || specMeta?.specializationStartYear || row.specializationStartYear || 1);
-  const specializationStartSemester = Number(row.specialization_start_semester || specMeta?.specializationStartSemester || row.specializationStartSemester || 1);
+
+  const rawSpecStartYr = row.specialization_start_year ?? specMeta?.specializationStartYear ?? collegeMeta?.specializationStartYear ?? row.specializationStartYear;
+  const specializationStartYear = rawSpecStartYr !== undefined && rawSpecStartYr !== null && !isNaN(Number(rawSpecStartYr)) ? Number(rawSpecStartYr) : 2;
+
+  const rawSpecStartSem = row.specialization_start_semester ?? specMeta?.specializationStartSemester ?? collegeMeta?.specializationStartSemester ?? row.specializationStartSemester;
+  const specializationStartSemester = rawSpecStartSem !== undefined && rawSpecStartSem !== null && !isNaN(Number(rawSpecStartSem)) ? Number(rawSpecStartSem) : 1;
 
   const cleanGradingScale = Array.isArray(row.grading_scale)
-    ? row.grading_scale.filter((g: any) => g && g.id !== '__spec_meta__')
+    ? row.grading_scale.filter((g: any) => g && g.id !== '__spec_meta__' && g.id !== '__college_meta__')
     : [];
+
+  const rawAvailableYears = row.available_years ?? specMeta?.availableYears ?? collegeMeta?.availableYears ?? row.availableYears;
+  const availableYears = Array.isArray(rawAvailableYears)
+    ? rawAvailableYears
+    : [1];
 
   return {
     id: row.id,
@@ -2353,16 +2412,14 @@ function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
     sourceUserName: row.source_user_name || '',
     totalYears: row.total_years || 4,
     semestersPerYear: row.semesters_per_year || 2,
-    availableYears: Array.isArray(row.available_years) 
-      ? row.available_years 
-      : (Array.isArray(row.availableYears) ? row.availableYears : [1]),
+    availableYears,
     isVisible: row.is_visible !== false && row.isVisible !== false,
     isSpecialization,
     parentDatabaseId,
     specializationNameAr,
     specializationNameEn,
-    specializationStartYear: Number(row.specialization_start_year || specMeta?.specializationStartYear || row.specializationStartYear || 2),
-    specializationStartSemester: Number(row.specialization_start_semester || specMeta?.specializationStartSemester || row.specializationStartSemester || 1),
+    specializationStartYear,
+    specializationStartSemester,
     subjects: (row.subjects || []).map((s: any) => ({
       id: s.id,
       code: s.code || '',

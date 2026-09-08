@@ -166,11 +166,44 @@ export function AdminUniversitiesTab({
     if (!selectedCollegeDb) return [];
     return databases.filter(d => d.isSpecialization && d.parentDatabaseId === selectedCollegeDb.id);
   }, [databases, selectedCollegeDb]);
+
+  // Dynamically slice visible years: Foundation only for College, Spec years only for Specialization
+  const visibleYearsForSelectedCollege = useMemo(() => {
+    if (!selectedCollegeDb) return [1];
+    const totalYears = Number(selectedCollegeDb.totalYears || 4);
+    const specStartYr = Number(selectedCollegeDb.specializationStartYear || 2);
+    const specStartSem = Number(selectedCollegeDb.specializationStartSemester || 1);
+
+    if (selectedCollegeDb.isSpecialization) {
+      // Specialization: from specStartYr to totalYears
+      const years: number[] = [];
+      for (let y = Math.max(1, specStartYr); y <= totalYears; y++) {
+        years.push(y);
+      }
+      return years.length > 0 ? years : [specStartYr];
+    } else {
+      // General College (Foundation): from Year 1 up to maxFoundationYear
+      const maxFoundationYear = Math.max(1, specStartSem === 1 ? specStartYr - 1 : specStartYr);
+      const limit = Math.min(totalYears, maxFoundationYear);
+      const years: number[] = [];
+      for (let y = 1; y <= limit; y++) {
+        years.push(y);
+      }
+      return years.length > 0 ? years : [1];
+    }
+  }, [selectedCollegeDb]);
   
   // Studio Navigation inside a College
   const [selectedYearIndex, setSelectedYearIndex] = useState<number>(1);
   const [selectedSemesterIndex, setSelectedSemesterIndex] = useState<number>(1);
   const [activeStudioTab, setActiveStudioTab] = useState<'subjects' | 'specializations' | 'drive' | 'students' | 'updates' | 'grading'>('subjects');
+
+  // Keep selectedYearIndex within visible years bounds
+  useEffect(() => {
+    if (visibleYearsForSelectedCollege.length > 0 && !visibleYearsForSelectedCollege.includes(selectedYearIndex)) {
+      setSelectedYearIndex(visibleYearsForSelectedCollege[0]);
+    }
+  }, [visibleYearsForSelectedCollege, selectedYearIndex]);
 
   // Specializations Management State
   const [isCreateSpecModalOpen, setIsCreateSpecModalOpen] = useState(false);
@@ -793,17 +826,20 @@ export function AdminUniversitiesTab({
   const handleSaveStructure = async () => {
     if (!selectedCollegeDb) return;
     try {
-      await db.updateUniversityDatabase(selectedCollegeDb.id, {
+      const updatedFields = {
         totalYears: Number(structureForm.totalYears || 4),
         semestersPerYear: Number(structureForm.semestersPerYear || 2),
         specializationStartYear: Number(structureForm.specializationStartYear || 2),
         specializationStartSemester: Number(structureForm.specializationStartSemester || 1),
         availableYears: structureForm.availableYears && structureForm.availableYears.length > 0 ? structureForm.availableYears : [1]
-      });
+      };
+      await db.updateUniversityDatabase(selectedCollegeDb.id, updatedFields);
+      setDatabases(prev => prev.map(d => d.id === selectedCollegeDb.id ? { ...d, ...updatedFields } : d));
       setIsStructureModalOpen(false);
       await loadUniData();
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error updating structure:', e);
+      alert(isAr ? ('حدث خطأ أثناء حفظ الهيكل: ' + (e?.message || 'يرجى المحاولة لاحقاً')) : ('Failed to update structure: ' + (e?.message || 'Please try again')));
     }
   };
 
@@ -2535,7 +2571,7 @@ export function AdminUniversitiesTab({
                         {isAr ? 'اختر السنة الدراسية:' : 'Select Academic Year:'}
                       </label>
                       <div className="flex flex-wrap gap-2">
-                        {Array.from({ length: selectedCollegeDb.totalYears || 4 }, (_, i) => i + 1).map(year => (
+                        {visibleYearsForSelectedCollege.map(year => (
                           <button
                             key={year}
                             onClick={() => setSelectedYearIndex(year)}
@@ -4263,14 +4299,15 @@ export function AdminUniversitiesTab({
                   <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
                     {isAr ? 'السنة الدراسية' : 'Year'}
                   </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={selectedCollegeDb?.totalYears || 4}
-                    value={subjectForm.yearIndex === '' ? '' : subjectForm.yearIndex}
-                    onChange={(e) => setSubjectForm({ ...subjectForm, yearIndex: e.target.value === '' ? '' : Number(e.target.value) })}
-                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                  <select
+                    value={subjectForm.yearIndex}
+                    onChange={(e) => setSubjectForm({ ...subjectForm, yearIndex: Number(e.target.value) })}
+                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {visibleYearsForSelectedCollege.map(yr => (
+                      <option key={yr} value={yr}>{isAr ? `السنة ${yr}` : `Year ${yr}`}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
