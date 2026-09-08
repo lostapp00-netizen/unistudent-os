@@ -817,6 +817,7 @@ export function AdminUniversitiesTab({
         setSelectedCollegeId(null);
       }
       await loadUniData();
+      await onRefreshAllData();
     } catch (e) {
       console.error('Error deleting university database:', e);
     }
@@ -4689,19 +4690,46 @@ export function AdminUniversitiesTab({
         </div>
       )}
 
-      {/* --- CONFIRM DELETE COLLEGE MODAL --- */}
+      {/* --- CONFIRM DELETE COLLEGE / SPECIALIZATION MODAL --- */}
       {dbToDelete && (
         <ConfirmModal
           isOpen={true}
-          title={isAr ? 'حذف قاعدة بيانات الكلية' : 'Delete College Database'}
-          message={isAr 
-            ? `هل أنت متأكد من حذف قاعدة بيانات "${dbToDelete.universityNameAr} - ${dbToDelete.collegeNameAr}" من القوالب؟ (لن يؤثر ذلك على حسابات الطلاب)` 
-            : `Delete "${dbToDelete.collegeNameAr}" template?`}
+          title={
+            dbToDelete.isSpecialization
+              ? (isAr ? 'حذف قاعدة بيانات التخصص' : 'Delete Specialization Database')
+              : (isAr ? 'حذف قاعدة بيانات الكلية' : 'Delete College Database')
+          }
+          message={
+            dbToDelete.isSpecialization
+              ? (isAr 
+                  ? `هل أنت متأكد من حذف تخصص "${dbToDelete.specializationNameAr || dbToDelete.collegeNameAr}"؟ سيتم إلغاء ربطه وحذف كافة مواده وملفاته نهائياً من عند جميع الطلاب المستردين له فوراً.`
+                  : `Delete specialization "${dbToDelete.specializationNameAr || dbToDelete.collegeNameAr}"? All specialization subjects and files will be removed from all subscribed students immediately.`)
+              : (isAr 
+                  ? `هل أنت متأكد من حذف كلية "${dbToDelete.collegeNameAr}" وجميع تخصصاتها؟ سيتم إلغاء ربطها وحذف موادها وملفاتها نهائياً من عند جميع الطلاب المستردين لها فوراً.` 
+                  : `Delete college "${dbToDelete.collegeNameAr}" and all its specializations? All curriculum data will be removed from all subscribed students immediately.`)
+          }
           onConfirm={handleDeleteDatabase}
           onCancel={() => setDbToDelete(null)}
           variant="danger"
           confirmText={isAr ? 'نعم، حذف' : 'Yes, Delete'}
           cancelText={isAr ? 'إلغاء' : 'Cancel'}
+        />
+      )}
+
+      {/* --- CONFIRM DELETE UNIVERSITY MODAL --- */}
+      {uniToDelete && (
+        <ConfirmModal
+          isOpen={!!uniToDelete}
+          title={isAr ? 'تأكيد حذف الجامعة وكافة كلياتها' : 'Delete University & Colleges'}
+          message={isAr 
+            ? `هل أنت متأكد تماماً من حذف جامعة "${uniToDelete.nameAr}" وجميع كلياتها (${uniToDelete.collegeCount} كلية) وقواعد بياناتها نهائياً؟ سيتم إلغاء ربطها وحذف موادها وملفاتها نهائياً من عند جميع الطلاب المستردين لها فوراً.`
+            : `Are you sure you want to permanently delete "${uniToDelete.nameEn}" and all its (${uniToDelete.collegeCount}) colleges? All curriculum data will be removed from all subscribed students immediately.`
+          }
+          confirmText={isAr ? 'نعم، احذف الجامعة وكلياتها' : 'Yes, Delete University'}
+          cancelText={isAr ? 'إلغاء' : 'Cancel'}
+          variant="danger"
+          onConfirm={handleConfirmDeleteUni}
+          onCancel={() => setUniToDelete(null)}
         />
       )}
 

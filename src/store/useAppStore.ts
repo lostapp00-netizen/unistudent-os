@@ -137,6 +137,7 @@ export interface AppState {
   deleteGroup: (id: string) => void;
   importFromUniversityDatabase: (universityDbId: string, options?: { importDrive?: boolean; specializationDbId?: string }) => Promise<void>;
   unlinkUniversityDatabase: () => Promise<void>;
+  unlinkSpecializationDatabase: () => Promise<void>;
   syncWithUniversityDatabase: () => Promise<void>;
 }
 
@@ -446,12 +447,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     if (old) {
       const deletedName = old.name.trim().toLowerCase();
+      const normName = normalizeSubjectName(old.name);
+      const templateId = old.universityTemplateId;
       const currentDeleted = settings.deletedSubjectNames || [];
-      if (!currentDeleted.includes(deletedName)) {
-        const updatedDeleted = [...currentDeleted, deletedName];
-        set(state => ({ settings: { ...state.settings, deletedSubjectNames: updatedDeleted } }));
-        db.upsertSettings(userId, { deletedSubjectNames: updatedDeleted }).catch(() => {});
-      }
+
+      const toAdd = [deletedName, normName, templateId, id].filter(Boolean) as string[];
+      const updatedDeleted = Array.from(new Set([...currentDeleted, ...toAdd]));
+
+      set(state => ({ settings: { ...state.settings, deletedSubjectNames: updatedDeleted } }));
+      db.upsertSettings(userId, { deletedSubjectNames: updatedDeleted }).catch(() => {});
+
       checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'delete_subject', `حذف مادة: ${old.name}`, { id, name: old.name });
     }
   },
@@ -959,6 +964,75 @@ export const useAppStore = create<AppState>((set, get) => ({
       settings: { ...state.settings, ...updatedSettings }
     }));
 
+    try {
+      localStorage.removeItem(`unistudent_subjects_${userId}`);
+      localStorage.removeItem(`unistudent_files_${userId}`);
+    } catch {}
+
+    await db.upsertSettings(userId, updatedSettings);
+  },
+
+  unlinkSpecializationDatabase: async () => {
+    const { userId, settings, subjects, files } = get();
+    if (!userId) return;
+
+    const specStartYr = Number(settings.specializationStartYear || 2);
+    const specStartSem = Number(settings.specializationStartSemester || 1);
+    const specDbId = settings.specializationDatabaseId;
+
+    const specTemplateFileIds = new Set<string>();
+    const specTemplateSubjectIds = new Set<string>();
+
+    if (specDbId) {
+      try {
+        const specDb = await db.getUniversityDatabase(specDbId);
+        if (specDb) {
+          (specDb.subjects || []).forEach(s => { if (s.id) specTemplateSubjectIds.add(s.id); });
+          (specDb.driveFiles || []).forEach(f => { if (f.id) specTemplateFileIds.add(f.id); });
+        }
+      } catch {}
+    }
+
+    // Filter out subjects that belong to specialization (keep foundation subjects)
+    const remainingSubjects = subjects.filter(s => {
+      const isSpecTemplate = (s.universityTemplateId && specTemplateSubjectIds.has(s.universityTemplateId)) || specTemplateSubjectIds.has(s.id);
+      const y = Number(s.yearIndex || 1);
+      const sm = Number(s.semesterIndex || 1);
+      const isSpecPhase = y > specStartYr || (y === specStartYr && sm >= specStartSem);
+
+      if (isSpecTemplate || isSpecPhase) {
+        db.deleteSubject(userId, s.id).catch(() => {});
+        return false;
+      }
+      return true;
+    });
+
+    // Filter out files that belong to specialization
+    const remainingFiles = files.filter(f => {
+      const isSpecFile = (f.universityTemplateId && specTemplateFileIds.has(f.universityTemplateId)) || specTemplateFileIds.has(f.id);
+      if (isSpecFile) {
+        db.deleteDriveFile(userId, f.id).catch(() => {});
+        return false;
+      }
+      return true;
+    });
+
+    const updatedSettings: Partial<UserSettings> = {
+      specializationDatabaseId: undefined,
+      specialization: ''
+    };
+
+    set(state => ({
+      subjects: remainingSubjects,
+      files: remainingFiles,
+      settings: { ...state.settings, ...updatedSettings }
+    }));
+
+    try {
+      localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(remainingSubjects));
+      localStorage.setItem(`unistudent_files_${userId}`, JSON.stringify(remainingFiles));
+    } catch {}
+
     await db.upsertSettings(userId, updatedSettings);
   },
 
@@ -1022,7 +1096,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
 
-      if (!matchedDb) return;
+      if (!matchedDb) {
+        if (targetDbId) {
+          // If student had a universityDatabaseId, but the database no longer exists (deleted by admin)
+          await get().unlinkUniversityDatabase();
+        }
+        return;
+      }
 
       // Check for Specialization Database
       let specDb: UniversityDatabase | null = null;
@@ -1043,6 +1123,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           set(state => ({ settings: { ...state.settings, specializationDatabaseId: specDb!.id } }));
           db.upsertSettings(userId, { specializationDatabaseId: specDb.id }).catch(() => {});
         }
+      }
+
+      if (targetSpecId && !specDb) {
+        // Specialization was deleted by Admin: unlink specialization cleanly
+        await get().unlinkSpecializationDatabase();
       }
 
       const isCollegeSource = !!(matchedDb.sourceUserId && matchedDb.sourceUserId === userId);
@@ -1162,6 +1247,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         };
 
         const matchedExistingIndices = new Set<number>();
+        const deletedSubjectSet = new Set<string>();
+        (settings.deletedSubjectNames || []).forEach(n => {
+          if (n) {
+            deletedSubjectSet.add(n.trim().toLowerCase());
+            deletedSubjectSet.add(normalizeSubjectName(n));
+          }
+        });
 
         // A. Update existing subjects or add new ones
         for (const tSub of templateSubjs) {
@@ -1232,6 +1324,16 @@ export const useAppStore = create<AppState>((set, get) => ({
               hasSubjectChanges = true;
             }
           } else {
+            // Check if student explicitly deleted this subject
+            const isDeletedByStudent = 
+              deletedSubjectSet.has(normalizeSubjectName(tSub.name)) ||
+              deletedSubjectSet.has(tSub.name.trim().toLowerCase()) ||
+              (tSub.id && (deletedSubjectSet.has(tSub.id) || (settings.deletedSubjectNames || []).includes(tSub.id)));
+
+            if (isDeletedByStudent) {
+              continue;
+            }
+
             // New subject added in college database: Add to student
             const newS: Subject = {
               id: uuidv4(),

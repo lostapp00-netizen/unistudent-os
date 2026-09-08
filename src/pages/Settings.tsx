@@ -41,7 +41,7 @@ type SettingsTab = 'profile' | 'databases' | 'security' | 'feedback';
 
 export function Settings() {
   const { t, i18n } = useTranslation();
-  const { settings, updateSettings, userEmail, unlinkUniversityDatabase } = useAppStore();
+  const { settings, updateSettings, userEmail, unlinkUniversityDatabase, unlinkSpecializationDatabase } = useAppStore();
   const isAr = i18n.language === 'ar' || settings.language === 'ar';
   
   // Active Tab
@@ -52,6 +52,8 @@ export function Settings() {
   const [restoreModalMode, setRestoreModalMode] = useState<'college' | 'specialization'>('college');
   const [isUnlinkModalOpen, setIsUnlinkModalOpen] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
+  const [isUnlinkSpecModalOpen, setIsUnlinkSpecModalOpen] = useState(false);
+  const [unlinkingSpec, setUnlinkingSpec] = useState(false);
 
   // Main Form Data
   const [formData, setFormData] = useState<{
@@ -167,6 +169,7 @@ export function Settings() {
         ...prev,
         university: 'غير محدد',
         college: 'غير محدد',
+        specialization: '',
         specializationDatabaseId: ''
       }));
       setSaveStatus({
@@ -183,6 +186,33 @@ export function Settings() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setUnlinking(false);
+    }
+  };
+
+  const handleConfirmUnlinkSpec = async () => {
+    try {
+      setUnlinkingSpec(true);
+      await unlinkSpecializationDatabase();
+      setIsUnlinkSpecModalOpen(false);
+      setFormData(prev => ({
+        ...prev,
+        specialization: '',
+        specializationDatabaseId: ''
+      }));
+      setSaveStatus({
+        type: 'success',
+        message: isAr ? 'تم إلغاء ربط التخصص وحذف مواده بنجاح، مع بقاء مواد الكلية العامة.' : 'Specialization unlinked successfully.'
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setTimeout(() => setSaveStatus(null), 5000);
+    } catch (e) {
+      setSaveStatus({
+        type: 'error',
+        message: isAr ? 'حدث خطأ أثناء إلغاء ربط التخصص.' : 'Error disconnecting specialization.'
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+      setUnlinkingSpec(false);
     }
   };
 
@@ -976,56 +1006,90 @@ export function Settings() {
             </div>
 
             {formData.specialization ? (
-              <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <BookOpen size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
-                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                      <span className="text-xs font-black text-amber-900 dark:text-amber-200 shrink-0">
-                        {isAr ? 'تخصصك المعتمد:' : 'Active Major:'}
+              <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-amber-50/80 to-purple-50/40 dark:from-amber-950/30 dark:to-zinc-900 border border-amber-200/80 dark:border-amber-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-start sm:items-center gap-3 sm:gap-3.5 min-w-0 flex-1">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-amber-600 text-white flex items-center justify-center shadow-md shadow-amber-600/20 shrink-0 mt-0.5 sm:mt-0">
+                    <Sparkles size={20} className="sm:w-6 sm:h-6" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-amber-800 dark:text-amber-200">
+                        {isAr ? 'التخصص المسترد الحالي:' : 'Active Specialization:'}
                       </span>
-                      <span className="px-2.5 sm:px-3 py-1 rounded-xl text-xs font-black bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white border border-amber-200 dark:border-amber-900 shadow-xs truncate max-w-[200px] sm:max-w-none">
+                      <span className="max-w-full truncate px-2.5 sm:px-3 py-1 rounded-xl text-xs font-black bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white border border-amber-200 dark:border-amber-950 shadow-xs">
                         {formData.specialization}
                       </span>
+                      {formData.specializationStartYear && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-lg font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
+                          {isAr 
+                            ? `السنة ${formData.specializationStartYear} (الترم ${formData.specializationStartSemester || 1})` 
+                            : `Year ${formData.specializationStartYear} (Term ${formData.specializationStartSemester || 1})`}
+                        </span>
+                      )}
                     </div>
-                  </div>
-
-                  {formData.specializationStartYear && formData.specializationStartSemester && (
-                    <span className="text-[11px] sm:text-xs font-bold text-amber-700 dark:text-amber-300 bg-white/80 dark:bg-zinc-900/80 px-2.5 py-1 rounded-lg border border-amber-200/60 dark:border-amber-900/60 self-start sm:self-auto shrink-0">
+                    <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed">
                       {isAr 
-                        ? `يبدأ من: السنة ${formData.specializationStartYear} (الترم ${formData.specializationStartSemester})` 
-                        : `From: Year ${formData.specializationStartYear} (Term ${formData.specializationStartSemester})`}
-                    </span>
-                  )}
+                        ? 'الخطة مربوطة تلقائياً مع تخصصك المعتمد. التحديثات المعتمدة تنعكس في حسابك فورياً بالتكامل مع مواد الكلية العامة.' 
+                        : 'Accredited specialization plan is connected. Updates reflect instantly.'}
+                    </p>
+                  </div>
                 </div>
 
-                <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                  {isAr 
-                    ? 'عند توفر قواعد بيانات تخصصية معتمدة من كليتك في لوحة تحكم الإدارة، ستتمكن من استرداد مواد التخصص وملفاتها بنقرة واحدة مع الحفاظ التام على مواد السنوات العامة السابقة.' 
-                    : 'When accredited specialization curricula are configured by admin for your college, you can restore specialization subjects while retaining all common foundation subjects.'}
-                </p>
-
-                <div className="pt-1.5 flex flex-wrap gap-2.5">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto shrink-0">
                   <button
                     type="button"
                     onClick={() => {
                       setRestoreModalMode('specialization');
                       setIsRestoreModalOpen(true);
                     }}
-                    className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer inline-flex items-center justify-center gap-2"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 bg-white dark:bg-zinc-900 hover:bg-amber-50 dark:hover:bg-zinc-800 border border-amber-200 dark:border-amber-800 transition-all cursor-pointer shadow-xs"
                   >
-                    <Sparkles size={15} />
-                    <span>{isAr ? 'استعراض واسترداد مواد التخصص من قاعدة البيانات' : 'Restore Specialization Curriculum'}</span>
+                    <Compass size={15} />
+                    <span>{isAr ? 'تغيير أو إعادة استرداد التخصص' : 'Change Specialization'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsUnlinkSpecModalOpen(true)}
+                    className="w-full sm:w-auto text-center inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-900/60 transition-all cursor-pointer shadow-xs"
+                  >
+                    <Unlink size={13} />
+                    <span>{isAr ? 'إلغاء ربط التخصص' : 'Disconnect'}</span>
                   </button>
                 </div>
+              </div>
+            ) : settings.university && settings.college && settings.university !== 'غير محدد' ? (
+              <div className="p-5 sm:p-6 rounded-xl sm:rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 text-center space-y-3">
+                <Compass size={28} className="mx-auto text-amber-500 sm:w-8 sm:h-8" />
+                <div className="space-y-1">
+                  <h3 className="text-xs sm:text-sm font-black text-zinc-800 dark:text-zinc-200">
+                    {isAr ? 'لم تقم باسترداد تخصص أكاديمي بعد' : 'No Specialization Linked'}
+                  </h3>
+                  <p className="text-[11px] sm:text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
+                    {isAr 
+                      ? 'يمكنك استعراض واسترداد مواد تخصصك المعتمد لكليتك بضغطة زر واحدة، مع الحفاظ التام على مواد السنوات العامة التأسيسية السابقة.' 
+                      : 'You can restore your college specialization subjects while retaining all common foundation subjects.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRestoreModalMode('specialization');
+                    setIsRestoreModalOpen(true);
+                  }}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-bold text-xs shadow-md shadow-amber-500/20 cursor-pointer inline-flex items-center justify-center gap-2"
+                >
+                  <Sparkles size={16} />
+                  <span>{isAr ? 'استعراض واسترداد مواد التخصص' : 'Restore Specialization Curriculum'}</span>
+                </button>
               </div>
             ) : (
               <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 flex items-start gap-2.5 sm:gap-3 text-xs text-zinc-500 dark:text-zinc-400">
                 <Info size={18} className="text-zinc-400 shrink-0 mt-0.5" />
                 <p className="leading-relaxed text-[11px] sm:text-xs">
                   {isAr 
-                    ? 'لتفعيل قاعدة بيانات التخصص، يرجى أولاً تحديد سنة وترم بداية التخصص واسم التخصص في تبويب "البيانات الأكاديمية".' 
-                    : 'To configure specialization database, please set your specialization start year, term, and major name in the "Academic Plan" tab.'}
+                    ? 'لتفعيل واسترداد التخصص الأكاديمي، يرجى أولاً استرداد قاعدة بيانات الكلية العامة أعلاه.' 
+                    : 'To enable specialization restore, please link your general college database first.'}
                 </p>
               </div>
             )}
@@ -1240,6 +1304,48 @@ export function Settings() {
               >
                 {unlinking ? <Loader2 size={14} className="animate-spin" /> : <Unlink size={14} />}
                 <span>{isAr ? 'نعم، إلغاء ومسح المواد' : 'Yes, Disconnect'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Disconnect Specialization Modal */}
+      {isUnlinkSpecModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md p-6 sm:p-7 space-y-4 border border-zinc-200 dark:border-zinc-800 shadow-2xl text-center">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center">
+              <Unlink size={28} />
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="font-black text-lg text-zinc-900 dark:text-white">
+                {isAr ? 'تأكيد إلغاء ربط التخصص' : 'Disconnect Specialization'}
+              </h3>
+              <p className="text-xs text-zinc-500 leading-relaxed">
+                {isAr 
+                  ? 'هل أنت متأكد من إلغاء ربط التخصص؟ سيتم حذف مواد التخصص وملفاته فقط من خطتك الدراسية، مع الحفاظ التام على مواد الكلية العامة للسنوات السابقة.'
+                  : 'Are you sure you want to disconnect? Only specialization subjects and files will be removed, preserving all common foundation subjects.'}
+              </p>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsUnlinkSpecModalOpen(false)}
+                disabled={unlinkingSpec}
+                className="w-full sm:w-auto px-5 py-2.5 text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer"
+              >
+                {isAr ? 'تراجع وإلغاء' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmUnlinkSpec}
+                disabled={unlinkingSpec}
+                className="w-full sm:w-auto px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-lg shadow-amber-500/25 cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                {unlinkingSpec ? <Loader2 size={14} className="animate-spin" /> : <Unlink size={14} />}
+                <span>{isAr ? 'نعم، إلغاء التخصص ومسح مواده' : 'Yes, Disconnect'}</span>
               </button>
             </div>
           </div>

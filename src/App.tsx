@@ -111,7 +111,29 @@ export function App() {
       .on(
         'broadcast',
         { event: 'university_db_updated' },
-        () => {
+        (payload: any) => {
+          const data = payload?.payload;
+          if (data?.action === 'deleted') {
+            const { settings, unlinkUniversityDatabase, unlinkSpecializationDatabase } = useAppStore.getState();
+            if (data.type === 'specialization') {
+              if (settings.specializationDatabaseId === data.id) {
+                unlinkSpecializationDatabase();
+              }
+            } else if (data.type === 'college') {
+              if (
+                settings.universityDatabaseId === data.id || 
+                settings.college === data.collegeNameAr ||
+                (Array.isArray(data.childSpecIds) && data.childSpecIds.includes(settings.specializationDatabaseId))
+              ) {
+                unlinkUniversityDatabase();
+              }
+            } else if (data.type === 'university') {
+              if (settings.university === data.uniKey) {
+                unlinkUniversityDatabase();
+              }
+            }
+            return;
+          }
           triggerSync();
         }
       )

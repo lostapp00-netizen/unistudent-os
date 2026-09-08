@@ -102,6 +102,15 @@ export const db = {
           specializationDatabaseId: curSpecDbId || null
         } as any);
       }
+
+      const curDeleted = 'deletedSubjectNames' in settings ? settings.deletedSubjectNames : existingObj.deletedSubjectNames;
+      if (Array.isArray(curDeleted) && curDeleted.length > 0) {
+        scale.push({
+          id: '__student_deleted_subjects__',
+          names: curDeleted
+        } as any);
+      }
+
       payload.grading_scale = scale;
     } catch {}
 
@@ -975,12 +984,133 @@ export const db = {
   async deleteUniversityDatabase(id: string): Promise<void> {
     try {
       const current = await this.getUniversityDatabases();
+      const targetDb = current.find(u => u.id === id);
       const remaining = current.filter(u => u.id !== id && u.parentDatabaseId !== id);
       const toDelete = current.filter(u => u.id === id || u.parentDatabaseId === id);
       localStorage.setItem('unistudent_university_databases', JSON.stringify(remaining));
 
       for (const item of toDelete) {
         await supabase.from('university_databases').delete().eq('id', item.id);
+      }
+
+      // Cascade cleanup for affected students:
+      if (targetDb) {
+        if (targetDb.isSpecialization) {
+          // Specialization Deleted: clean up specialization from all linked students
+          try {
+            const { data: affectedSettings } = await supabase
+              .from('settings')
+              .select('user_id')
+              .eq('specialization_database_id', targetDb.id);
+
+            const affectedUserIds = (affectedSettings || []).map(s => s.user_id);
+
+            if (targetDb.collegeNameAr && targetDb.specializationNameAr) {
+              const { data: byName } = await supabase
+                .from('settings')
+                .select('user_id')
+                .eq('college', targetDb.collegeNameAr)
+                .eq('specialization', targetDb.specializationNameAr);
+              (byName || []).forEach(b => {
+                if (!affectedUserIds.includes(b.user_id)) affectedUserIds.push(b.user_id);
+              });
+            }
+
+            const specStartYr = Number(targetDb.specializationStartYear || 2);
+            const specStartSem = Number(targetDb.specializationStartSemester || 1);
+            const templateSubjIds = new Set((targetDb.subjects || []).map(s => s.id));
+            const templateFileIds = new Set((targetDb.driveFiles || []).map(f => f.id));
+
+            for (const uId of affectedUserIds) {
+              const { data: userSubjs } = await supabase
+                .from('subjects')
+                .select('id, year_index, semester_index, university_template_id')
+                .eq('user_id', uId);
+
+              for (const s of (userSubjs || [])) {
+                const y = Number(s.year_index || 1);
+                const sm = Number(s.semester_index || 1);
+                const isSpecPhase = y > specStartYr || (y === specStartYr && sm >= specStartSem);
+                const isSpecTemplate = s.university_template_id && templateSubjIds.has(s.university_template_id);
+                if (isSpecPhase || isSpecTemplate) {
+                  await supabase.from('subjects').delete().eq('id', s.id);
+                }
+              }
+
+              const { data: userFiles } = await supabase
+                .from('drive_files')
+                .select('id, university_template_id')
+                .eq('user_id', uId);
+
+              for (const f of (userFiles || [])) {
+                if (f.university_template_id && templateFileIds.has(f.university_template_id)) {
+                  await supabase.from('drive_files').delete().eq('id', f.id);
+                }
+              }
+
+              await supabase.from('settings').update({
+                specialization: null,
+                specialization_database_id: null
+              }).eq('user_id', uId);
+            }
+          } catch (specErr) {
+            console.warn('Error cascading specialization deletion to students:', specErr);
+          }
+
+          // Broadcast to active student sessions
+          await broadcastUniversityDatabaseUpdate({
+            action: 'deleted',
+            type: 'specialization',
+            id: targetDb.id,
+            parentCollegeId: targetDb.parentDatabaseId
+          });
+        } else {
+          // General College Deleted: clean up curriculum for all linked students (and child specializations)
+          const childSpecs = current.filter(u => u.parentDatabaseId === targetDb.id);
+          const allTargetIds = [targetDb.id, ...childSpecs.map(c => c.id)];
+
+          try {
+            const { data: affectedSettings } = await supabase
+              .from('settings')
+              .select('user_id')
+              .in('university_database_id', allTargetIds);
+
+            const affectedUserIds = (affectedSettings || []).map(s => s.user_id);
+
+            if (targetDb.collegeNameAr) {
+              const { data: byName } = await supabase
+                .from('settings')
+                .select('user_id')
+                .eq('college', targetDb.collegeNameAr);
+              (byName || []).forEach(b => {
+                if (!affectedUserIds.includes(b.user_id)) affectedUserIds.push(b.user_id);
+              });
+            }
+
+            for (const uId of affectedUserIds) {
+              await this.clearAllSubjects(uId);
+              await this.clearAllDriveFiles(uId);
+              await supabase.from('settings').update({
+                university: 'غير محدد',
+                college: 'غير محدد',
+                university_database_id: null,
+                specialization: null,
+                specialization_database_id: null
+              }).eq('user_id', uId);
+            }
+          } catch (colErr) {
+            console.warn('Error cascading college deletion to students:', colErr);
+          }
+
+          // Broadcast to active student sessions
+          await broadcastUniversityDatabaseUpdate({
+            action: 'deleted',
+            type: 'college',
+            id: targetDb.id,
+            collegeNameAr: targetDb.collegeNameAr,
+            childSpecIds: childSpecs.map(c => c.id)
+          });
+        }
       }
     } catch (e) {
       console.warn('Supabase deleteUniversityDatabase failed:', e);
@@ -1280,6 +1410,33 @@ export const db = {
     for (const item of toDelete) {
       await this.deleteUniversityDatabase(item.id);
     }
+
+    try {
+      const { data: affectedSettings } = await supabase
+        .from('settings')
+        .select('user_id')
+        .eq('university', uniName.trim());
+
+      for (const row of (affectedSettings || [])) {
+        await this.clearAllSubjects(row.user_id);
+        await this.clearAllDriveFiles(row.user_id);
+        await supabase.from('settings').update({
+          university: 'غير محدد',
+          college: 'غير محدد',
+          university_database_id: null,
+          specialization: null,
+          specialization_database_id: null
+        }).eq('user_id', row.user_id);
+      }
+    } catch (uniErr) {
+      console.warn('Error cascading university deletion to students:', uniErr);
+    }
+
+    await broadcastUniversityDatabaseUpdate({
+      action: 'deleted',
+      type: 'university',
+      uniKey: uniName.trim()
+    });
   },
 
   async recordPendingUpdate(update: UniversityPendingUpdate): Promise<void> {
@@ -2350,6 +2507,10 @@ function mapSettingsFromDB(row: any): UserSettings {
     ? row.specialization_database_id 
     : (specMeta?.specializationDatabaseId || localExtra.specializationDatabaseId || undefined);
 
+  const deletedMeta = Array.isArray(row.grading_scale)
+    ? row.grading_scale.find((g: any) => g && g.id === '__student_deleted_subjects__')
+    : null;
+
   return {
     name: row.name || localExtra.name || '',
     university: row.university || localExtra.university || '',
@@ -2371,7 +2532,7 @@ function mapSettingsFromDB(row: any): UserSettings {
     universityDatabaseId: resolvedDbId,
     deletedSubjectNames: (Array.isArray(row.deleted_subject_names) && row.deleted_subject_names.length > 0)
       ? row.deleted_subject_names
-      : (localExtra.deletedSubjectNames || []),
+      : (deletedMeta?.names || localExtra.deletedSubjectNames || []),
     specialization: resolvedSpecialization,
     specializationStartYear: resolvedStartYear,
     specializationStartSemester: resolvedStartSemester,
