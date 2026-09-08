@@ -49,6 +49,7 @@ export function Settings() {
 
   // Modals state
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
+  const [restoreModalMode, setRestoreModalMode] = useState<'college' | 'specialization'>('college');
   const [isUnlinkModalOpen, setIsUnlinkModalOpen] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
 
@@ -905,7 +906,10 @@ export function Settings() {
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto shrink-0">
                   <button
                     type="button"
-                    onClick={() => setIsRestoreModalOpen(true)}
+                    onClick={() => {
+                      setRestoreModalMode('college');
+                      setIsRestoreModalOpen(true);
+                    }}
                     className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-white dark:bg-zinc-900 hover:bg-indigo-50 dark:hover:bg-zinc-800 border border-indigo-200 dark:border-indigo-800 transition-all cursor-pointer shadow-xs"
                   >
                     <Building2 size={15} />
@@ -937,7 +941,10 @@ export function Settings() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsRestoreModalOpen(true)}
+                  onClick={() => {
+                    setRestoreModalMode('college');
+                    setIsRestoreModalOpen(true);
+                  }}
                   className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 cursor-pointer inline-flex items-center justify-center gap-2"
                 >
                   <Building2 size={16} />
@@ -1001,7 +1008,10 @@ export function Settings() {
                 <div className="pt-1.5 flex flex-wrap gap-2.5">
                   <button
                     type="button"
-                    onClick={() => setIsRestoreModalOpen(true)}
+                    onClick={() => {
+                      setRestoreModalMode('specialization');
+                      setIsRestoreModalOpen(true);
+                    }}
                     className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer inline-flex items-center justify-center gap-2"
                   >
                     <Sparkles size={15} />
@@ -1240,6 +1250,7 @@ export function Settings() {
       <UniversityRestoreModal
         isOpen={isRestoreModalOpen}
         onClose={() => setIsRestoreModalOpen(false)}
+        mode={restoreModalMode}
       />
     </div>
   );

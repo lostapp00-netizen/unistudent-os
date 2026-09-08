@@ -49,7 +49,7 @@ import {
   Save,
   EyeOff
 } from 'lucide-react';
-import { db } from '../../lib/db';
+import { db, broadcastUniversityDatabaseUpdate } from '../../lib/db';
 import { supabase } from '../../lib/supabase';
 import { UniversityDatabase, UniversityPendingUpdate, Subject, DriveFile, GradeDistributionItem, GradeRule } from '../../types';
 import { ConfirmModal } from '../ui/CustomModal';
@@ -1548,15 +1548,9 @@ export function AdminUniversitiesTab({
           return d;
         }));
       }
-      try {
-        if (supabase) {
-          supabase.channel('university_global_sync').send({
-            type: 'broadcast',
-            event: 'university_db_updated',
-            payload: { id: update.universityDatabaseId, timestamp: Date.now() }
-          }).catch(() => {});
-        }
-      } catch {}
+      if (update.universityDatabaseId) {
+        await broadcastUniversityDatabaseUpdate({ id: update.universityDatabaseId, timestamp: Date.now() });
+      }
       await loadUniData();
       await onRefreshAllData();
     } catch (e) {

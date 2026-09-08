@@ -14,7 +14,6 @@ import {
   X, 
   Sparkles, 
   ChevronDown,
-  ChevronUp,
   ArrowLeft,
   ArrowRight,
   Folder,
@@ -23,21 +22,25 @@ import {
   Award,
   Layers,
   ChevronRight,
-  Compass
+  Compass,
+  Lock,
+  AlertTriangle
 } from 'lucide-react';
 
 interface UniversityRestoreModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  mode?: 'college' | 'specialization';
 }
 
-export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: UniversityRestoreModalProps) {
+export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'college' }: UniversityRestoreModalProps) {
   const { t, i18n } = useTranslation();
   const { settings, importFromUniversityDatabase } = useAppStore();
   const isAr = i18n.language === 'ar' || settings.language === 'ar';
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
 
+  const [activeMode, setActiveMode] = useState<'college' | 'specialization'>(mode || 'college');
   const [loading, setLoading] = useState(true);
   const [databases, setDatabases] = useState<UniversityDatabase[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -52,9 +55,10 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
 
   useEffect(() => {
     if (isOpen) {
+      setActiveMode(mode || 'college');
       setLoading(true);
       setSuccessMessage(null);
-      setExpandedUniKey(null); // Collapsed by default - user clicks chevron to expand
+      setExpandedUniKey(null);
       setSelectedDb(null);
       setSelectedTrack('general');
       db.getUniversityDatabases()
@@ -64,7 +68,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
         .catch(console.error)
         .finally(() => setLoading(false));
     }
-  }, [isOpen]);
+  }, [isOpen, mode]);
 
   // Specializations map grouped by parent database ID
   const specializationsMap = useMemo(() => {
@@ -138,6 +142,41 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
     });
   }, [groupedUniversities, searchQuery, isOpen]);
 
+  // Identify student's restored college for direct Specialization Restore
+  const restoredCollegeDb = useMemo(() => {
+    if (!settings.universityDatabaseId && (!settings.university || settings.university === 'غير محدد')) return null;
+    if (settings.universityDatabaseId) {
+      const byId = databases.find(d => d.id === settings.universityDatabaseId && !d.isSpecialization);
+      if (byId) return byId;
+    }
+    const norm = (s?: string) => (s || '').trim().toLowerCase();
+    return databases.find(d => 
+      !d.isSpecialization &&
+      (norm(d.universityNameAr) === norm(settings.university) || norm(d.universityNameEn) === norm(settings.university)) &&
+      (norm(d.collegeNameAr) === norm(settings.college) || norm(d.collegeNameEn) === norm(settings.college))
+    ) || null;
+  }, [databases, settings.universityDatabaseId, settings.university, settings.college]);
+
+  const restoredCollegeSpecs = useMemo(() => {
+    if (!restoredCollegeDb) return [];
+    const fromMap = specializationsMap.get(restoredCollegeDb.id) || [];
+    if (fromMap.length > 0) return fromMap;
+    const norm = (s?: string) => (s || '').trim().toLowerCase();
+    return databases.filter(d => 
+      d.isSpecialization && 
+      (d.parentDatabaseId === restoredCollegeDb.id || 
+       (norm(d.collegeNameAr) === norm(restoredCollegeDb.collegeNameAr) && norm(d.universityNameAr) === norm(restoredCollegeDb.universityNameAr)))
+    );
+  }, [databases, restoredCollegeDb, specializationsMap]);
+
+  // Student current standing
+  const currentSemester = useMemo(() => {
+    return settings.semesters.find(s => s.isCurrent) || settings.semesters[0] || null;
+  }, [settings.semesters]);
+
+  const currentYear = currentSemester ? Number(currentSemester.yearIndex || 1) : 1;
+  const currentSemesterIndex = currentSemester ? Number(currentSemester.semesterIndex || 1) : 1;
+
   const availableSpecs = useMemo(() => {
     if (!selectedDb) return [];
     return specializationsMap.get(selectedDb.id) || [];
@@ -145,8 +184,9 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
 
   const activeSpec = useMemo(() => {
     if (!selectedDb || selectedTrack === 'general') return null;
-    return availableSpecs.find(s => s.id === selectedTrack) || null;
-  }, [selectedDb, selectedTrack, availableSpecs]);
+    const allKnownSpecs = [...availableSpecs, ...restoredCollegeSpecs];
+    return allKnownSpecs.find(s => s.id === selectedTrack) || null;
+  }, [selectedDb, selectedTrack, availableSpecs, restoredCollegeSpecs]);
 
   const previewData = useMemo(() => {
     if (!selectedDb) return null;
@@ -155,10 +195,20 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
     };
 
     if (!activeSpec) {
+      // General College Restore - show foundation subjects only
+      const startYear = Number(selectedDb.specializationStartYear || 2);
+      const startSem = Number(selectedDb.specializationStartSemester || 1);
+
+      const foundation = (selectedDb.subjects || []).filter(s => {
+        const y = Number(s.yearIndex || 1);
+        const sem = Number(s.semesterIndex || 1);
+        return y < startYear || (y === startYear && sem < startSem);
+      });
+
       return {
         title: isAr ? selectedDb.collegeNameAr : (selectedDb.collegeNameEn || selectedDb.collegeNameAr),
         subtitle: selectedDb.collegeNameEn && selectedDb.collegeNameEn !== selectedDb.collegeNameAr ? selectedDb.collegeNameEn : null,
-        subjects: selectedDb.subjects || [],
+        subjects: foundation.length > 0 ? foundation : (selectedDb.subjects || []),
         driveFiles: selectedDb.driveFiles || [],
         totalYears: selectedDb.totalYears || 4,
         availableYears: selectedDb.availableYears || [1],
@@ -166,7 +216,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
         gradingScale: sanitizeScale(selectedDb.gradingScale || []),
         isSpecialization: false,
         spec: null,
-        foundationCount: (selectedDb.subjects || []).length,
+        foundationCount: foundation.length,
         specializationCount: 0
       };
     }
@@ -250,14 +300,18 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
         <div className="p-5 sm:p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
           <div className="flex items-center gap-3.5">
             <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
-              <Building2 size={22} />
+              {activeMode === 'specialization' ? <Compass size={22} /> : <Building2 size={22} />}
             </div>
             <div>
               <h2 className="text-lg sm:text-xl font-black text-zinc-900 dark:text-white">
-                {isAr ? 'استرداد من قاعدة بيانات الجامعات' : 'Restore from University Database'}
+                {activeMode === 'specialization'
+                  ? (isAr ? 'استرداد مواد التخصص الأكاديمي' : 'Restore Specialization Curriculum')
+                  : (isAr ? 'استرداد قاعدة بيانات الكلية العامة' : 'Restore General College Database')}
               </h2>
               <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-                {isAr ? 'اختر الجامعة واضغط لعرض كلياتها واستيراد الخطة الدراسية والمواد ولائحة التقديرات المعتمدة' : 'Select university, expand to view colleges and restore subjects & grading scale'}
+                {activeMode === 'specialization'
+                  ? (isAr ? 'اختر تخصصك المعتمد لاسترداد مواده التخصصية المتقدمة فور بلوغك سنة التخصص' : 'Select your accredited specialization to restore courses upon reaching milestone year')
+                  : (isAr ? 'اختر الجامعة والكلية لاستيراد الخطة الدراسية التأسيسية ولائحة التقديرات المعتمدة' : 'Select university and college to restore foundation plan and grading scale')}
               </p>
             </div>
           </div>
@@ -286,18 +340,157 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
               <Loader2 size={32} className="animate-spin text-indigo-600" />
               <p className="text-xs font-bold">{isAr ? 'جاري جلب قواعد بيانات الجامعات المتاحة...' : 'Loading available universities...'}</p>
             </div>
-          ) : filteredUniversities.length === 0 && !searchQuery.trim() ? (
-            <div className="py-12 text-center text-zinc-400 space-y-2">
-              <Building2 size={48} className="mx-auto opacity-20" />
-              <p className="font-bold text-sm text-zinc-700 dark:text-zinc-300">
-                {isAr ? 'لا توجد قواعد بيانات للجامعات متاحة حالياً.' : 'No university databases available yet.'}
-              </p>
-              <p className="text-xs text-zinc-400">
-                {isAr ? 'يمكنك إدخال بياناتك وموادك يدوياً، أو مراجعة إدارة الموقع.' : 'You can enter your subjects manually or contact the admin.'}
-              </p>
-            </div>
+          ) : activeMode === 'specialization' && !selectedDb ? (
+            /* SPECIALIZATION MODE - DIRECT TO SPECIALIZATIONS OF RESTORED COLLEGE */
+            !restoredCollegeDb ? (
+              <div className="py-12 px-4 text-center space-y-4 max-w-md mx-auto">
+                <div className="w-16 h-16 rounded-3xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center shadow-lg shadow-amber-500/10">
+                  <AlertTriangle size={32} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white">
+                    {isAr ? 'يجب استرداد الكلية العامة أولاً' : 'Restore College Database First'}
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                    {isAr 
+                      ? 'لاسترداد مواد التخصص الأكاديمي، يجب أولاً استرداد قاعدة بيانات الكلية العامة والوصول إلى سنة التخصص.' 
+                      : 'To restore a specialization, you must first restore the general college database and reach your specialization year.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveMode('college')}
+                  className="px-6 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 cursor-pointer inline-flex items-center gap-2"
+                >
+                  <Building2 size={16} />
+                  <span>{isAr ? 'استرداد قاعدة بيانات الكلية العامة الآن' : 'Restore General College Now'}</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-5 animate-in fade-in duration-150">
+                {/* College & Standing Info Banner */}
+                <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/20 border border-indigo-200/80 dark:border-indigo-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-indigo-500/20">
+                      <Compass size={24} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block">
+                        {isAr ? 'الكلية المستردة الحالية' : 'Active College'}
+                      </span>
+                      <h4 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white">
+                        {restoredCollegeDb.collegeNameAr} - {restoredCollegeDb.universityNameAr}
+                      </h4>
+                    </div>
+                  </div>
+
+                  <div className="px-3.5 py-2 rounded-2xl bg-white/80 dark:bg-zinc-900/80 border border-indigo-100 dark:border-indigo-900/50 flex items-center gap-2 text-xs self-start sm:self-auto">
+                    <Calendar size={15} className="text-indigo-600 dark:text-indigo-400" />
+                    <span className="font-bold text-zinc-700 dark:text-zinc-300">
+                      {isAr ? `مستواك الحالي: السنة ${currentYear} (الترم ${currentSemesterIndex})` : `Current Standing: Year ${currentYear} (Term ${currentSemesterIndex})`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Direct Specializations List */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                      <Sparkles size={16} className="text-purple-600 dark:text-purple-400" />
+                      <span>{isAr ? 'التخصصات الأكاديمية المعتمدة في كليتك:' : 'Accredited Specializations in Your College:'}</span>
+                    </h4>
+                    <span className="text-xs font-bold text-zinc-400">
+                      {restoredCollegeSpecs.length} {isAr ? 'تخصصات متوفرة' : 'Available'}
+                    </span>
+                  </div>
+
+                  {restoredCollegeSpecs.length === 0 ? (
+                    <div className="py-10 text-center text-zinc-400 p-6 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800">
+                      <Compass size={36} className="mx-auto opacity-30 mb-2" />
+                      <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                        {isAr ? 'لم تقم الإدارة بعد برفع تخصصات متفرعة لهذه الكلية.' : 'No specialization curricula published for this college yet.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      {restoredCollegeSpecs.map(spec => {
+                        const specStartYear = Number(spec.specializationStartYear || restoredCollegeDb.specializationStartYear || 2);
+                        const specStartSem = Number(spec.specializationStartSemester || restoredCollegeDb.specializationStartSemester || 1);
+                        const hasReached = currentYear > specStartYear || (currentYear === specStartYear && currentSemesterIndex >= specStartSem);
+
+                        return (
+                          <div
+                            key={spec.id}
+                            onClick={() => {
+                              if (!hasReached) return;
+                              setSelectedDb(restoredCollegeDb);
+                              setSelectedTrack(spec.id);
+                            }}
+                            className={`p-5 rounded-2xl border transition-all flex flex-col justify-between gap-3.5 ${
+                              hasReached
+                                ? 'bg-white dark:bg-zinc-900 border-purple-200 dark:border-purple-800/80 hover:border-purple-500 shadow-2xs hover:shadow-md cursor-pointer group'
+                                : 'bg-zinc-50/80 dark:bg-zinc-800/30 border-zinc-200 dark:border-zinc-800 opacity-70 cursor-not-allowed'
+                            }`}
+                          >
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2.5">
+                                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                    hasReached 
+                                      ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform' 
+                                      : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-500'
+                                  }`}>
+                                    {hasReached ? <Sparkles size={18} /> : <Lock size={16} />}
+                                  </div>
+                                  <h5 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white">
+                                    {spec.specializationNameAr || spec.collegeNameAr}
+                                  </h5>
+                                </div>
+                                {hasReached && (
+                                  <ArrowIcon size={16} className="text-zinc-400 group-hover:text-purple-600 transition-transform group-hover:scale-110 shrink-0" />
+                                )}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-zinc-500">
+                                <span className="px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">
+                                  {spec.subjects?.length || 0} {isAr ? 'مادة تخصصية' : 'specialized courses'}
+                                </span>
+                                <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                                  {isAr ? `يبدأ: سنة ${specStartYear} ترم ${specStartSem}` : `Starts: Year ${specStartYear} Term ${specStartSem}`}
+                                </span>
+                              </div>
+                            </div>
+
+                            {hasReached ? (
+                              <div className="pt-2 border-t border-purple-100 dark:border-purple-950 flex items-center justify-between text-xs text-emerald-600 dark:text-emerald-400 font-bold">
+                                <span className="flex items-center gap-1.5">
+                                  <CheckCircle2 size={14} />
+                                  <span>{isAr ? 'متاح للاسترداد (وصلت لسنة التخصص)' : 'Eligible for restore'}</span>
+                                </span>
+                                <span className="text-purple-600 dark:text-purple-400 font-black group-hover:underline">
+                                  {isAr ? 'معاينة واسترداد ←' : 'Preview & Restore →'}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700/60 text-[11px] text-amber-700 dark:text-amber-400 font-bold flex items-center gap-1.5">
+                                <Lock size={12} className="shrink-0" />
+                                <span>
+                                  {isAr 
+                                    ? `غير متاح حالياً: يبدأ التخصص في السنة ${specStartYear} وأنت في السنة ${currentYear}.`
+                                    : `Locked: Starts in Year ${specStartYear}. You are in Year ${currentYear}.`}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
           ) : !selectedDb ? (
-            /* STEP 1: HIERARCHICAL ACCORDION SELECTOR */
+            /* COLLEGE MODE - HIERARCHICAL ACCORDION SELECTOR */
             <div className="space-y-4">
               {/* Search input */}
               <div className="relative">
@@ -396,7 +589,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                                     {specs.length > 0 && (
                                       <span className="bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 px-2.5 py-1 rounded-lg flex items-center gap-1 font-black">
                                         <Sparkles size={12} className="text-purple-600 dark:text-purple-400 shrink-0" />
-                                        <span>{specs.length} {isAr ? 'تخصصات متفرعة' : 'majors'}</span>
+                                        <span>{specs.length} {isAr ? 'تخصصات مسجلة' : 'majors'}</span>
                                       </span>
                                     )}
                                     <span className="bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60 px-2.5 py-1 rounded-lg font-bold">
@@ -405,11 +598,6 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                                     <span className="bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-lg">
                                       {dbItem.driveFiles?.length || 0} {isAr ? 'ملفات درايف' : 'files'}
                                     </span>
-                                    {dbItem.gradingScale && dbItem.gradingScale.length > 0 && (
-                                      <span className="bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2.5 py-1 rounded-lg">
-                                        {isAr ? 'لائحة تقديرات معتمدة' : 'Grading scale'}
-                                      </span>
-                                    )}
                                   </div>
                                 </div>
                               );
@@ -439,93 +627,58 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                 className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
               >
                 <ArrowIcon size={14} className="rotate-180" />
-                <span>{isAr ? 'الرجوع لاختيار كلية أو جامعة أخرى' : 'Back to select another college'}</span>
+                <span>
+                  {isAr 
+                    ? (activeMode === 'specialization' ? 'الرجوع لاختيار تخصص آخر' : 'الرجوع لاختيار كلية أو جامعة أخرى') 
+                    : (activeMode === 'specialization' ? 'Back to select another major' : 'Back to select another college')}
+                </span>
               </button>
 
-              {/* Specialization Track Selector (if available) */}
-              {availableSpecs.length > 0 && (
-                <div className="space-y-3 bg-white dark:bg-zinc-900 p-4 sm:p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
-                      <Sparkles size={16} />
+              {/* In General College Mode: Informative box if specializations exist (non-restorable until milestone) */}
+              {activeMode === 'college' && availableSpecs.length > 0 && (
+                <div className="p-4 sm:p-5 rounded-3xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 space-y-2.5">
+                  <div className="flex items-center gap-2 text-purple-700 dark:text-purple-300 font-black text-xs sm:text-sm">
+                    <Sparkles size={16} className="text-purple-600 dark:text-purple-400 shrink-0" />
+                    <span>
+                      {isAr 
+                        ? `التخصصات المعتمدة المتوفرة في هذه الكلية (${availableSpecs.length} تخصص):` 
+                        : `Available Specializations in this College (${availableSpecs.length}):`}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {availableSpecs.map(s => (
+                      <span key={s.id} className="px-2.5 py-1 rounded-xl bg-white dark:bg-zinc-900 border border-purple-200 dark:border-purple-800 text-xs font-bold text-purple-900 dark:text-purple-200 shadow-2xs">
+                        {s.specializationNameAr || s.collegeNameAr} (السنة {s.specializationStartYear || 2})
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-purple-600 dark:text-purple-400/90 leading-relaxed font-medium">
+                    {isAr 
+                      ? 'ملاحظة: هذا الاسترداد مخصص للخطة العامة للكلية. لا يمكن استرداد مواد التخصص الآن لأنك لم تكمل استرداد الكلية العامة أولاً ولم تصل بعد لسنة التخصص. ستتمكن من استرداد تخصصك لاحقاً من قسم "قاعدة بيانات التخصص الأكاديمي".' 
+                      : 'Note: This restores the general college plan. Specialization restore unlocks after completing general restore and reaching the milestone year.'}
+                  </p>
+                </div>
+              )}
+
+              {/* In Specialization Mode: Selected Track Banner */}
+              {activeMode === 'specialization' && activeSpec && (
+                <div className="p-4 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 flex items-center justify-between gap-3 shadow-2xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shrink-0 shadow-sm shadow-purple-500/20">
+                      <Sparkles size={18} />
                     </div>
                     <div>
-                      <h4 className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white">
-                        {isAr ? 'اختر مسار الكلية والتخصص الأكاديمي:' : 'Select College Track & Specialization:'}
-                      </h4>
-                      <p className="text-[11px] text-zinc-400">
-                        {isAr ? 'تتوفر تخصصات معتمدة لهذه الكلية تم تجهيز وسحب مناهجها' : 'Accredited specializations available for this college'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    {/* Track 1: General Track */}
-                    <div 
-                      onClick={() => setSelectedTrack('general')}
-                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                        selectedTrack === 'general'
-                          ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
-                          : 'bg-zinc-50/60 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700/60 hover:border-indigo-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
-                          selectedTrack === 'general' ? 'bg-indigo-600 text-white' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600'
-                        }`}>
-                          {selectedTrack === 'general' ? <Check size={14} /> : '1'}
-                        </div>
-                        <div className="min-w-0">
-                          <span className="font-black text-xs text-zinc-900 dark:text-white block truncate">
-                            {isAr ? 'المسار العام للكلية' : 'General College Track'}
-                          </span>
-                          <span className="text-[10px] text-zinc-400 block truncate">
-                            {isAr ? 'الخطة والسنوات الأساسية الشاملة' : 'Full foundation plan'}
-                          </span>
-                        </div>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-black shrink-0">
-                        {selectedDb.subjects?.length || 0} {isAr ? 'مادة' : 'subjs'}
+                      <span className="text-[10px] font-black uppercase tracking-wider text-purple-600 dark:text-purple-400 block">
+                        {isAr ? 'التخصص الأكاديمي المختار' : 'Selected Major'}
                       </span>
+                      <h4 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white">
+                        {activeSpec.specializationNameAr || activeSpec.collegeNameAr}
+                      </h4>
                     </div>
-
-                    {/* Track 2..N: Specializations */}
-                    {availableSpecs.map((spec) => {
-                      const isSelected = selectedTrack === spec.id;
-                      return (
-                        <div 
-                          key={spec.id}
-                          onClick={() => setSelectedTrack(spec.id)}
-                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                            isSelected
-                              ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-500 ring-2 ring-purple-500/20 shadow-xs'
-                              : 'bg-zinc-50/60 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700/60 hover:border-purple-300'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
-                              isSelected ? 'bg-purple-600 text-white' : 'bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-300'
-                            }`}>
-                              {isSelected ? <Check size={14} /> : <Sparkles size={13} />}
-                            </div>
-                            <div className="min-w-0">
-                              <span className="font-black text-xs text-zinc-900 dark:text-white block truncate">
-                                {spec.specializationNameAr || spec.collegeNameAr}
-                              </span>
-                              <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold block truncate">
-                                {isAr 
-                                  ? `سنة ${spec.specializationStartYear || 2} ترم ${spec.specializationStartSemester || 1} فصاعداً`
-                                  : `Year ${spec.specializationStartYear || 2} Term ${spec.specializationStartSemester || 1}+`}
-                              </span>
-                            </div>
-                          </div>
-                          <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-black shrink-0">
-                            {spec.subjects?.length || 0} {isAr ? 'مادة تخصص' : 'subjs'}
-                          </span>
-                        </div>
-                      );
-                    })}
                   </div>
+                  <span className="text-xs font-bold text-purple-700 dark:text-purple-300 bg-white/80 dark:bg-zinc-900/80 px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-800">
+                    {isAr ? `يبدأ سنة ${activeSpec.specializationStartYear || 2}` : `Starts Y${activeSpec.specializationStartYear || 2}`}
+                  </span>
                 </div>
               )}
 
@@ -604,77 +757,53 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                 </div>
               </div>
 
-              {/* Grading Scale Table Preview */}
+              {/* Grading Scale Preview */}
               {previewData.gradingScale && previewData.gradingScale.length > 0 && (
-                <div className="space-y-2 bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-zinc-900 dark:text-white flex items-center gap-1.5">
-                      <Award size={15} className="text-indigo-600" />
-                      <span>{isAr ? 'جدول لائحة التقديرات المعتمدة التي سيتم استردادها:' : 'Accredited Grading Scale Table to Import:'}</span>
-                    </h4>
-                    <span className="text-[10px] font-bold text-zinc-400">
-                      {previewData.gradingScale.length} {isAr ? 'تقديرات' : 'rules'}
-                    </span>
-                  </div>
-
-                  <div className="overflow-x-auto max-h-[140px] overflow-y-auto">
-                    <table className="w-full text-xs text-left rtl:text-right">
-                      <thead className="bg-zinc-50 dark:bg-zinc-800 text-zinc-500 text-[10px] uppercase font-black">
-                        <tr>
-                          <th className="py-2 px-3">{isAr ? 'الرمز' : 'Grade'}</th>
-                          <th className="py-2 px-3">{isAr ? 'الاسم' : 'Name'}</th>
-                          <th className="py-2 px-3 text-center">{isAr ? 'النسبة المئوية' : 'Percentage'}</th>
-                          <th className="py-2 px-3 text-center">{isAr ? 'النقاط (GPA)' : 'Points'}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                        {previewData.gradingScale.map((rule, idx) => (
-                          <tr key={idx} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30">
-                            <td className="py-1.5 px-3 font-black text-indigo-600">{rule.letter}</td>
-                            <td className="py-1.5 px-3 font-bold text-zinc-700 dark:text-zinc-300">{isAr ? rule.nameAr : (rule.nameEn || rule.nameAr)}</td>
-                            <td className="py-1.5 px-3 text-center font-medium text-zinc-500">
-                              {rule.minPercentage}% {rule.maxOperator === '<' ? '<' : '≤'} {rule.maxPercentage}%
-                            </td>
-                            <td className="py-1.5 px-3 text-center font-black text-zinc-900 dark:text-white">{Number(rule.points || 0).toFixed(2)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                <div className="space-y-3">
+                  <h4 className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                    <Award size={16} className="text-amber-500" />
+                    <span>{isAr ? 'لائحة التقديرات المعتمدة التي سيتم تطبيقها:' : 'Accredited Grading Scale to be applied:'}</span>
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                    {previewData.gradingScale.map((rule: any) => (
+                      <div key={rule.id || rule.letter} className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 text-center">
+                        <span className="font-black text-sm text-indigo-600 dark:text-indigo-400 block">{rule.letter}</span>
+                        <span className="text-[10px] text-zinc-400 block font-bold mt-0.5">
+                          {Number(rule.points || 0).toFixed(2)} pts ({rule.minPercentage}%)
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
 
-              {/* Sample of subjects with Specialization Indicator */}
-              {previewData.subjects && previewData.subjects.length > 0 && (
-                <div className="space-y-2">
+              {/* Subjects Preview */}
+              {previewData.subjects.length > 0 && (
+                <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-                      <BookOpen size={14} className="text-indigo-600" />
-                      <span>{isAr ? 'عينة من المواد الجاهزة للاستيراد والخطة:' : 'Sample of subjects ready to import:'}</span>
+                    <h4 className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                      <BookOpen size={16} className="text-indigo-600" />
+                      <span>{isAr ? 'قائمة المواد المعتمدة التي سيتم استيرادها:' : 'Accredited Subjects list:'}</span>
                     </h4>
-                    <span className="text-[10px] font-bold text-zinc-400">
-                      {previewData.subjects.length} {isAr ? 'مادة إجمالاً' : 'total subjects'}
+                    <span className="text-xs font-bold text-zinc-400">
+                      {previewData.subjects.length} {isAr ? 'مادة' : 'subjects'}
                     </span>
                   </div>
 
-                  <div className="max-h-[140px] overflow-y-auto space-y-1.5 pr-1">
-                    {previewData.subjects.slice(0, 12).map((s, idx) => {
-                      const startY = Number(previewData.spec?.specializationStartYear || 2);
-                      const startS = Number(previewData.spec?.specializationStartSemester || 1);
-                      const isSpecSubj = previewData.isSpecialization && ((s.yearIndex || 1) > startY || ((s.yearIndex || 1) === startY && (s.semesterIndex || 1) >= startS));
-
+                  <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-2.5 bg-zinc-50/50 dark:bg-zinc-800/20">
+                    {previewData.subjects.map((s: any) => {
+                      const specStartYr = Number(activeSpec?.specializationStartYear || selectedDb?.specializationStartYear || 2);
+                      const isSpecSubj = Number(s.yearIndex || 1) >= specStartYr;
                       return (
-                        <div key={idx} className={`flex items-center justify-between text-xs p-2.5 rounded-xl border ${
-                          isSpecSubj 
-                            ? 'bg-purple-50/60 dark:bg-purple-950/30 border-purple-200/80 dark:border-purple-900/40' 
-                            : 'bg-zinc-50 dark:bg-zinc-800/70 border-zinc-100 dark:border-zinc-700/60'
-                        }`}>
+                        <div 
+                          key={s.id || s.name}
+                          className="flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 text-xs"
+                        >
                           <div className="flex items-center gap-2 min-w-0">
                             {previewData.isSpecialization && (
                               isSpecSubj ? (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-[9px] font-black text-purple-700 dark:text-purple-300 shrink-0">
-                                  <Compass size={10} className="text-purple-600 dark:text-purple-400" />
-                                  <span>{isAr ? 'تخصص' : 'Major'}</span>
+                                <span className="px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/60 text-[9px] font-black text-purple-700 dark:text-purple-300 shrink-0">
+                                  {isAr ? 'تخصص' : 'Major'}
                                 </span>
                               ) : (
                                 <span className="px-1.5 py-0.5 rounded-md bg-zinc-200 dark:bg-zinc-700 text-[9px] font-black text-zinc-600 dark:text-zinc-300 shrink-0">
@@ -717,7 +846,10 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
         {selectedDb && !successMessage && (
           <div className="p-4 sm:p-5 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
             <button
-              onClick={() => setSelectedDb(null)}
+              onClick={() => {
+                setSelectedDb(null);
+                setSelectedTrack('general');
+              }}
               className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
             >
               {isAr ? 'إلغاء' : 'Cancel'}
@@ -729,7 +861,11 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
               className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-2xl transition-all text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25 cursor-pointer"
             >
               {importing ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-              <span>{isAr ? 'تأكيد واسترداد الخطة والمواد ولائحة التقديرات' : 'Confirm & Restore Plan, Subjects & Scale'}</span>
+              <span>
+                {activeMode === 'specialization' && activeSpec
+                  ? (isAr ? `تأكيد واسترداد تخصص ${activeSpec.specializationNameAr || activeSpec.collegeNameAr}` : `Confirm & Restore Specialization`)
+                  : (isAr ? 'تأكيد واسترداد الخطة العامة للكلية' : 'Confirm & Restore College Plan')}
+              </span>
             </button>
           </div>
         )}

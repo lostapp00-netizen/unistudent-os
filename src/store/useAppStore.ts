@@ -985,16 +985,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         } catch {}
       }
 
-      const allDbs = await db.getUniversityDatabases();
+      // 1. Try finding by ID directly first (fastest, avoids full scan)
       let matchedDb: UniversityDatabase | null = null;
-
-      // 1. Try finding by ID first
       if (targetDbId) {
-        matchedDb = allDbs.find(d => d.id === targetDbId) || null;
+        matchedDb = await db.getUniversityDatabase(targetDbId);
       }
 
-      // 2. Self-Healing: If not found by ID, but user has university & college specified (or stale ID)
-      if (!matchedDb && settings.university && settings.college && settings.university !== 'غير محدد' && settings.university !== 'Not specified') {
+      if (!matchedDb) {
+        const allDbs = await db.getUniversityDatabases();
+        if (targetDbId) {
+          matchedDb = allDbs.find(d => d.id === targetDbId) || null;
+        }
+
+        // 2. Self-Healing: If not found by ID, but user has university & college specified (or stale ID)
+        if (!matchedDb && settings.university && settings.college && settings.university !== 'غير محدد' && settings.university !== 'Not specified') {
         const norm = (str?: string) => normalizeSubjectName(str);
         const normUni = norm(settings.university);
         const normCol = norm(settings.college);
@@ -1023,9 +1027,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       let specDb: UniversityDatabase | null = null;
       const targetSpecId = settings.specializationDatabaseId;
       if (targetSpecId) {
-        specDb = allDbs.find(d => d.id === targetSpecId) || null;
+        specDb = await db.getUniversityDatabase(targetSpecId);
       }
       if (!specDb && settings.specialization && matchedDb) {
+        const allDbs = await db.getUniversityDatabases();
         const norm = (str?: string) => normalizeSubjectName(str);
         const normSpec = norm(settings.specialization);
         specDb = allDbs.find(d => 
@@ -1108,7 +1113,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 
         rawTemplateSubjs = [...foundationSubjs, ...specSubjs];
       } else {
-        rawTemplateSubjs = !isCollegeSource ? (matchedDb.subjects || []) : [];
+        // General College Restore only:
+        // Must ONLY sync foundation subjects according to college specialization milestone
+        const specStartYr = Number(matchedDb.specializationStartYear || settings.specializationStartYear || 2);
+        const specStartSem = Number(matchedDb.specializationStartSemester || settings.specializationStartSemester || 1);
+
+        rawTemplateSubjs = !isCollegeSource ? (matchedDb.subjects || []).filter(s => {
+          const y = Number(s.yearIndex || 1);
+          const sm = Number(s.semesterIndex || 1);
+          return y < specStartYr || (y === specStartYr && sm < specStartSem);
+        }) : [];
       }
 
       if (rawTemplateSubjs.length > 0) {
@@ -1355,16 +1369,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         } catch {}
       }
 
-      // Sync grading scale if template has one and it differs
-      if (matchedDb.gradingScale && Array.isArray(matchedDb.gradingScale) && matchedDb.gradingScale.length > 0) {
-        const curScaleStr = JSON.stringify(settings.gradingScale || []);
-        const tplScaleStr = JSON.stringify(matchedDb.gradingScale);
-        if (curScaleStr !== tplScaleStr) {
-          const updatedSettings = { ...settings, gradingScale: matchedDb.gradingScale };
-          set({ settings: updatedSettings });
-          db.upsertSettings(userId, { gradingScale: matchedDb.gradingScale }).catch(console.warn);
-        }
-      }
+
       } catch (e) {
         console.warn('syncWithUniversityDatabase error:', e);
       } finally {

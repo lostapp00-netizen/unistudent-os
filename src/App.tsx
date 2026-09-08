@@ -126,6 +126,17 @@ export function App() {
           triggerSync();
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'university_pending_updates'
+        },
+        () => {
+          triggerSync();
+        }
+      )
       .subscribe();
 
     return () => {

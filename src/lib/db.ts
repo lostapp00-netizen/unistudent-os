@@ -835,6 +835,28 @@ export const db = {
     }
   },
 
+export async function broadcastUniversityDatabaseUpdate(payload: any): Promise<void> {
+  try {
+    const ch = supabase.channel('university_global_sync');
+    await new Promise<void>((resolve) => {
+      ch.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          ch.send({
+            type: 'broadcast',
+            event: 'university_db_updated',
+            payload
+          }).then(() => resolve()).catch(() => resolve());
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          resolve();
+        }
+      });
+      setTimeout(resolve, 1500);
+    });
+  } catch (err) {
+    console.warn('Realtime broadcast error:', err);
+  }
+}
+
   async updateUniversityDatabase(id: string, partialData: Partial<UniversityDatabase>): Promise<void> {
     const updatedAt = new Date().toISOString();
     let cachedDatabases: UniversityDatabase[] = [];
@@ -858,61 +880,68 @@ export const db = {
     // 2. Persist to Supabase
     try {
       const existing = cachedDatabases.find(database => database.id === id) || ({} as any);
+      const full = { ...existing, ...partialData };
 
-      const payload: any = { id, updated_at: updatedAt };
-      if (partialData.universityNameAr !== undefined) payload.university_name_ar = partialData.universityNameAr;
-      if (partialData.universityNameEn !== undefined) payload.university_name_en = partialData.universityNameEn;
-      if (partialData.collegeNameAr !== undefined) payload.college_name_ar = partialData.collegeNameAr;
-      if (partialData.collegeNameEn !== undefined) payload.college_name_en = partialData.collegeNameEn;
-      if (partialData.sourceUserId !== undefined) payload.source_user_id = partialData.sourceUserId;
-      if (partialData.sourceUserName !== undefined) payload.source_user_name = partialData.sourceUserName;
-      if (partialData.sourceUserEmail !== undefined) payload.source_user_email = partialData.sourceUserEmail;
-      if (partialData.totalYears !== undefined) payload.total_years = partialData.totalYears;
-      if (partialData.semestersPerYear !== undefined) payload.semesters_per_year = partialData.semestersPerYear;
-      if (partialData.subjects !== undefined) payload.subjects = partialData.subjects;
-      if (partialData.driveFiles !== undefined) payload.drive_files = partialData.driveFiles;
-      if (partialData.isVisible !== undefined) payload.is_visible = partialData.isVisible;
-      if (partialData.availableYears !== undefined) payload.available_years = partialData.availableYears;
-
-      // Specialization columns
-      if (partialData.isSpecialization !== undefined) payload.is_specialization = partialData.isSpecialization;
-      if (partialData.parentDatabaseId !== undefined) payload.parent_database_id = partialData.parentDatabaseId;
-      if (partialData.specializationNameAr !== undefined) payload.specialization_name_ar = partialData.specializationNameAr;
-      if (partialData.specializationNameEn !== undefined) payload.specialization_name_en = partialData.specializationNameEn;
-      if (partialData.specializationStartYear !== undefined) payload.specialization_start_year = partialData.specializationStartYear;
-      if (partialData.specializationStartSemester !== undefined) payload.specialization_start_semester = partialData.specializationStartSemester;
-
-      const isSpec = partialData.isSpecialization !== undefined ? partialData.isSpecialization : existing.isSpecialization;
-      let scale = partialData.gradingScale !== undefined ? [...partialData.gradingScale] : [...(existing.gradingScale || [])];
+      const isSpec = full.isSpecialization !== undefined ? full.isSpecialization : existing.isSpecialization;
+      let scale = full.gradingScale !== undefined ? [...full.gradingScale] : [...(existing.gradingScale || [])];
       scale = scale.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))));
 
       if (isSpec) {
         scale.push({
           id: '__spec_meta__',
           isSpecialization: true,
-          parentDatabaseId: partialData.parentDatabaseId !== undefined ? partialData.parentDatabaseId : existing.parentDatabaseId,
-          specializationNameAr: partialData.specializationNameAr !== undefined ? partialData.specializationNameAr : existing.specializationNameAr,
-          specializationNameEn: partialData.specializationNameEn !== undefined ? partialData.specializationNameEn : existing.specializationNameEn,
-          specializationStartYear: partialData.specializationStartYear !== undefined ? partialData.specializationStartYear : existing.specializationStartYear,
-          specializationStartSemester: partialData.specializationStartSemester !== undefined ? partialData.specializationStartSemester : existing.specializationStartSemester,
-          availableYears: partialData.availableYears !== undefined ? partialData.availableYears : existing.availableYears,
+          parentDatabaseId: full.parentDatabaseId !== undefined ? full.parentDatabaseId : existing.parentDatabaseId,
+          specializationNameAr: full.specializationNameAr !== undefined ? full.specializationNameAr : existing.specializationNameAr,
+          specializationNameEn: full.specializationNameEn !== undefined ? full.specializationNameEn : existing.specializationNameEn,
+          specializationStartYear: full.specializationStartYear !== undefined ? full.specializationStartYear : existing.specializationStartYear,
+          specializationStartSemester: full.specializationStartSemester !== undefined ? full.specializationStartSemester : existing.specializationStartSemester,
+          availableYears: full.availableYears !== undefined ? full.availableYears : existing.availableYears,
         } as any);
       } else {
         scale.push({
           id: '__college_meta__',
           isSpecialization: false,
-          availableYears: partialData.availableYears !== undefined ? partialData.availableYears : existing.availableYears,
-          specializationStartYear: partialData.specializationStartYear !== undefined ? partialData.specializationStartYear : existing.specializationStartYear,
-          specializationStartSemester: partialData.specializationStartSemester !== undefined ? partialData.specializationStartSemester : existing.specializationStartSemester,
+          availableYears: full.availableYears !== undefined ? full.availableYears : existing.availableYears,
+          specializationStartYear: full.specializationStartYear !== undefined ? full.specializationStartYear : existing.specializationStartYear,
+          specializationStartSemester: full.specializationStartSemester !== undefined ? full.specializationStartSemester : existing.specializationStartSemester,
         } as any);
       }
-      payload.grading_scale = scale;
 
-      let { error } = await supabase
+      const payload: any = {
+        id,
+        university_name_ar: full.universityNameAr || existing.universityNameAr || '',
+        university_name_en: full.universityNameEn || existing.universityNameEn || null,
+        college_name_ar: full.collegeNameAr || existing.collegeNameAr || '',
+        college_name_en: full.collegeNameEn || existing.collegeNameEn || null,
+        source_user_id: full.sourceUserId || existing.sourceUserId || null,
+        source_user_name: full.sourceUserName || existing.sourceUserName || '',
+        source_user_email: full.sourceUserEmail || existing.sourceUserEmail || '',
+        total_years: Number(full.totalYears || existing.totalYears || 4),
+        semesters_per_year: Number(full.semestersPerYear || existing.semestersPerYear || 2),
+        subjects: full.subjects !== undefined ? full.subjects : (existing.subjects || []),
+        drive_files: full.driveFiles !== undefined ? full.driveFiles : (existing.driveFiles || []),
+        grading_scale: scale,
+        is_visible: full.isVisible !== false,
+        available_years: full.availableYears || existing.availableYears || [1],
+        specialization_start_year: Number(full.specializationStartYear || existing.specializationStartYear || 2),
+        specialization_start_semester: Number(full.specializationStartSemester || existing.specializationStartSemester || 1),
+        updated_at: updatedAt
+      };
+
+      if (isSpec) {
+        payload.is_specialization = true;
+        payload.parent_database_id = full.parentDatabaseId || existing.parentDatabaseId || null;
+        payload.specialization_name_ar = full.specializationNameAr || existing.specializationNameAr || null;
+        payload.specialization_name_en = full.specializationNameEn || existing.specializationNameEn || null;
+      }
+
+      // Try update first
+      let updateRes = await supabase
         .from('university_databases')
-        .upsert(payload, { onConflict: 'id' });
+        .update(payload)
+        .eq('id', id);
 
-      if (error && error.message && (error.message.includes('column') || error.message.includes('does not exist'))) {
+      if (updateRes.error && updateRes.error.message && (updateRes.error.message.includes('column') || updateRes.error.message.includes('does not exist'))) {
         delete payload.is_specialization;
         delete payload.parent_database_id;
         delete payload.specialization_name_ar;
@@ -920,27 +949,27 @@ export const db = {
         delete payload.specialization_start_year;
         delete payload.specialization_start_semester;
         delete payload.available_years;
-        const retry = await supabase
+        updateRes = await supabase
+          .from('university_databases')
+          .update(payload)
+          .eq('id', id);
+      }
+
+      // If update had issues or row didn't exist yet, try upsert
+      if (updateRes.error) {
+        const upsertRes = await supabase
           .from('university_databases')
           .upsert(payload, { onConflict: 'id' });
-        if (retry.error) {
-          console.warn('Supabase update retry error:', retry.error);
+        if (upsertRes.error) {
+          console.warn('Supabase updateUniversityDatabase fallback error:', upsertRes.error);
         }
-      } else if (error) {
-        console.warn('Supabase updateUniversityDatabase error:', error);
       }
     } catch (e) {
       console.warn('Supabase updateUniversityDatabase warning:', e);
     }
 
-    // Broadcast only after Supabase has the approved, shared version.
-    try {
-      supabase.channel('university_global_sync').send({
-        type: 'broadcast',
-        event: 'university_db_updated',
-        payload: { id, timestamp: Date.now() }
-      }).catch(() => {});
-    } catch {}
+    // 3. Robust broadcast to all active student clients
+    await broadcastUniversityDatabaseUpdate({ id, timestamp: Date.now() });
   },
 
   async deleteUniversityDatabase(id: string): Promise<void> {
@@ -1663,23 +1692,17 @@ export const db = {
       }
 
       // 3. Broadcast real-time sync event so each active student's client syncs their own subjects cleanly
-      try {
-        supabase.channel('university_global_sync').send({
-          type: 'broadcast',
-          event: 'university_db_updated',
-          payload: { 
-            id: universityDbId, 
-            universityNameAr: udb.universityNameAr,
-            universityNameEn: udb.universityNameEn,
-            collegeNameAr: udb.collegeNameAr,
-            collegeNameEn: udb.collegeNameEn,
-            isSpecialization: isSpec,
-            parentDatabaseId: udb.parentDatabaseId,
-            specializationNameAr: udb.specializationNameAr,
-            timestamp: Date.now() 
-          }
-        }).catch(() => {});
-      } catch {}
+      await broadcastUniversityDatabaseUpdate({ 
+        id: universityDbId, 
+        universityNameAr: udb.universityNameAr,
+        universityNameEn: udb.universityNameEn,
+        collegeNameAr: udb.collegeNameAr,
+        collegeNameEn: udb.collegeNameEn,
+        isSpecialization: isSpec,
+        parentDatabaseId: udb.parentDatabaseId,
+        specializationNameAr: udb.specializationNameAr,
+        timestamp: Date.now() 
+      });
     } catch (e) {
       console.warn('Error in syncUniversityDatabaseChangesToStudents:', e);
     }
