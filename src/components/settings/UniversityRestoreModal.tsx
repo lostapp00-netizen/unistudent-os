@@ -150,6 +150,10 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
 
   const previewData = useMemo(() => {
     if (!selectedDb) return null;
+    const sanitizeScale = (scale: any[]) => {
+      return (scale || []).filter((r: any) => r && !String(r.id || '').startsWith('__') && (typeof r.points === 'number' || !isNaN(Number(r.points))));
+    };
+
     if (!activeSpec) {
       return {
         title: isAr ? selectedDb.collegeNameAr : (selectedDb.collegeNameEn || selectedDb.collegeNameAr),
@@ -159,7 +163,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
         totalYears: selectedDb.totalYears || 4,
         availableYears: selectedDb.availableYears || [1],
         semestersPerYear: selectedDb.semestersPerYear || 2,
-        gradingScale: selectedDb.gradingScale || [],
+        gradingScale: sanitizeScale(selectedDb.gradingScale || []),
         isSpecialization: false,
         spec: null,
         foundationCount: (selectedDb.subjects || []).length,
@@ -194,7 +198,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
       totalYears: selectedDb.totalYears || activeSpec.totalYears || 4,
       availableYears: selectedDb.availableYears || activeSpec.availableYears || [1],
       semestersPerYear: selectedDb.semestersPerYear || activeSpec.semestersPerYear || 2,
-      gradingScale: (activeSpec.gradingScale && activeSpec.gradingScale.length > 0) ? activeSpec.gradingScale : (selectedDb.gradingScale || []),
+      gradingScale: sanitizeScale((activeSpec.gradingScale && activeSpec.gradingScale.length > 0) ? activeSpec.gradingScale : (selectedDb.gradingScale || [])),
       isSpecialization: true,
       spec: activeSpec,
       foundationCount: foundation.length,
@@ -631,7 +635,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess }: Universit
                             <td className="py-1.5 px-3 text-center font-medium text-zinc-500">
                               {rule.minPercentage}% {rule.maxOperator === '<' ? '<' : '≤'} {rule.maxPercentage}%
                             </td>
-                            <td className="py-1.5 px-3 text-center font-black text-zinc-900 dark:text-white">{rule.points.toFixed(2)}</td>
+                            <td className="py-1.5 px-3 text-center font-black text-zinc-900 dark:text-white">{Number(rule.points || 0).toFixed(2)}</td>
                           </tr>
                         ))}
                       </tbody>

@@ -64,7 +64,7 @@ export const db = {
       let scale = settings.gradingScale !== undefined 
         ? [...settings.gradingScale] 
         : (payload.grading_scale ? [...payload.grading_scale] : (existingObj.gradingScale ? [...existingObj.gradingScale] : []));
-      scale = scale.filter((g: any) => g && g.id !== '__student_spec_meta__');
+      scale = scale.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))));
       
       const curSpec = 'specialization' in settings ? settings.specialization : existingObj.specialization;
       const curStartYr = 'specializationStartYear' in settings ? settings.specializationStartYear : existingObj.specializationStartYear;
@@ -761,7 +761,7 @@ export const db = {
     // 2. Supabase insert/upsert
     try {
       let gradingScalePayload = dbData.gradingScale ? [...dbData.gradingScale] : [];
-      gradingScalePayload = gradingScalePayload.filter((g: any) => g && g.id !== '__spec_meta__' && g.id !== '__college_meta__');
+      gradingScalePayload = gradingScalePayload.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))));
       if (dbData.isSpecialization) {
         gradingScalePayload.push({
           id: '__spec_meta__',
@@ -884,7 +884,7 @@ export const db = {
 
       const isSpec = partialData.isSpecialization !== undefined ? partialData.isSpecialization : existing.isSpecialization;
       let scale = partialData.gradingScale !== undefined ? [...partialData.gradingScale] : [...(existing.gradingScale || [])];
-      scale = scale.filter((g: any) => g && g.id !== '__spec_meta__' && g.id !== '__college_meta__');
+      scale = scale.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))));
 
       if (isSpec) {
         scale.push({
@@ -2308,7 +2308,7 @@ function mapSettingsFromDB(row: any): UserSettings {
     : (localExtra.universityDatabaseId || undefined);
 
   const cleanGradingScale = Array.isArray(row.grading_scale)
-    ? row.grading_scale.filter((g: any) => g && g.id !== '__student_spec_meta__')
+    ? row.grading_scale.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))))
     : (localExtra.gradingScale || []);
 
   const resolvedSpecialization = row.specialization != null 
@@ -2567,7 +2567,7 @@ function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
   const specializationStartSemester = rawSpecStartSem !== undefined && rawSpecStartSem !== null && !isNaN(Number(rawSpecStartSem)) ? Number(rawSpecStartSem) : 1;
 
   const cleanGradingScale = Array.isArray(row.grading_scale)
-    ? row.grading_scale.filter((g: any) => g && g.id !== '__spec_meta__' && g.id !== '__college_meta__')
+    ? row.grading_scale.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))))
     : [];
 
   const rawAvailableYears = row.available_years ?? specMeta?.availableYears ?? collegeMeta?.availableYears ?? row.availableYears;

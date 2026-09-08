@@ -37,19 +37,19 @@ export function AcademicWarnings() {
   const [saveSuccessToast, setSaveSuccessToast] = useState(false);
 
   const currentSemester = settings.semesters.find(s => s.isCurrent);
-  const currentScale = settings.gradingScale || [];
+  const currentScale = (settings.gradingScale || []).filter(g => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))));
 
   // Get current configured threshold
   const threshold = getWarningThreshold(settings);
   const currentLetter = threshold.letter;
-  const currentPoints = threshold.points;
+  const currentPoints = Number(threshold.points || 0);
 
   // Temp state while editing in modal
   const [tempLetter, setTempLetter] = useState(currentLetter);
   const [tempPoints, setTempPoints] = useState<number | ''>(currentPoints);
 
   // Sort grading scale for display (from high to low)
-  const sortedScale = [...currentScale].sort((a, b) => b.points - a.points);
+  const sortedScale = [...currentScale].sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0));
 
   // Filter subjects based on scope
   const scopedSubjects = subjects.filter(s => {
@@ -85,7 +85,7 @@ export function AcademicWarnings() {
       setTempPoints('');
       return;
     }
-    const maxScalePoints = sortedScale.length > 0 ? Math.max(...sortedScale.map(r => r.points), 4.0) : 4.0;
+    const maxScalePoints = sortedScale.length > 0 ? Math.max(...sortedScale.map(r => Number(r.points || 0)), 4.0) : 4.0;
     const clampedPoints = Math.max(0, Math.min(maxScalePoints, Number(val.toFixed(2))));
     const matchedRule = getMatchingGradeRuleByPoints(clampedPoints, settings.gradingScale);
     setTempPoints(clampedPoints);
@@ -293,7 +293,7 @@ export function AcademicWarnings() {
                         >
                           <span>{grade.letter}</span>
                           <span className={`text-[10px] ${isSelected ? 'text-white' : 'text-zinc-400'}`}>
-                            ({grade.points.toFixed(1)})
+                            ({Number(grade.points || 0).toFixed(1)})
                           </span>
                         </button>
                       );

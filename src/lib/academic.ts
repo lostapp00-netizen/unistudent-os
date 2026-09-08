@@ -1,7 +1,23 @@
 import { Subject, GradeRule, GraduationGradeRule } from '../types';
 
+export function sanitizeGradingScale(scale?: GradeRule[]): GradeRule[] {
+  if (!Array.isArray(scale)) return [];
+  return scale.filter(g => 
+    g && 
+    !String(g.id || '').startsWith('__') && 
+    typeof g.letter === 'string' &&
+    (typeof g.points === 'number' || !isNaN(Number(g.points)))
+  ).map(g => ({
+    ...g,
+    points: Number(g.points || 0),
+    minPercentage: Number(g.minPercentage || 0),
+    maxPercentage: Number(g.maxPercentage || 100)
+  }));
+}
+
 export function calculateSubjectGrade(subject: Subject, gradingScale: GradeRule[]) {
-  if (gradingScale.length === 0 || subject.totalMarks === 0) return null;
+  const cleanScale = sanitizeGradingScale(gradingScale);
+  if (cleanScale.length === 0 || subject.totalMarks === 0) return null;
 
   let totalAchieved = 0;
   let hasAnyAchievement = false;
@@ -18,7 +34,7 @@ export function calculateSubjectGrade(subject: Subject, gradingScale: GradeRule[
   const percentage = (totalAchieved / subject.totalMarks) * 100;
   
   // Find grade by percentage (descending order sort to match highest first)
-  const sortedScale = [...gradingScale].sort((a, b) => b.minPercentage - a.minPercentage);
+  const sortedScale = [...cleanScale].sort((a, b) => b.minPercentage - a.minPercentage);
   
   const grade = sortedScale.find((g, idx) => {
     if (percentage < g.minPercentage) return false;
@@ -42,7 +58,7 @@ export function calculateSubjectGrade(subject: Subject, gradingScale: GradeRule[
     totalAchieved,
     percentage,
     letter: matchedGrade?.letter || 'F',
-    points: matchedGrade?.points || 0
+    points: typeof matchedGrade?.points === 'number' ? matchedGrade.points : 0
   };
 }
 
@@ -54,6 +70,7 @@ export function calculateGPA(
   initialCumulativeGpa?: number | null,
   initialCompletedCreditHours?: number | null
 ) {
+  const cleanScale = sanitizeGradingScale(gradingScale);
   let filteredSubjects = subjects;
   const isSingleSemester = yearIndex !== undefined || semesterIndex !== undefined;
   
@@ -74,11 +91,11 @@ export function calculateGPA(
   }
 
   filteredSubjects.forEach(subject => {
-    let gradeObj = calculateSubjectGrade(subject, gradingScale);
+    let gradeObj = calculateSubjectGrade(subject, cleanScale);
     
     // If no distributions but has a manual finalGradeLetter
     if (!gradeObj && subject.finalGradeLetter) {
-      const g = gradingScale.find(rule => rule.letter === subject.finalGradeLetter);
+      const g = cleanScale.find(rule => rule.letter.trim().toLowerCase() === (subject.finalGradeLetter || '').trim().toLowerCase());
       if (g) {
         gradeObj = {
           totalAchieved: 0,
@@ -100,15 +117,17 @@ export function calculateGPA(
 }
 
 export function getMatchingGradeRuleByLetter(letter: string, scale: GradeRule[]): GradeRule | undefined {
-  if (!scale || scale.length === 0) return undefined;
-  return scale.find(r => r.letter.trim().toLowerCase() === letter.trim().toLowerCase());
+  const cleanScale = sanitizeGradingScale(scale);
+  if (cleanScale.length === 0) return undefined;
+  return cleanScale.find(r => r.letter.trim().toLowerCase() === letter.trim().toLowerCase());
 }
 
 export function getMatchingGradeRuleByPoints(points: number, scale: GradeRule[]): GradeRule | undefined {
-  if (!scale || scale.length === 0) return undefined;
+  const cleanScale = sanitizeGradingScale(scale);
+  if (cleanScale.length === 0) return undefined;
   
   // Sort descending by points
-  const sorted = [...scale].sort((a, b) => b.points - a.points);
+  const sorted = [...cleanScale].sort((a, b) => b.points - a.points);
   
   // 1. Exact match
   const exact = sorted.find(r => Math.abs(r.points - points) < 0.01);
@@ -127,21 +146,23 @@ export function getWarningThreshold(settings: {
   warningGpaPoints?: number;
   gradingScale?: GradeRule[];
 }): { points: number; letter: string; rule?: GradeRule } {
-  const scale = settings.gradingScale || [];
+  const scale = sanitizeGradingScale(settings.gradingScale);
   
   if (settings.warningGpaPoints !== undefined && settings.warningGpaPoints !== null) {
     const points = Number(settings.warningGpaPoints);
-    const rule = getMatchingGradeRuleByPoints(points, scale);
-    return {
-      points,
-      letter: settings.warningGradeLetter || rule?.letter || 'C',
-      rule
-    };
+    if (!isNaN(points)) {
+      const rule = getMatchingGradeRuleByPoints(points, scale);
+      return {
+        points,
+        letter: settings.warningGradeLetter || rule?.letter || 'C',
+        rule
+      };
+    }
   }
 
   if (settings.warningGradeLetter) {
     const rule = getMatchingGradeRuleByLetter(settings.warningGradeLetter, scale);
-    if (rule) {
+    if (rule && typeof rule.points === 'number') {
       return {
         points: rule.points,
         letter: rule.letter,
@@ -153,7 +174,7 @@ export function getWarningThreshold(settings: {
   // Default to 2.0 / C
   const defaultRule = getMatchingGradeRuleByPoints(2.0, scale) || getMatchingGradeRuleByLetter('C', scale);
   return {
-    points: defaultRule ? defaultRule.points : 2.0,
+    points: (defaultRule && typeof defaultRule.points === 'number') ? defaultRule.points : 2.0,
     letter: defaultRule ? defaultRule.letter : 'C',
     rule: defaultRule
   };
@@ -162,9 +183,10 @@ export function getWarningThreshold(settings: {
 export function isSubjectAtWarningRisk(subject: Subject, scale: GradeRule[], thresholdPoints: number): boolean {
   if (subject.status === 'finished') return false; // Finished / locked subjects cannot be improved
   
-  let gradeObj = calculateSubjectGrade(subject, scale);
+  const cleanScale = sanitizeGradingScale(scale);
+  let gradeObj = calculateSubjectGrade(subject, cleanScale);
   if (!gradeObj && subject.finalGradeLetter) {
-    const rule = getMatchingGradeRuleByLetter(subject.finalGradeLetter, scale);
+    const rule = getMatchingGradeRuleByLetter(subject.finalGradeLetter, cleanScale);
     if (rule) {
       gradeObj = {
         totalAchieved: 0,

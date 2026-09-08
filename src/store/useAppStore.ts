@@ -723,9 +723,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? (mainCollegeDb.collegeNameAr || mainCollegeDb.collegeNameEn) 
         : (mainCollegeDb.collegeNameEn || mainCollegeDb.collegeNameAr);
 
-      const effectiveGradingScale = (specDb?.gradingScale && specDb.gradingScale.length > 0)
+      const rawScale = (specDb?.gradingScale && specDb.gradingScale.length > 0)
         ? specDb.gradingScale
         : (mainCollegeDb.gradingScale && mainCollegeDb.gradingScale.length > 0 ? mainCollegeDb.gradingScale : settings.gradingScale);
+
+      const effectiveGradingScale = (rawScale || []).filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))));
 
       const specStartYr = Number(specDb?.specializationStartYear || mainCollegeDb.specializationStartYear || 2);
       const specStartSem = Number(specDb?.specializationStartSemester || mainCollegeDb.specializationStartSemester || 1);
@@ -1067,9 +1069,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       // 1. Sync Grading Scale
-      const effectiveDbScale = (specDb?.gradingScale && specDb.gradingScale.length > 0)
+      const rawDbScale = (specDb?.gradingScale && specDb.gradingScale.length > 0)
         ? specDb.gradingScale
         : (matchedDb.gradingScale && matchedDb.gradingScale.length > 0 ? matchedDb.gradingScale : null);
+
+      const effectiveDbScale = Array.isArray(rawDbScale)
+        ? rawDbScale.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))))
+        : null;
 
       if (effectiveDbScale && effectiveDbScale.length > 0) {
         const curScaleStr = JSON.stringify(settings.gradingScale || []);

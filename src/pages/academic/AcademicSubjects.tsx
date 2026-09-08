@@ -184,14 +184,14 @@ export function AcademicSubjects() {
                     <td className="px-6 py-4 text-center">{subject.semesterIndex}</td>
                     <td className="px-6 py-4 text-center">{subject.creditHours}</td>
                     <td className="px-6 py-4 text-center font-bold text-zinc-700 dark:text-zinc-300">
-                      {gradeInfo ? gradeInfo.points.toFixed(2) : '--'}
+                      {gradeInfo ? Number(gradeInfo.points || 0).toFixed(2) : '--'}
                     </td>
                     <td className="px-6 py-4 text-center font-medium">
-                      {gradeInfo ? `${gradeInfo.percentage.toFixed(1)}%` : '--'}
+                      {gradeInfo ? `${Number(gradeInfo.percentage || 0).toFixed(1)}%` : '--'}
                     </td>
                     <td className="px-6 py-4 text-center font-black">
                       {gradeInfo ? (
-                        <span className={gradeInfo.points >= 3.0 ? 'text-emerald-600' : gradeInfo.points >= 2.0 ? 'text-amber-500' : 'text-rose-500'}>
+                        <span className={(gradeInfo.points || 0) >= 3.0 ? 'text-emerald-600' : (gradeInfo.points || 0) >= 2.0 ? 'text-amber-500' : 'text-rose-500'}>
                           {gradeInfo.letter}
                         </span>
                       ) : <span className="text-zinc-400">--</span>}

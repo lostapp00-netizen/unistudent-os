@@ -216,7 +216,7 @@ export function AcademicDashboard() {
             </div>
           </div>
           <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-xs">
-            <span className="text-zinc-500">{isAr ? `حد الإنذار: ${threshold.letter} (${threshold.points.toFixed(1)})` : `Threshold: ${threshold.letter}`}</span>
+            <span className="text-zinc-500">{isAr ? `حد الإنذار: ${threshold.letter} (${Number(threshold.points || 0).toFixed(1)})` : `Threshold: ${threshold.letter}`}</span>
             <ChevronRight size={16} className={`text-zinc-400 group-hover:text-rose-600 transition-transform ${isAr ? 'rotate-180' : ''}`} />
           </div>
         </div>
@@ -371,7 +371,7 @@ export function AcademicDashboard() {
                       <h4 className="font-bold text-sm text-rose-950 dark:text-rose-200 truncate">{subject.name}</h4>
                       <p className="text-xs text-rose-700 dark:text-rose-400/90 mt-0.5 leading-relaxed">
                         {isAr 
-                          ? `النقاط (${(gradeInfo?.points || 0).toFixed(2)}) ضمن حد الإنذار (${threshold.points.toFixed(2)} - ${threshold.letter}).` 
+                          ? `النقاط (${(gradeInfo?.points || 0).toFixed(2)}) ضمن حد الإنذار (${Number(threshold.points || 0).toFixed(2)} - ${threshold.letter}).` 
                           : `Grade points (${(gradeInfo?.points || 0).toFixed(2)}) is at or below threshold.`}
                       </p>
                     </div>
@@ -387,7 +387,7 @@ export function AcademicDashboard() {
                   <p className="font-black text-sm">{isAr ? 'أداؤك الأكاديمي ممتاز ومستقر!' : 'Excellent Performance!'}</p>
                   <p className="text-xs mt-1 text-emerald-700 dark:text-emerald-300/80">
                     {isAr 
-                      ? `لا توجد أي إنذارات أو مواد أقل من حد التحذير (${threshold.points.toFixed(2)} - ${threshold.letter}).` 
+                      ? `لا توجد أي إنذارات أو مواد أقل من حد التحذير (${Number(threshold.points || 0).toFixed(2)} - ${threshold.letter}).` 
                       : `No courses at or below warning threshold.`}
                   </p>
                 </div>

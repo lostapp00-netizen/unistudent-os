@@ -302,9 +302,9 @@ function GraduationScaleRow({
       <td className="py-2.5 px-3">
         {rule.minGpa !== undefined && (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-black bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40">
-            <span>{rule.minGpa.toFixed(2)}</span>
+            <span>{Number(rule.minGpa ?? 0).toFixed(2)}</span>
             <span>{isGpaInclusive ? 'إلى (≤)' : 'إلى أقل من (<)'}</span>
-            <span>{rule.maxGpa?.toFixed(2) || '4.00'}</span>
+            <span>{rule.maxGpa != null ? Number(rule.maxGpa).toFixed(2) : '4.00'}</span>
           </span>
         )}
       </td>

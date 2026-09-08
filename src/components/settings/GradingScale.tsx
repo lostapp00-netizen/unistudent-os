@@ -74,7 +74,7 @@ export function GradingScale({ scale, onChange }: Props) {
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {scale.map((grade) => (
+            {scale.filter(g => g && !String(g.id || '').startsWith('__')).map((grade) => (
               <GradingScaleRow 
                 key={grade.id} 
                 grade={grade} 
@@ -82,7 +82,7 @@ export function GradingScale({ scale, onChange }: Props) {
                 onDelete={removeGrade} 
               />
             ))}
-            {scale.length === 0 && (
+            {scale.filter(g => g && !String(g.id || '').startsWith('__')).length === 0 && (
               <tr>
                 <td colSpan={7} className="text-center py-6 text-zinc-400">
                   {isAr ? 'لا توجد تقديرات مضافة.' : 'No grading scale added.'}

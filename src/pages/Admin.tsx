@@ -1150,7 +1150,7 @@ export function Admin() {
                                     ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60' 
                                     : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60')
                             }`}>
-                              {st.cgpa.toFixed(2)} CGPA
+                              {Number(st.cgpa || 0).toFixed(2)} CGPA
                             </span>
                           </td>
 
@@ -1406,7 +1406,7 @@ export function Admin() {
                                   ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800' 
                                   : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
                               }`}>
-                                {studentCgpa.toFixed(2)} CGPA
+                                {Number(studentCgpa || 0).toFixed(2)} CGPA
                               </span>
                               <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 mt-0.5">
                                 {studentEvaluation}
@@ -1811,7 +1811,7 @@ export function Admin() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center">
                 <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'المعدل التراكمي CGPA' : 'CGPA'}</span>
-                <span className="text-xl font-black text-blue-600 dark:text-blue-400">{selectedStudent.cgpa.toFixed(2)}</span>
+                <span className="text-xl font-black text-blue-600 dark:text-blue-400">{Number(selectedStudent.cgpa || 0).toFixed(2)}</span>
               </div>
 
               <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center">
@@ -2034,7 +2034,7 @@ export function Admin() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <div className="px-3.5 py-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
                       <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'المعدل التراكمي' : 'CGPA'}</span>
-                      <span className="text-base font-black text-blue-600 dark:text-blue-400">{studentCgpa.toFixed(2)}</span>
+                      <span className="text-base font-black text-blue-600 dark:text-blue-400">{Number(studentCgpa || 0).toFixed(2)}</span>
                     </div>
 
                     <div className="px-3.5 py-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">

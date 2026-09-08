@@ -259,7 +259,7 @@ export function Academic() {
                     <li key={s.id} className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-amber-100 dark:border-amber-900/30 text-sm flex items-center justify-between gap-3">
                       <div>
                         <span className="font-bold block text-zinc-900 dark:text-zinc-100">{s.name}</span>
-                        <span className="text-xs text-zinc-500">{isAr ? `المعدل: ${(g?.points || 0).toFixed(2)} • الحد: ${threshold.points.toFixed(2)} (${threshold.letter})` : `GPA: ${(g?.points || 0).toFixed(2)} • Threshold: ${threshold.points.toFixed(2)} (${threshold.letter})`}</span>
+                        <span className="text-xs text-zinc-500">{isAr ? `المعدل: ${(g?.points || 0).toFixed(2)} • الحد: ${Number(threshold.points ?? 2.0).toFixed(2)} (${threshold.letter})` : `GPA: ${(g?.points || 0).toFixed(2)} • Threshold: ${Number(threshold.points ?? 2.0).toFixed(2)} (${threshold.letter})`}</span>
                       </div>
                       <div className="flex flex-col items-center justify-center px-2 py-1 rounded-lg bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 font-bold text-xs">
                         <span>{g?.letter || 'F'}</span>

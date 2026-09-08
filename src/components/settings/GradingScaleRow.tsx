@@ -143,7 +143,7 @@ export function GradingScaleRow({ grade, onUpdate, onDelete }: Props) {
           <span className="font-black">{grade.maxPercentage}%</span>
         </span>
       </td>
-      <td className="py-2 px-3 font-bold">{grade.points.toFixed(2)}</td>
+      <td className="py-2 px-3 font-bold">{Number(grade.points || 0).toFixed(2)}</td>
       <td className="py-2 px-2">
         <div className="flex items-center justify-center gap-1.5">
           <button 
