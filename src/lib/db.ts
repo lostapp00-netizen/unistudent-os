@@ -1367,6 +1367,12 @@ export const db = {
 
   // --- Pending Updates for University Databases ---
   async getPendingUpdates(universityDbId?: string): Promise<UniversityPendingUpdate[]> {
+    let localList: UniversityPendingUpdate[] = [];
+    try {
+      const local = localStorage.getItem('unistudent_pending_updates');
+      localList = local ? JSON.parse(local) : [];
+    } catch {}
+
     try {
       let query = supabase.from('university_pending_updates').select('*').order('created_at', { ascending: true });
       if (universityDbId) {
@@ -1374,19 +1380,34 @@ export const db = {
       }
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
-        return data.map(d => mapPendingUpdateFromDB(d));
+        const remoteList = data.map(d => mapPendingUpdateFromDB(d));
+        // Merge remote and local: if local is already approved/rejected, preserve resolved status
+        const mergedMap = new Map<string, UniversityPendingUpdate>();
+        remoteList.forEach(r => mergedMap.set(r.id, r));
+        localList.forEach(l => {
+          const existing = mergedMap.get(l.id);
+          if (existing) {
+            // If locally resolved, keep resolved status
+            if (l.status !== 'pending' && existing.status === 'pending') {
+              mergedMap.set(l.id, { ...existing, status: l.status, resolvedAt: l.resolvedAt });
+            }
+          } else {
+            mergedMap.set(l.id, l);
+          }
+        });
+        const merged = Array.from(mergedMap.values());
+        merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        try {
+          localStorage.setItem('unistudent_pending_updates', JSON.stringify(merged.slice(0, 100)));
+        } catch {}
+        return universityDbId ? merged.filter(p => p.universityDatabaseId === universityDbId) : merged;
       }
     } catch (e) {
       console.warn('Supabase getPendingUpdates warning:', e);
     }
-    try {
-      const local = localStorage.getItem('unistudent_pending_updates');
-      let all: UniversityPendingUpdate[] = local ? JSON.parse(local) : [];
-      all.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-      return universityDbId ? all.filter(p => p.universityDatabaseId === universityDbId) : all;
-    } catch {
-      return [];
-    }
+
+    localList.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    return universityDbId ? localList.filter(p => p.universityDatabaseId === universityDbId) : localList;
   },
 
   async getUniversityPendingUpdates(universityDbId?: string): Promise<UniversityPendingUpdate[]> {
@@ -1441,11 +1462,28 @@ export const db = {
 
   async recordPendingUpdate(update: UniversityPendingUpdate): Promise<void> {
     try {
+      // Check if target database already contains this subject (for add_subject)
+      if (update.type === 'add_subject' && update.data?.name && update.universityDatabaseId) {
+        const udb = await this.getUniversityDatabase(update.universityDatabaseId);
+        if (udb && Array.isArray(udb.subjects)) {
+          const normName = normalizeSubjectName(update.data.name);
+          const y = Number(update.data.yearIndex || 1);
+          const sem = Number(update.data.semesterIndex || 1);
+          const alreadyExists = udb.subjects.some(s => 
+            (update.data.id && s.id === update.data.id) ||
+            (normalizeSubjectName(s.name) === normName && Number(s.yearIndex || 1) === y && Number(s.semesterIndex || 1) === sem)
+          );
+          if (alreadyExists) {
+            return;
+          }
+        }
+      }
+
       const current = await this.getPendingUpdates();
       const isDuplicate = current.some(p => 
-        p.status === 'pending' &&
         p.universityDatabaseId === update.universityDatabaseId &&
         p.type === update.type &&
+        (p.status === 'pending' || (p.status === 'approved' && update.type === 'add_subject')) &&
         ((p.data?.id && p.data?.id === update.data?.id) || 
          (p.data?.name && p.data?.name === update.data?.name && p.data?.yearIndex === update.data?.yearIndex && p.data?.semesterIndex === update.data?.semesterIndex))
       );
@@ -1459,13 +1497,13 @@ export const db = {
     try {
       const { data: existing } = await supabase
         .from('university_pending_updates')
-        .select('id, data')
+        .select('id, data, status')
         .eq('university_database_id', update.universityDatabaseId)
-        .eq('type', update.type)
-        .eq('status', 'pending');
+        .eq('type', update.type);
 
       if (existing && existing.length > 0) {
         const hasDup = existing.some(e => {
+          if (e.status !== 'pending' && !(e.status === 'approved' && update.type === 'add_subject')) return false;
           const d = e.data;
           return (d?.id && d?.id === update.data?.id) ||
                  (d?.name && d?.name === update.data?.name && d?.yearIndex === update.data?.yearIndex && d?.semesterIndex === update.data?.semesterIndex);
@@ -1499,38 +1537,56 @@ export const db = {
     if (!target) return;
 
     const resolvedAt = new Date().toISOString();
-    if (status === 'approved' && applyAction && target.universityDatabaseId) {
-      let udb = await this.getUniversityDatabase(target.universityDatabaseId);
-      if (!udb) {
-        const all = await this.getUniversityDatabases();
-        udb = all.find(d => d.id === target.universityDatabaseId) || null;
-      }
-      if (udb) {
-        const updatedDb = applyAction(udb);
-        await this.updateUniversityDatabase(udb.id, updatedDb);
-        await this.syncUniversityDatabaseChangesToStudents(udb.id, {
-          type: (target.type as any) || 'full_sync',
-          subject: target.data,
-          updatedDb
-        });
-      }
-    }
 
+    // 1. Immediately update status in local memory and persist to localStorage
     target.status = status;
     target.resolvedAt = resolvedAt;
-
     try {
       localStorage.setItem('unistudent_pending_updates', JSON.stringify(pendingList));
     } catch {}
 
+    // 2. Immediately persist status to Supabase with fallback
     try {
-      const { error } = await supabase
+      let { error } = await supabase
         .from('university_pending_updates')
         .update({ status, resolved_at: resolvedAt })
         .eq('id', id);
-      if (error) console.warn('Supabase update pending update warning:', error);
+
+      if (error && (error.message?.includes('resolved_at') || error.message?.includes('column') || error.code === '42703')) {
+        const fallbackRes = await supabase
+          .from('university_pending_updates')
+          .update({ status })
+          .eq('id', id);
+        if (fallbackRes.error) {
+          console.warn('Supabase update status fallback warning:', fallbackRes.error);
+        }
+      }
     } catch (e) {
       console.warn('Supabase update pending update exception:', e);
+    }
+
+    // 3. If approved, apply database updates and sync changes safely
+    if (status === 'approved' && applyAction && target.universityDatabaseId) {
+      try {
+        let udb = await this.getUniversityDatabase(target.universityDatabaseId);
+        if (!udb) {
+          const all = await this.getUniversityDatabases();
+          udb = all.find(d => d.id === target.universityDatabaseId) || null;
+        }
+        if (udb) {
+          udb.subjects = udb.subjects || [];
+          udb.driveFiles = udb.driveFiles || [];
+          const updatedDb = applyAction(udb);
+          await this.updateUniversityDatabase(udb.id, updatedDb);
+          await this.syncUniversityDatabaseChangesToStudents(udb.id, {
+            type: (target.type as any) || 'full_sync',
+            subject: target.data,
+            updatedDb
+          });
+        }
+      } catch (applyErr) {
+        console.warn('Error applying approved pending update side-effects:', applyErr);
+      }
     }
   },
 

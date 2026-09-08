@@ -1434,7 +1434,7 @@ export function AdminUniversitiesTab({
               includeInGpa: update.data.includeInGpa !== false && update.data.include_in_gpa !== false
             };
             const normNew = normalizeSubjectName(newSubj.name);
-            const filtered = targetDb.subjects.filter(s => 
+            const filtered = (targetDb.subjects || []).filter(s => 
               s.id !== subjectId && 
               !(normalizeSubjectName(s.name) === normNew && s.yearIndex === newSubj.yearIndex && s.semesterIndex === newSubj.semesterIndex)
             );
@@ -1454,7 +1454,7 @@ export function AdminUniversitiesTab({
             const normUpd = normalizeSubjectName(upd.name || '');
             return {
               ...targetDb,
-              subjects: targetDb.subjects.map(s => {
+              subjects: (targetDb.subjects || []).map(s => {
                 const isMatch = s.id === upd.id || (normUpd && normalizeSubjectName(s.name) === normUpd && s.yearIndex === upd.yearIndex && s.semesterIndex === upd.semesterIndex);
                 if (!isMatch) return s;
                 return {
@@ -1470,7 +1470,7 @@ export function AdminUniversitiesTab({
             const normUpd = normalizeSubjectName(upd.name || '');
             return {
               ...targetDb,
-              subjects: targetDb.subjects.filter(s => s.id !== upd.id && normalizeSubjectName(s.name) !== normUpd)
+              subjects: (targetDb.subjects || []).filter(s => s.id !== upd.id && normalizeSubjectName(s.name) !== normUpd)
             };
           } else if (update.type === 'add_file' && update.data) {
             const file = update.data;

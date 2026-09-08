@@ -710,11 +710,27 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       if (udb.isSpecialization) {
         specDb = udb;
-        if (udb.parentDatabaseId) {
+        // 1. If student already has a valid general college linked, use that as parent
+        if (settings.universityDatabaseId && settings.universityDatabaseId !== udb.id) {
+          parentDb = await db.getUniversityDatabase(settings.universityDatabaseId);
+        }
+        // 2. Otherwise check udb.parentDatabaseId
+        if (!parentDb && udb.parentDatabaseId) {
           parentDb = await db.getUniversityDatabase(udb.parentDatabaseId);
-          if (parentDb) {
-            mainCollegeDb = parentDb;
-          }
+        }
+        // 3. Fallback: match general college database by university and college name
+        if (!parentDb) {
+          const allDbs = await db.getUniversityDatabases();
+          const norm = (str?: string) => normalizeSubjectName(str);
+          const normUni = norm(udb.universityNameAr);
+          parentDb = allDbs.find(d => 
+            !d.isSpecialization && 
+            norm(d.universityNameAr) === normUni &&
+            (d.id === udb.parentDatabaseId || (norm(d.collegeNameAr) && norm(udb.collegeNameAr).includes(norm(d.collegeNameAr))))
+          ) || null;
+        }
+        if (parentDb) {
+          mainCollegeDb = parentDb;
         }
       } else if (options?.specializationDbId) {
         specDb = await db.getUniversityDatabase(options.specializationDbId);
@@ -722,11 +738,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const isAr = settings.language === 'ar';
       const chosenUni = isAr 
-        ? (mainCollegeDb.universityNameAr || mainCollegeDb.universityNameEn) 
-        : (mainCollegeDb.universityNameEn || mainCollegeDb.universityNameAr);
-      const chosenCollege = isAr 
+        ? (mainCollegeDb.universityNameAr || mainCollegeDb.universityNameEn || udb.universityNameAr) 
+        : (mainCollegeDb.universityNameEn || mainCollegeDb.universityNameAr || udb.universityNameEn);
+
+      let chosenCollege = isAr 
         ? (mainCollegeDb.collegeNameAr || mainCollegeDb.collegeNameEn) 
         : (mainCollegeDb.collegeNameEn || mainCollegeDb.collegeNameAr);
+      if (chosenCollege && chosenCollege.includes(' - ')) {
+        chosenCollege = chosenCollege.split(' - ')[0].trim();
+      }
 
       const rawScale = (specDb?.gradingScale && specDb.gradingScale.length > 0)
         ? specDb.gradingScale
@@ -742,7 +762,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         college: chosenCollege,
         totalYears: mainCollegeDb.totalYears || specDb?.totalYears || 4,
         semestersPerYear: mainCollegeDb.semestersPerYear || specDb?.semestersPerYear || 2,
-        universityDatabaseId: mainCollegeDb.id,
+        universityDatabaseId: mainCollegeDb.id, // Guarantee always pointed to parent college!
         deletedSubjectNames: [],
         gradingScale: effectiveGradingScale,
         specializationStartYear: specStartYr,
@@ -760,10 +780,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       let targetYears: number[] = [];
       if (specDb) {
-        // Full years: 1 to totY (foundation + specialization)
         for (let y = 1; y <= totY; y++) targetYears.push(y);
       } else {
-        // Foundation years only: 1 to maxFoundationYear
         const maxFoundationYear = Math.max(1, specStartSem === 1 ? specStartYr - 1 : specStartYr);
         for (let y = 1; y <= maxFoundationYear; y++) targetYears.push(y);
       }
@@ -793,38 +811,95 @@ export const useAppStore = create<AppState>((set, get) => ({
       set(state => ({ settings: { ...state.settings, ...updatedSettings } }));
       db.upsertSettings(userId, updatedSettings).catch(console.error);
 
-      // Smart Slicing & Non-Destructive Dual-Database Merging
-      let rawCandidateSubjects: Subject[] = [];
+      // Non-Destructive Dual-Database Merging
       const currentSubjects = get().subjects || [];
 
       if (specDb) {
-        const startYear = Number(specDb.specializationStartYear || 2);
-        const startSem = Number(specDb.specializationStartSemester || 1);
+        const startYear = Number(specDb.specializationStartYear || settings.specializationStartYear || 2);
+        const startSem = Number(specDb.specializationStartSemester || settings.specializationStartSemester || 1);
 
-        // 1. Preserve existing foundation subjects of the student (before specialization milestone)
-        let preservedFoundationSubjs = currentSubjects.filter(s => {
+        // 1. Foundation subjects: keep existing student foundation subjects 100% untouched!
+        let foundationSubjs = currentSubjects.filter(s => {
           const y = Number(s.yearIndex || 1);
           const sem = Number(s.semesterIndex || 1);
           return y < startYear || (y === startYear && sem < startSem);
         });
 
+        let newFoundationToInsert: Subject[] = [];
         // If student had no foundation subjects yet, pull them from the parent college database
-        if (preservedFoundationSubjs.length === 0 && mainCollegeDb) {
-          preservedFoundationSubjs = (mainCollegeDb.subjects || []).filter(s => {
+        if (foundationSubjs.length === 0 && mainCollegeDb && Array.isArray(mainCollegeDb.subjects)) {
+          const collegeFoundation = (mainCollegeDb.subjects || []).filter(s => {
             const y = Number(s.yearIndex || 1);
             const sem = Number(s.semesterIndex || 1);
             return y < startYear || (y === startYear && sem < startSem);
           });
+          newFoundationToInsert = collegeFoundation.map(s => ({
+            id: uuidv4(),
+            universityTemplateId: s.id,
+            code: (s.code || '').trim(),
+            name: s.name,
+            creditHours: Number(s.creditHours || 3),
+            totalMarks: Number(s.totalMarks || 100),
+            yearIndex: Number(s.yearIndex || 1),
+            semesterIndex: Number(s.semesterIndex || 1),
+            distributions: (s.distributions || []).map((d: any) => ({
+              id: uuidv4(),
+              name: d.name,
+              maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : 0),
+              achievedMarks: null,
+              status: 'current' as const
+            })),
+            status: s.status || 'current',
+            includeInGpa: s.includeInGpa !== false
+          }));
+          foundationSubjs = newFoundationToInsert;
         }
 
-        // 2. Specialized courses from the specialization database
-        const specializationSubjs = (specDb.subjects || []).filter(s => {
+        // 2. Remove old specialization subjects of the student (y >= startYear)
+        const oldSpecSubjs = currentSubjects.filter(s => {
           const y = Number(s.yearIndex || 1);
           const sem = Number(s.semesterIndex || 1);
           return y > startYear || (y === startYear && sem >= startSem);
         });
+        for (const oldS of oldSpecSubjs) {
+          await db.deleteSubject(userId, oldS.id).catch(() => {});
+        }
 
-        rawCandidateSubjects = [...preservedFoundationSubjs, ...specializationSubjs];
+        // 3. New specialization subjects from specDb
+        const newSpecSubjs: Subject[] = (specDb.subjects || []).filter(s => {
+          const y = Number(s.yearIndex || 1);
+          const sem = Number(s.semesterIndex || 1);
+          return y > startYear || (y === startYear && sem >= startSem);
+        }).map(s => ({
+          id: uuidv4(),
+          universityTemplateId: s.id,
+          code: (s.code || '').trim(),
+          name: s.name,
+          creditHours: Number(s.creditHours || 3),
+          totalMarks: Number(s.totalMarks || 100),
+          yearIndex: Number(s.yearIndex || 1),
+          semesterIndex: Number(s.semesterIndex || 1),
+          distributions: (s.distributions || []).map((d: any) => ({
+            id: uuidv4(),
+            name: d.name,
+            maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : 0),
+            achievedMarks: null,
+            status: 'current' as const
+          })),
+          status: s.status || 'current',
+          includeInGpa: s.includeInGpa !== false
+        }));
+
+        for (const s of [...newFoundationToInsert, ...newSpecSubjs]) {
+          await db.addSubject(userId, s);
+        }
+
+        const finalSubjects = [...foundationSubjs, ...newSpecSubjs];
+        const { clean: deduped } = deduplicateSubjects(finalSubjects);
+        set({ subjects: deduped });
+        try {
+          localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(deduped));
+        } catch {}
       } else {
         // General College Restore: Restore foundation subjects while PRESERVING any existing specialization courses
         const startYear = Number(mainCollegeDb.specializationStartYear || 2);
@@ -836,51 +911,51 @@ export const useAppStore = create<AppState>((set, get) => ({
           return y > startYear || (y === startYear && sem >= startSem);
         });
 
-        const foundationSubjs = (mainCollegeDb.subjects || []).filter(s => {
+        // Delete old foundation subjects
+        const oldFoundationSubjs = currentSubjects.filter(s => {
           const y = Number(s.yearIndex || 1);
           const sem = Number(s.semesterIndex || 1);
           return y < startYear || (y === startYear && sem < startSem);
         });
-
-        rawCandidateSubjects = [...foundationSubjs, ...existingSpecializationSubjs];
-      }
-
-      if (rawCandidateSubjects.length > 0) {
-        await db.clearAllSubjects(userId);
-
-        const { clean: dedupedTemplateSubjs } = deduplicateSubjects(rawCandidateSubjects);
-
-        const importedSubjects: Subject[] = dedupedTemplateSubjs.map(s => {
-          const y = s.yearIndex !== undefined && s.yearIndex !== null ? s.yearIndex : ((s as any).year_index !== undefined ? (s as any).year_index : 1);
-          const sem = s.semesterIndex !== undefined && s.semesterIndex !== null ? s.semesterIndex : ((s as any).semester_index !== undefined ? (s as any).semester_index : 1);
-          const hrs = s.creditHours !== undefined && s.creditHours !== null ? s.creditHours : ((s as any).credit_hours !== undefined ? (s as any).credit_hours : 3);
-          const marks = s.totalMarks !== undefined && s.totalMarks !== null ? s.totalMarks : ((s as any).total_marks !== undefined ? (s as any).total_marks : 100);
-
-          return {
-            id: uuidv4(),
-            code: (s.code || '').trim(),
-            name: s.name,
-            creditHours: Number(hrs || 3),
-            totalMarks: Number(marks || 100),
-            yearIndex: Number(y || 1),
-            semesterIndex: Number(sem || 1),
-            distributions: (s.distributions || []).map((d: any) => ({
-              id: uuidv4(),
-              name: d.name,
-              maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : ((d as any).max_marks !== undefined ? (d as any).max_marks : 0)),
-              achievedMarks: null,
-              status: 'current' as const
-            })),
-            status: s.status || 'current',
-            includeInGpa: s.includeInGpa !== false && (s as any).include_in_gpa !== false
-          };
-        });
-
-        set({ subjects: importedSubjects });
-
-        for (const subj of importedSubjects) {
-          await db.addSubject(userId, subj);
+        for (const oldS of oldFoundationSubjs) {
+          await db.deleteSubject(userId, oldS.id).catch(() => {});
         }
+
+        // Import new foundation subjects from mainCollegeDb
+        const newFoundationSubjs: Subject[] = (mainCollegeDb.subjects || []).filter(s => {
+          const y = Number(s.yearIndex || 1);
+          const sem = Number(s.semesterIndex || 1);
+          return y < startYear || (y === startYear && sem < startSem);
+        }).map(s => ({
+          id: uuidv4(),
+          universityTemplateId: s.id,
+          code: (s.code || '').trim(),
+          name: s.name,
+          creditHours: Number(s.creditHours || 3),
+          totalMarks: Number(s.totalMarks || 100),
+          yearIndex: Number(s.yearIndex || 1),
+          semesterIndex: Number(s.semesterIndex || 1),
+          distributions: (s.distributions || []).map((d: any) => ({
+            id: uuidv4(),
+            name: d.name,
+            maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : 0),
+            achievedMarks: null,
+            status: 'current' as const
+          })),
+          status: s.status || 'current',
+          includeInGpa: s.includeInGpa !== false
+        }));
+
+        for (const s of newFoundationSubjs) {
+          await db.addSubject(userId, s);
+        }
+
+        const finalSubjects = [...newFoundationSubjs, ...existingSpecializationSubjs];
+        const { clean: deduped } = deduplicateSubjects(finalSubjects);
+        set({ subjects: deduped });
+        try {
+          localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(deduped));
+        } catch {}
       }
 
       // Drive files: Non-destructive append & merge
@@ -907,6 +982,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
             const cloned: DriveFile = {
               id: newId,
+              universityTemplateId: file.id,
               name: file.name,
               size: file.size,
               type: file.type,
@@ -983,9 +1059,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const specTemplateFileIds = new Set<string>();
     const specTemplateSubjectIds = new Set<string>();
 
+    let specDb: UniversityDatabase | null = null;
     if (specDbId) {
       try {
-        const specDb = await db.getUniversityDatabase(specDbId);
+        specDb = await db.getUniversityDatabase(specDbId);
         if (specDb) {
           (specDb.subjects || []).forEach(s => { if (s.id) specTemplateSubjectIds.add(s.id); });
           (specDb.driveFiles || []).forEach(f => { if (f.id) specTemplateFileIds.add(f.id); });
@@ -1017,9 +1094,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       return true;
     });
 
+    // Repair universityDatabaseId if it was pointing to specDbId
+    let repairedUniDbId = settings.universityDatabaseId;
+    if (repairedUniDbId === specDbId && specDb?.parentDatabaseId) {
+      repairedUniDbId = specDb.parentDatabaseId;
+    }
+
+    let cleanCollege = settings.college || '';
+    if (cleanCollege.includes(' - ')) {
+      cleanCollege = cleanCollege.split(' - ')[0].trim();
+    }
+
     const updatedSettings: Partial<UserSettings> = {
       specializationDatabaseId: undefined,
-      specialization: ''
+      specialization: '',
+      universityDatabaseId: repairedUniDbId,
+      college: cleanCollege
     };
 
     set(state => ({
@@ -1102,6 +1192,42 @@ export const useAppStore = create<AppState>((set, get) => ({
           await get().unlinkUniversityDatabase();
         }
         return;
+      }
+
+      // Self-Healing: If matchedDb is a specialization database, resolve its parent general college!
+      if (matchedDb && matchedDb.isSpecialization) {
+        let parentCollege: UniversityDatabase | null = null;
+        if (matchedDb.parentDatabaseId) {
+          parentCollege = await db.getUniversityDatabase(matchedDb.parentDatabaseId);
+        }
+        if (!parentCollege) {
+          const allDbs = await db.getUniversityDatabases();
+          parentCollege = allDbs.find(d => !d.isSpecialization && (d.id === matchedDb!.parentDatabaseId || d.universityNameAr === matchedDb!.universityNameAr)) || null;
+        }
+        if (parentCollege) {
+          const detectedSpec = matchedDb;
+          matchedDb = parentCollege;
+          targetDbId = parentCollege.id;
+          let cleanCollege = parentCollege.collegeNameAr || '';
+          if (cleanCollege.includes(' - ')) {
+            cleanCollege = cleanCollege.split(' - ')[0].trim();
+          }
+          set(state => ({
+            settings: {
+              ...state.settings,
+              universityDatabaseId: parentCollege!.id,
+              specializationDatabaseId: detectedSpec.id,
+              specialization: detectedSpec.specializationNameAr || detectedSpec.specializationNameEn || state.settings.specialization,
+              college: cleanCollege
+            }
+          }));
+          db.upsertSettings(userId, {
+            universityDatabaseId: parentCollege.id,
+            specializationDatabaseId: detectedSpec.id,
+            specialization: detectedSpec.specializationNameAr || detectedSpec.specializationNameEn || settings.specialization,
+            college: cleanCollege
+          }).catch(() => {});
+        }
       }
 
       // Check for Specialization Database
@@ -1362,8 +1488,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         }
 
-        // B. Delete subjects removed from college database (unless student has completed / achieved marks)
+        // B. Delete subjects removed from college database (unless student has completed / achieved marks or in specialization phase)
         const remainingSubjects: Subject[] = [];
+        const specStartYr = Number(specDb?.specializationStartYear || matchedDb.specializationStartYear || settings.specializationStartYear || 2);
+        const specStartSem = Number(specDb?.specializationStartSemester || matchedDb.specializationStartSemester || settings.specializationStartSemester || 1);
+
         for (let i = 0; i < currentSubjects.length; i++) {
           const s = currentSubjects[i];
           const isMatched = matchedExistingIndices.has(i);
@@ -1371,7 +1500,23 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (isMatched) {
             remainingSubjects.push(s);
           } else {
-            // Subject is not in the college database
+            const y = Number(s.yearIndex || 1);
+            const sm = Number(s.semesterIndex || 1);
+            const isSpecPhase = y > specStartYr || (y === specStartYr && sm >= specStartSem);
+
+            // 1. If user is source for specialization, NEVER delete specialization subjects!
+            if (isSpecSource && isSpecPhase) {
+              remainingSubjects.push(s);
+              continue;
+            }
+
+            // 2. If college-only sync (no specialization db linked), NEVER delete specialization subjects!
+            if (!specDb && isSpecPhase) {
+              remainingSubjects.push(s);
+              continue;
+            }
+
+            // Subject is not in the college template
             const hasAchievedMarks = (s.distributions || []).some(
               d => d.achievedMarks !== null && d.achievedMarks !== undefined && Number(d.achievedMarks) > 0
             );
