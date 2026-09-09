@@ -1393,9 +1393,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             });
             if (idx >= 0) return idx;
           }
-          // Priority 4: Normalized Name match (fallback)
+          // Priority 4: Normalized Name match (fallback) — ONLY for subjects that
+          // are already template-linked. A manually-added subject must never be
+          // hijacked into a template subject's year/semester.
           if (tNorm) {
-            const idx = list.findIndex(s => normalizeSubjectName(s.name) === tNorm);
+            const idx = list.findIndex(s => s.universityTemplateId && normalizeSubjectName(s.name) === tNorm);
             if (idx >= 0) return idx;
           }
           return -1;
@@ -1532,6 +1534,15 @@ export const useAppStore = create<AppState>((set, get) => ({
             const y = Number(s.yearIndex || 1);
             const sm = Number(s.semesterIndex || 1);
             const isSpecPhase = y > specStartYr || (y === specStartYr && sm >= specStartSem);
+
+            // 0. Manually-added subjects (no universityTemplateId) belong to the
+            // student alone. They must NEVER be auto-deleted by template sync,
+            // even when they live in a year/semester outside the template range
+            // or carry no achieved marks yet.
+            if (!s.universityTemplateId) {
+              remainingSubjects.push(s);
+              continue;
+            }
 
             // 1. If user is source for specialization, NEVER delete specialization subjects!
             if (isSpecSource && isSpecPhase) {

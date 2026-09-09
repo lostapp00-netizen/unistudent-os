@@ -334,7 +334,7 @@ export async function openOrDownloadFile(
           }));
           const bytes = await res.Body?.transformToByteArray();
           if (bytes) {
-            const blob = new Blob([bytes], { type: res.ContentType || 'application/octet-stream' });
+            const blob = new Blob([bytes as BlobPart], { type: res.ContentType || 'application/octet-stream' });
             const blobUrl = window.URL.createObjectURL(blob);
             window.open(blobUrl, '_blank');
             return;
@@ -378,7 +378,7 @@ export async function openOrDownloadFile(
         }));
         const bytes = await res.Body?.transformToByteArray();
         if (bytes) {
-          const blob = new Blob([bytes], { type: res.ContentType || 'application/octet-stream' });
+          const blob = new Blob([bytes as BlobPart], { type: res.ContentType || 'application/octet-stream' });
           const blobUrl = window.URL.createObjectURL(blob);
           const link = document.createElement('a');
           link.href = blobUrl;

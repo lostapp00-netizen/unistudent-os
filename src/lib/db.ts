@@ -84,8 +84,8 @@ export const db = {
     if ('enableGraduationScale' in settings) payload.enable_graduation_scale = settings.enableGraduationScale;
     if ('graduationGradingScale' in settings) payload.graduation_grading_scale = settings.graduationGradingScale;
     if ('specialization' in settings) payload.specialization = settings.specialization ? settings.specialization.trim() : null;
-    if ('specializationStartYear' in settings) payload.specialization_start_year = (settings.specializationStartYear != null && settings.specializationStartYear !== '' && Number(settings.specializationStartYear) > 0) ? Number(settings.specializationStartYear) : null;
-    if ('specializationStartSemester' in settings) payload.specialization_start_semester = (settings.specializationStartSemester != null && settings.specializationStartSemester !== '' && Number(settings.specializationStartSemester) > 0) ? Number(settings.specializationStartSemester) : null;
+    if ('specializationStartYear' in settings) payload.specialization_start_year = (settings.specializationStartYear != null && (settings.specializationStartYear as unknown as string) !== '' && Number(settings.specializationStartYear) > 0) ? Number(settings.specializationStartYear) : null;
+    if ('specializationStartSemester' in settings) payload.specialization_start_semester = (settings.specializationStartSemester != null && (settings.specializationStartSemester as unknown as string) !== '' && Number(settings.specializationStartSemester) > 0) ? Number(settings.specializationStartSemester) : null;
     if ('specializationDatabaseId' in settings) payload.specialization_database_id = settings.specializationDatabaseId || null;
 
     try {
@@ -161,7 +161,9 @@ export const db = {
       if (error) {
         const updateRes = await supabase.from('settings').update(payload).eq('user_id', userId);
         if (updateRes.error) {
-          await supabase.from('settings').insert(payload).catch(() => {});
+          try {
+            await supabase.from('settings').insert(payload);
+          } catch {}
         }
       }
     }

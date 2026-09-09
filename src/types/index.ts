@@ -254,6 +254,7 @@ export type UniversityPendingUpdate = {
   collegeName?: string;
   isSpecialization?: boolean;
   specializationName?: string;
+  parentCollegeName?: string;
   sourceUserId: string;
   sourceUserEmail?: string;
   sourceUserName?: string;

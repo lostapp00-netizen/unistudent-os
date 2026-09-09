@@ -2181,7 +2181,10 @@ export function AdminUniversitiesTab({
                         collegeNameEn: '',
                         sourceUserId: '',
                         customYears: 4,
-                        customSemesters: 2
+                        customSemesters: 2,
+                        specializationStartYear: 2,
+                        specializationStartSemester: 1,
+                        availableYears: [1]
                       });
                       setShowAllStudentsForCollege(false);
                       setCollegeStudentSearchQuery('');
@@ -2361,7 +2364,10 @@ export function AdminUniversitiesTab({
                                   collegeNameEn: '',
                                   sourceUserId: '',
                                   customYears: 4,
-                                  customSemesters: 2
+                                  customSemesters: 2,
+                                  specializationStartYear: 2,
+                                  specializationStartSemester: 1,
+                                  availableYears: [1]
                                 });
                                 setShowAllStudentsForCollege(false);
                                 setCollegeStudentSearchQuery('');

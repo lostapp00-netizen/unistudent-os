@@ -130,7 +130,7 @@ export function AcademicDashboard() {
         
         {/* 1. Cumulative GPA Card */}
         <div 
-          onClick={() => navigate('/academic/gpa-target')}
+          onClick={() => navigate('/academic/subjects')}
           className="bg-white dark:bg-zinc-900 p-5 sm:p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-800/60 transition-all cursor-pointer group flex flex-col justify-between"
         >
           <div className="flex items-start justify-between">

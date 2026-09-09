@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Plus, StickyNote, CheckSquare, X, BookOpen, Layers, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Plus, StickyNote, CheckSquare, X, BookOpen, Layers, FileText, User, MapPin } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
