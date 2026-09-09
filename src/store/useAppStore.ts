@@ -277,32 +277,9 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           } catch {}
         }
-
-        if (!uniDbId && mergedSettings.university && mergedSettings.college && mergedSettings.university !== 'غير محدد') {
-          const allDbs = await db.getUniversityDatabases();
-          const autoMatched = allDbs.find(d => 
-            (normalizeSubjectName(d.universityNameAr) === normalizeSubjectName(mergedSettings.university) || normalizeSubjectName(d.universityNameEn) === normalizeSubjectName(mergedSettings.university)) &&
-            (normalizeSubjectName(d.collegeNameAr) === normalizeSubjectName(mergedSettings.college) || normalizeSubjectName(d.collegeNameEn) === normalizeSubjectName(mergedSettings.college))
-          );
-          if (autoMatched) {
-            uniDbId = autoMatched.id;
-            mergedSettings.universityDatabaseId = autoMatched.id;
-            db.upsertSettings(userId, { universityDatabaseId: autoMatched.id }).catch(() => {});
-          }
-        }
-
-        if (uniDbId && mergedSettings.specialization && !mergedSettings.specializationDatabaseId) {
-          const allDbs = await db.getUniversityDatabases();
-          const specMatched = allDbs.find(d => 
-            d.isSpecialization && 
-            (d.parentDatabaseId === uniDbId || normalizeSubjectName(d.collegeNameAr) === normalizeSubjectName(mergedSettings.college)) &&
-            (normalizeSubjectName(d.specializationNameAr) === normalizeSubjectName(mergedSettings.specialization) || normalizeSubjectName(d.specializationNameEn) === normalizeSubjectName(mergedSettings.specialization))
-          );
-          if (specMatched) {
-            mergedSettings.specializationDatabaseId = specMatched.id;
-            db.upsertSettings(userId, { specializationDatabaseId: specMatched.id }).catch(() => {});
-          }
-        }
+        // Database linking is EXPLICIT-ONLY (restore action). Typing a
+        // university/college/specialization name must never create a link,
+        // even when a database with the same names exists.
       } catch (e) {
         console.warn('Silent uni resolve in initialize error:', e);
       }

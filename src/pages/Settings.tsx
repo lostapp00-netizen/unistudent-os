@@ -361,22 +361,11 @@ export function Settings() {
         ? Number(formData.specializationStartSemester) 
         : undefined;
 
-      // Check if user entered a custom university/college or matches an existing DB
-      let targetUniDbId = settings.universityDatabaseId;
-      if (formData.university !== settings.university || formData.college !== settings.college) {
-        try {
-          const allDbs = await db.getUniversityDatabases();
-          const norm = (s?: string) => (s || '').trim().toLowerCase();
-          const matched = allDbs.find(d => 
-            !d.isSpecialization &&
-            (norm(d.universityNameAr) === norm(formData.university) || norm(d.universityNameEn) === norm(formData.university)) &&
-            (norm(d.collegeNameAr) === norm(formData.college) || norm(d.collegeNameEn) === norm(formData.college))
-          );
-          targetUniDbId = matched ? matched.id : undefined;
-        } catch {
-          targetUniDbId = undefined;
-        }
-      }
+      // Database linking is EXPLICIT-ONLY: preserve an existing link (created
+      // via the restore action) and never create one by name-matching.
+      // If a linked student renames his college to a different one, the sync
+      // detects the mismatch and clears the stale link gracefully (no data loss).
+      const targetUniDbId = settings.universityDatabaseId;
 
       const newSettings = {
         ...formData,
