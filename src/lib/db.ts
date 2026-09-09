@@ -26,11 +26,33 @@ export async function broadcastUniversityDatabaseUpdate(payload: any): Promise<v
 
 export const db = {
   // --- Settings ---
-  async getSettings(userId: string) {
-    const { data, error } = await supabase.from('settings').select('*').eq('user_id', userId).single();
-    if (error && error.code !== 'PGRST116') console.error('Error fetching settings:', error);
-    if (!data) return null;
-    return mapSettingsFromDB(data);
+  async getSettings(userId: string): Promise<UserSettings | null> {
+    let remoteData: any = null;
+    try {
+      const { data, error } = await supabase.from('settings').select('*').eq('user_id', userId).maybeSingle();
+      if (error && error.code !== 'PGRST116') console.warn('Notice fetching settings from Supabase:', error);
+      if (data) remoteData = data;
+    } catch (e) {
+      console.warn('Network / fetch exception in getSettings:', e);
+    }
+
+    let localData: any = null;
+    try {
+      const saved = localStorage.getItem(`unistudent_settings_${userId}`);
+      if (saved) {
+        localData = JSON.parse(saved);
+      }
+    } catch {}
+
+    if (remoteData) {
+      return mapSettingsFromDB(remoteData);
+    }
+
+    if (localData) {
+      return mapSettingsFromDB({ user_id: userId, ...localData });
+    }
+
+    return null;
   },
   async upsertSettings(userId: string, settings: Partial<UserSettings>) {
     const payload: any = { user_id: userId };
@@ -114,7 +136,7 @@ export const db = {
       payload.grading_scale = scale;
     } catch {}
 
-    const { error } = await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
+    let { error } = await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
     if (error) {
       // If error is due to missing columns in Supabase, retry without new columns but keep in localStorage
       if (error.message && (error.message.includes('column') || error.message.includes('does not exist'))) {
@@ -132,9 +154,15 @@ export const db = {
         delete payload.specialization_start_year;
         delete payload.specialization_start_semester;
         delete payload.specialization_database_id;
-        await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
-      } else {
-        console.error('Error upserting settings:', error);
+        const retryRes = await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
+        error = retryRes.error;
+      }
+      
+      if (error) {
+        const updateRes = await supabase.from('settings').update(payload).eq('user_id', userId);
+        if (updateRes.error) {
+          await supabase.from('settings').insert(payload).catch(() => {});
+        }
       }
     }
   },
@@ -2567,10 +2595,25 @@ function mapSettingsFromDB(row: any): UserSettings {
     ? row.grading_scale.find((g: any) => g && g.id === '__student_deleted_subjects__')
     : null;
 
+  // Resolve University: If row has 'غير محدد' or is empty, but localExtra has a real university name, prefer localExtra
+  const resolvedUniversity = (row.university && row.university !== 'غير محدد' && row.university !== 'Not specified')
+    ? row.university
+    : (localExtra.university || row.university || '');
+
+  // Resolve College: If row has 'غير محدد' or is empty, but localExtra has a real college name, prefer localExtra
+  const resolvedCollege = (row.college && row.college !== 'غير محدد' && row.college !== 'Not specified')
+    ? row.college
+    : (localExtra.college || row.college || '');
+
+  // Resolve Name: Prefer non-empty row.name or localExtra.name
+  const resolvedName = (row.name && row.name.trim()) 
+    ? row.name 
+    : (localExtra.name || '');
+
   return {
-    name: row.name || localExtra.name || '',
-    university: row.university || localExtra.university || '',
-    college: row.college || localExtra.college || '',
+    name: resolvedName,
+    university: resolvedUniversity,
+    college: resolvedCollege,
     enrollmentDate: row.enrollment_date || localExtra.enrollmentDate || '',
     totalYears: row.total_years || localExtra.totalYears || 4,
     semestersPerYear: row.semesters_per_year || localExtra.semestersPerYear || 2,

@@ -202,11 +202,28 @@ export const useAppStore = create<AppState>((set, get) => ({
         localStorage.setItem(`unistudent_groups_initialized_${userId}`, 'true');
       }
 
-      const mergedSettings: UserSettings = settingsData 
-        ? { ...defaultSettings, ...settingsData, email: email || settingsData.email }
-        : { ...defaultSettings, email: email || '' };
+      let localSettings: any = {};
+      try {
+        const savedRaw = localStorage.getItem(`unistudent_settings_${userId}`);
+        if (savedRaw) localSettings = JSON.parse(savedRaw);
+      } catch {}
 
-      if (email && (!settingsData?.email || settingsData.email !== email)) {
+      const mergedSettings: UserSettings = {
+        ...defaultSettings,
+        ...localSettings,
+        ...(settingsData || {}),
+        name: (settingsData?.name && settingsData.name.trim()) ? settingsData.name : (localSettings.name || defaultSettings.name),
+        university: (settingsData?.university && settingsData.university !== 'غير محدد' && settingsData.university !== 'Not specified')
+          ? settingsData.university
+          : (localSettings.university || settingsData?.university || defaultSettings.university),
+        college: (settingsData?.college && settingsData.college !== 'غير محدد' && settingsData.college !== 'Not specified')
+          ? settingsData.college
+          : (localSettings.college || settingsData?.college || defaultSettings.college),
+        email: email || settingsData?.email || localSettings.email || ''
+      };
+
+      if (email && (!mergedSettings.email || mergedSettings.email !== email)) {
+        mergedSettings.email = email;
         db.upsertSettings(userId, { email }).catch(() => {});
       }
 
@@ -305,7 +322,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
 
       // Pre-sync with university database BEFORE marking initialized so the UI displays up-to-date data on the first frame
-      if (mergedSettings.universityDatabaseId || (mergedSettings.university && mergedSettings.college && mergedSettings.university !== 'غير محدد')) {
+      if (mergedSettings.universityDatabaseId) {
         try {
           await Promise.race([
             get().syncWithUniversityDatabase(),
@@ -1187,9 +1204,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       if (!matchedDb) {
-        if (targetDbId) {
-          // If student had a universityDatabaseId, but the database no longer exists (deleted by admin)
-          await get().unlinkUniversityDatabase();
+        // If student had a universityDatabaseId, but no matching admin database exists anymore
+        // (or student entered a custom university / college), simply clear the template ID link!
+        // NEVER reset the student's university or college name to 'غير محدد', and NEVER wipe their subjects!
+        if (settings.universityDatabaseId || targetDbId) {
+          set(state => ({ settings: { ...state.settings, universityDatabaseId: undefined } }));
+          db.upsertSettings(userId, { universityDatabaseId: null }).catch(() => {});
+          try {
+            const savedRaw = localStorage.getItem(`unistudent_settings_${userId}`);
+            if (savedRaw) {
+              const parsed = JSON.parse(savedRaw);
+              delete parsed.universityDatabaseId;
+              localStorage.setItem(`unistudent_settings_${userId}`, JSON.stringify(parsed));
+            }
+          } catch {}
         }
         return;
       }
@@ -1252,8 +1280,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       if (targetSpecId && !specDb) {
-        // Specialization was deleted by Admin: unlink specialization cleanly
-        await get().unlinkSpecializationDatabase();
+        // Specialization was deleted by Admin or custom: gracefully clear the database ID link without deleting subjects
+        set(state => ({ settings: { ...state.settings, specializationDatabaseId: undefined } }));
+        db.upsertSettings(userId, { specializationDatabaseId: null }).catch(() => {});
       }
 
       const isCollegeSource = !!(matchedDb.sourceUserId && matchedDb.sourceUserId === userId);

@@ -84,7 +84,7 @@ export function App() {
 
   // Real-time & periodic synchronization for students linked to a university database
   useEffect(() => {
-    const hasUniLinked = !!settings.universityDatabaseId || (!!settings.university && settings.university !== 'غير محدد' && !!settings.college && settings.college !== 'غير محدد');
+    const hasUniLinked = !!settings.universityDatabaseId;
     if (!session?.user?.id || !hasUniLinked) return;
 
     const triggerSync = () => {

@@ -98,12 +98,16 @@ export function Settings() {
     specializationDatabaseId: settings.specializationDatabaseId || ''
   });
 
+  const isDirtyRef = React.useRef(false);
+
   // Sync state if settings changed externally (e.g. database restore)
   useEffect(() => {
+    if (isDirtyRef.current) return;
     setFormData(prev => ({
       ...prev,
-      university: settings.university,
-      college: settings.college,
+      name: settings.name || prev.name,
+      university: settings.university || prev.university,
+      college: settings.college || prev.college,
       totalYears: settings.totalYears,
       semestersPerYear: settings.semestersPerYear,
       semesters: settings.semesters,
@@ -114,6 +118,7 @@ export function Settings() {
       specializationDatabaseId: settings.specializationDatabaseId || ''
     }));
   }, [
+    settings.name,
     settings.university, 
     settings.college, 
     settings.totalYears, 
@@ -147,6 +152,7 @@ export function Settings() {
   }, [formData.college]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    isDirtyRef.current = true;
     const { name, value, type } = e.target;
     if (name === 'specializationStartYear' || name === 'specializationStartSemester') {
       setFormData(prev => ({ ...prev, [name]: value === '' ? '' : Number(value) }));
@@ -165,6 +171,7 @@ export function Settings() {
       setUnlinking(true);
       await unlinkUniversityDatabase();
       setIsUnlinkModalOpen(false);
+      isDirtyRef.current = false;
       setFormData(prev => ({
         ...prev,
         university: 'غير محدد',
@@ -194,6 +201,7 @@ export function Settings() {
       setUnlinkingSpec(true);
       await unlinkSpecializationDatabase();
       setIsUnlinkSpecModalOpen(false);
+      isDirtyRef.current = false;
       setFormData(prev => ({
         ...prev,
         specialization: '',
@@ -353,6 +361,23 @@ export function Settings() {
         ? Number(formData.specializationStartSemester) 
         : undefined;
 
+      // Check if user entered a custom university/college or matches an existing DB
+      let targetUniDbId = settings.universityDatabaseId;
+      if (formData.university !== settings.university || formData.college !== settings.college) {
+        try {
+          const allDbs = await db.getUniversityDatabases();
+          const norm = (s?: string) => (s || '').trim().toLowerCase();
+          const matched = allDbs.find(d => 
+            !d.isSpecialization &&
+            (norm(d.universityNameAr) === norm(formData.university) || norm(d.universityNameEn) === norm(formData.university)) &&
+            (norm(d.collegeNameAr) === norm(formData.college) || norm(d.collegeNameEn) === norm(formData.college))
+          );
+          targetUniDbId = matched ? matched.id : undefined;
+        } catch {
+          targetUniDbId = undefined;
+        }
+      }
+
       const newSettings = {
         ...formData,
         totalYears: Number(formData.totalYears),
@@ -362,16 +387,17 @@ export function Settings() {
         specialization: formData.specialization ? formData.specialization.trim() : '',
         specializationStartYear: startYearNum,
         specializationStartSemester: startSemNum,
-        specializationDatabaseId: formData.specializationDatabaseId || undefined
+        specializationDatabaseId: formData.specializationDatabaseId || undefined,
+        universityDatabaseId: targetUniDbId
       };
       
       const { userId } = useAppStore.getState();
       if (userId) {
-        const { db } = await import('../lib/db');
         await db.upsertSettings(userId, newSettings);
       }
       
       updateSettings(newSettings);
+      isDirtyRef.current = false;
       setSaveStatus({
         type: 'success',
         message: isAr ? 'تم حفظ وتطبيق جميع الإعدادات وسنة التخصص بنجاح!' : 'Settings and specialization preferences saved successfully!'
