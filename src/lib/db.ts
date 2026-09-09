@@ -3,10 +3,22 @@ import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem
 import { normalizeSubjectName } from './academicTranslation';
 
 export async function broadcastUniversityDatabaseUpdate(payload: any): Promise<void> {
+  let ephemeralChannel: any = null;
   try {
-    const ch = supabase.channel('university_global_sync');
+    // Reuse an already-registered channel with the same topic if one exists
+    // (e.g. the App-level receiver). Creating/subscribing a second channel with
+    // the same name and leaving it registered makes later `.on('postgres_changes')`
+    // calls throw "cannot add callbacks after subscribe()".
+    const existing = supabase.getChannels().find(c => c.topic === 'realtime:university_global_sync');
+    const ch = existing || (() => { ephemeralChannel = supabase.channel('university_global_sync'); return ephemeralChannel; })();
+
+    if (existing && existing.state === 'joined') {
+      await ch.send({ type: 'broadcast', event: 'university_db_updated', payload }).catch(() => {});
+      return;
+    }
+
     await new Promise<void>((resolve) => {
-      ch.subscribe((status) => {
+      ch.subscribe((status: string) => {
         if (status === 'SUBSCRIBED') {
           ch.send({
             type: 'broadcast',
@@ -21,6 +33,10 @@ export async function broadcastUniversityDatabaseUpdate(payload: any): Promise<v
     });
   } catch (err) {
     console.warn('Realtime broadcast error:', err);
+  } finally {
+    if (ephemeralChannel) {
+      try { supabase.removeChannel(ephemeralChannel); } catch {}
+    }
   }
 }
 
@@ -1759,6 +1775,16 @@ export const db = {
       const matchUni = (sUni?: string) => norm(sUni) && (norm(sUni) === norm(udb.universityNameAr) || norm(sUni) === norm(udb.universityNameEn) || (norm(udb.universityNameAr) && norm(sUni).includes(norm(udb.universityNameAr))));
       const matchCollege = (sCol?: string) => norm(sCol) && (norm(sCol) === norm(udb.collegeNameAr) || norm(sCol) === norm(udb.collegeNameEn) || (norm(udb.collegeNameAr) && norm(sCol).includes(norm(udb.collegeNameAr))));
 
+      // Phase filter: a subject may only be pushed through the DB that owns its phase.
+      const pushStartYear = Number(udb.specializationStartYear || 2);
+      const pushStartSem = Number(udb.specializationStartSemester || 1);
+      const isSubjectInPhase = (sub: any) => {
+        const y = Number(sub?.yearIndex || 1);
+        const sm = Number(sub?.semesterIndex || 1);
+        const inSpecPhase = y > pushStartYear || (y === pushStartYear && sm >= pushStartSem);
+        return isSpec ? inSpecPhase : !inSpecPhase;
+      };
+
       // Find all students in Supabase settings or localStorage
       const studentUserIds: string[] = [];
       const checkStudentSubscription = (s: any) => {
@@ -1766,18 +1792,19 @@ export const db = {
           if (s.specialization_database_id === universityDbId || s.specializationDatabaseId === universityDbId) {
             return true;
           }
+          const specName = norm(udb.specializationNameAr) || norm(udb.specializationNameEn) || '';
           if (matchUni(s.university) && (matchCollege(s.college) || (udb.parentDatabaseId && (s.university_database_id === udb.parentDatabaseId || s.universityDatabaseId === udb.parentDatabaseId)))) {
             const spec = s.specialization || '';
-            if (norm(spec) === norm(udb.specializationNameAr) || norm(spec) === norm(udb.specializationNameEn)) {
+            if (specName && spec && (norm(spec) === specName)) {
               return true;
             }
           }
           return false;
         } else {
+          // General college DB: explicit ID link ONLY — no name-based matching.
           return (
             s.university_database_id === universityDbId ||
-            s.universityDatabaseId === universityDbId ||
-            (matchUni(s.university) && matchCollege(s.college))
+            s.universityDatabaseId === universityDbId
           );
         }
       };
@@ -1816,6 +1843,7 @@ export const db = {
       if (action.type === 'add_subject' && action.subject) {
         for (const uid of studentUserIds) {
           try {
+            if (!isSubjectInPhase(action.subject)) continue;
             const studentSubjects = await this.getSubjects(uid);
             const normNewName = norm(action.subject.name);
             const exists = studentSubjects.some(s => 
@@ -1837,6 +1865,7 @@ export const db = {
       } else if (action.type === 'update_subject' && action.subject) {
         for (const uid of studentUserIds) {
           try {
+            if (!isSubjectInPhase(action.subject)) continue;
             const studentSubjects = await this.getSubjects(uid);
             const normTargetName = norm(action.subject.name || action.subject.previous?.name);
             const match = studentSubjects.find(s => 
@@ -1862,6 +1891,7 @@ export const db = {
       } else if (action.type === 'delete_subject' && action.subject) {
         for (const uid of studentUserIds) {
           try {
+            if (!isSubjectInPhase(action.subject)) continue;
             const studentSubjects = await this.getSubjects(uid);
             const normTargetName = norm(action.subject.name);
             const match = studentSubjects.find(s => 

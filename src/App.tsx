@@ -82,13 +82,19 @@ export function App() {
     return () => subscription.unsubscribe();
   }, [initialize, clearData]);
 
-  // Real-time & periodic synchronization for students linked to a university database
+  // Real-time & periodic synchronization for students linked to a university database.
+  // The realtime channel is subscribed ONCE per session: re-subscribing on every
+  // settings change made `supabase.channel('university_global_sync')` return the
+  // still-registered previous channel, and adding postgres_changes callbacks to an
+  // already-subscribed channel throws (crashing the app right after login).
   useEffect(() => {
-    const hasUniLinked = !!settings.universityDatabaseId;
-    if (!session?.user?.id || !hasUniLinked) return;
+    if (!session?.user?.id) return;
 
     const triggerSync = () => {
-      useAppStore.getState().syncWithUniversityDatabase();
+      // Linked-state is checked live at event time, not at subscription time.
+      if (useAppStore.getState().settings.universityDatabaseId) {
+        useAppStore.getState().syncWithUniversityDatabase();
+      }
     };
 
     window.addEventListener('focus', triggerSync);
@@ -99,75 +105,84 @@ export function App() {
     };
     document.addEventListener('visibilitychange', handleVisibility);
 
-    // Real-time synchronization listeners
-
     // Periodic fast check (5s) to guarantee real-time reflection
-    const interval = setInterval(() => {
-      triggerSync();
-    }, 5000);
+    const interval = setInterval(triggerSync, 5000);
 
-    const channel = supabase
-      .channel('university_global_sync')
-      .on(
-        'broadcast',
-        { event: 'university_db_updated' },
-        (payload: any) => {
-          const data = payload?.payload;
-          if (data?.action === 'deleted') {
-            const { settings, unlinkUniversityDatabase, unlinkSpecializationDatabase } = useAppStore.getState();
-            if (data.type === 'specialization') {
-              if (settings.specializationDatabaseId === data.id) {
-                unlinkSpecializationDatabase();
+    let channel: any = null;
+    try {
+      // Remove any stale channel registered under the same topic (e.g. left by
+      // an earlier broadcast) before attaching postgres_changes callbacks.
+      supabase.getChannels()
+        .filter(c => c.topic === 'realtime:university_global_sync')
+        .forEach(c => { try { supabase.removeChannel(c); } catch {} });
+
+      channel = supabase
+        .channel('university_global_sync')
+        .on(
+          'broadcast',
+          { event: 'university_db_updated' },
+          (payload: any) => {
+            const data = payload?.payload;
+            if (data?.action === 'deleted') {
+              const { settings, unlinkUniversityDatabase, unlinkSpecializationDatabase } = useAppStore.getState();
+              if (data.type === 'specialization') {
+                if (settings.specializationDatabaseId === data.id) {
+                  unlinkSpecializationDatabase();
+                }
+              } else if (data.type === 'college') {
+                if (
+                  settings.universityDatabaseId === data.id ||
+                  settings.college === data.collegeNameAr ||
+                  (Array.isArray(data.childSpecIds) && data.childSpecIds.includes(settings.specializationDatabaseId))
+                ) {
+                  unlinkUniversityDatabase();
+                }
+              } else if (data.type === 'university') {
+                if (settings.university === data.uniKey) {
+                  unlinkUniversityDatabase();
+                }
               }
-            } else if (data.type === 'college') {
-              if (
-                settings.universityDatabaseId === data.id || 
-                settings.college === data.collegeNameAr ||
-                (Array.isArray(data.childSpecIds) && data.childSpecIds.includes(settings.specializationDatabaseId))
-              ) {
-                unlinkUniversityDatabase();
-              }
-            } else if (data.type === 'university') {
-              if (settings.university === data.uniKey) {
-                unlinkUniversityDatabase();
-              }
+              return;
             }
-            return;
+            triggerSync();
           }
-          triggerSync();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'university_databases'
-        },
-        () => {
-          triggerSync();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'university_pending_updates'
-        },
-        () => {
-          triggerSync();
-        }
-      )
-      .subscribe();
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'university_databases'
+          },
+          () => {
+            triggerSync();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'university_pending_updates'
+          },
+          () => {
+            triggerSync();
+          }
+        )
+        .subscribe();
+    } catch (e) {
+      console.warn('Realtime channel setup warning:', e);
+    }
 
     return () => {
       window.removeEventListener('focus', triggerSync);
       document.removeEventListener('visibilitychange', handleVisibility);
       clearInterval(interval);
-      supabase.removeChannel(channel);
+      if (channel) {
+        try { supabase.removeChannel(channel); } catch {}
+      }
     };
-  }, [session?.user?.id, settings.universityDatabaseId, settings.university, settings.college]);
+  }, [session?.user?.id]);
 
   const isAdminPath = window.location.pathname.startsWith('/admin');
 

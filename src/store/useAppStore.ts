@@ -1181,8 +1181,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           matchedDb = allDbs.find(d => d.id === targetDbId) || null;
         }
 
-        // 2. Self-Healing: If not found by ID, but user has university & college specified (or stale ID)
-        if (!matchedDb && settings.university && settings.college && settings.university !== 'غير محدد' && settings.university !== 'Not specified') {
+        // 2. Self-Healing: If not found by ID, but the student previously had a
+        // database link (stale ID — e.g. admin re-created the DB), re-link by
+        // university & college name. Students who NEVER restored anything must
+        // stay unlinked — typing a university/college name is never a link.
+        if (!matchedDb && (targetDbId || settings.universityDatabaseId) && settings.university && settings.college && settings.university !== 'غير محدد' && settings.university !== 'Not specified') {
           const norm = (str?: string) => normalizeSubjectName(str);
           const normUni = norm(settings.university);
           const normCol = norm(settings.college);
@@ -1267,7 +1270,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (targetSpecId) {
         specDb = await db.getUniversityDatabase(targetSpecId);
       }
-      if (!specDb && settings.specialization && matchedDb) {
+      // Name-based spec re-link is ONLY a repair for a stale previous spec link.
+      // A student who merely typed his specialization name (never restored a spec
+      // database) must never be auto-linked here.
+      if (!specDb && targetSpecId && settings.specialization && matchedDb) {
         const allDbs = await db.getUniversityDatabases();
         const norm = (str?: string) => normalizeSubjectName(str);
         const normSpec = norm(settings.specialization);
