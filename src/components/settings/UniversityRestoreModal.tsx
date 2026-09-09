@@ -188,6 +188,12 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
     return allKnownSpecs.find(s => s.id === selectedTrack) || null;
   }, [selectedDb, selectedTrack, availableSpecs, restoredCollegeSpecs]);
 
+  // Whether the student already has this exact college's general database restored
+  const alreadyRestoredCollege = useMemo(() => {
+    if (!selectedDb || selectedDb.isSpecialization) return false;
+    return Boolean(settings.universityDatabaseId && settings.universityDatabaseId === selectedDb.id);
+  }, [selectedDb, settings.universityDatabaseId]);
+
   const previewData = useMemo(() => {
     if (!selectedDb) return null;
     const sanitizeScale = (scale: any[]) => {
@@ -236,25 +242,30 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
       return y > startYear || (y === startYear && sem >= startSem);
     });
 
-    const merged = [...foundation, ...specialization];
+    // If the general college database is already restored, only specialization
+    // subjects will actually be added — foundation subjects stay untouched.
+    const merged = alreadyRestoredCollege ? specialization : [...foundation, ...specialization];
 
     return {
-      title: isAr 
+      title: isAr
         ? `${selectedDb.collegeNameAr} - تخصص ${activeSpec.specializationNameAr || activeSpec.collegeNameAr}`
         : `${selectedDb.collegeNameEn || selectedDb.collegeNameAr} - ${activeSpec.specializationNameEn || activeSpec.specializationNameAr}`,
       subtitle: activeSpec.specializationNameEn || activeSpec.specializationNameAr,
       subjects: merged,
-      driveFiles: [...(selectedDb.driveFiles || []), ...(activeSpec.driveFiles || [])],
+      driveFiles: alreadyRestoredCollege
+        ? (activeSpec.driveFiles || [])
+        : [...(selectedDb.driveFiles || []), ...(activeSpec.driveFiles || [])],
       totalYears: selectedDb.totalYears || activeSpec.totalYears || 4,
       availableYears: selectedDb.availableYears || activeSpec.availableYears || [1],
       semestersPerYear: selectedDb.semestersPerYear || activeSpec.semestersPerYear || 2,
       gradingScale: sanitizeScale((activeSpec.gradingScale && activeSpec.gradingScale.length > 0) ? activeSpec.gradingScale : (selectedDb.gradingScale || [])),
       isSpecialization: true,
+      alreadyRestoredCollege,
       spec: activeSpec,
       foundationCount: foundation.length,
       specializationCount: specialization.length
     };
-  }, [selectedDb, activeSpec, isAr]);
+  }, [selectedDb, activeSpec, isAr, alreadyRestoredCollege]);
 
   const handleToggleExpand = (key: string) => {
     setExpandedUniKey(prev => prev === key ? null : key);
@@ -705,11 +716,19 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                   <div className="p-3 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/40 flex items-start gap-2.5 text-xs text-purple-900 dark:text-purple-200 font-bold">
                     <Sparkles size={16} className="text-purple-600 shrink-0 mt-0.5" />
                     <div>
-                      <span>
-                        {isAr 
-                          ? `استيراد ذكي مدمج: يشمل (${previewData.foundationCount}) مادة تمهيدية من الكلية الأساسية + (${previewData.specializationCount}) مادة تخصصية متقدمة تبدأ من سنة ${previewData.spec?.specializationStartYear} ترم ${previewData.spec?.specializationStartSemester}.`
-                          : `Smart Slicing: Includes (${previewData.foundationCount}) foundation subjects + (${previewData.specializationCount}) specialization subjects.`}
-                      </span>
+                      {previewData.alreadyRestoredCollege ? (
+                        <span>
+                          {isAr
+                            ? `سيتم استرداد مواد التخصص فقط (${previewData.specializationCount} مادة تخصصية). مواد الكلية العامة (${previewData.foundationCount} مادة) الموجودة في حسابك لن تتأثر وستبقى كما هي تماماً.`
+                            : `Specialization subjects only (${previewData.specializationCount}) will be restored. Your existing foundation subjects (${previewData.foundationCount}) will remain completely untouched.`}
+                        </span>
+                      ) : (
+                        <span>
+                          {isAr
+                            ? `استيراد ذكي مدمج: يشمل (${previewData.foundationCount}) مادة تمهيدية من الكلية الأساسية + (${previewData.specializationCount}) مادة تخصصية متقدمة تبدأ من سنة ${previewData.spec?.specializationStartYear} ترم ${previewData.spec?.specializationStartSemester}.`
+                            : `Smart Slicing: Includes (${previewData.foundationCount}) foundation subjects + (${previewData.specializationCount}) specialization subjects.`}
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}

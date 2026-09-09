@@ -452,7 +452,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     db.updateSubject(userId, id, updatedFields);
 
     if (old) {
-      checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'update_subject', `تعديل مادة: ${old.name}`, { id, ...updatedFields });
+      // Send the full merged subject so yearIndex/semesterIndex are always
+      // available for the general-vs-specialization phase filter, plus the
+      // exact changed fields so personal-only edits get filtered out.
+      checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'update_subject', `تعديل مادة: ${old.name}`, { ...old, ...updatedFields }, updatedFields);
     }
   },
   deleteSubject: (id) => {
@@ -474,7 +477,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set(state => ({ settings: { ...state.settings, deletedSubjectNames: updatedDeleted } }));
       db.upsertSettings(userId, { deletedSubjectNames: updatedDeleted }).catch(() => {});
 
-      checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'delete_subject', `حذف مادة: ${old.name}`, { id, name: old.name });
+      checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'delete_subject', `حذف مادة: ${old.name}`, { id, name: old.name, yearIndex: old.yearIndex, semesterIndex: old.semesterIndex });
     }
   },
 
@@ -1675,9 +1678,21 @@ async function checkAndNotifySourceUpdate(
   userName: string | undefined,
   type: 'add_subject' | 'update_subject' | 'delete_subject' | 'add_file' | 'delete_file',
   description: string,
-  data: any
+  data: any,
+  changedFields?: Record<string, any>
 ) {
   try {
+    // Only curriculum-relevant edits deserve an admin review. Personal study
+    // data (achieved marks, study status, notes...) never generates updates.
+    if (type === 'update_subject') {
+      const CURRICULUM_FIELDS = ['name', 'code', 'creditHours', 'totalMarks', 'distributions'];
+      const changedKeys = Object.keys(changedFields || data || {}).filter(k => k !== 'id');
+      const hasCurriculumChange = changedKeys.some(k => CURRICULUM_FIELDS.includes(k));
+      if (!hasCurriculumChange) {
+        return;
+      }
+    }
+
     const uniDbs = await db.getUniversityDatabases();
     const matchingDbs = uniDbs.filter(u => u.sourceUserId === userId);
     for (const matchingDb of matchingDbs) {

@@ -1281,6 +1281,14 @@ export const db = {
       const savedEmail = localStorage.getItem(`unistudent_user_email_${uid}`) || '';
       const email = s.email || savedEmail || '';
 
+      const stuStartYr = Number(s.specializationStartYear || s.specialization_start_year || 2);
+      const stuStartSem = Number(s.specializationStartSemester || s.specialization_start_semester || 1);
+      const specSubjectsCount = (studentSubjects || []).filter(sub => {
+        const y = Number(sub.yearIndex || 1);
+        const sem = Number(sub.semesterIndex || 1);
+        return y > stuStartYr || (y === stuStartYr && sem >= stuStartSem);
+      }).length;
+
       matchingStudents.push({
         userId: uid,
         name: s.name || 'طالب',
@@ -1288,9 +1296,10 @@ export const db = {
         university: s.university || '',
         college: s.college || '',
         specialization: studentSpec,
-        specializationStartYear: Number(s.specializationStartYear || s.specialization_start_year || 2),
-        specializationStartSemester: Number(s.specializationStartSemester || s.specialization_start_semester || 1),
+        specializationStartYear: stuStartYr,
+        specializationStartSemester: stuStartSem,
         subjectsCount: studentSubjects.length,
+        specSubjectsCount,
         subjects: studentSubjects,
         matchesSpecPreference: Boolean(matchesSpec),
         isCollegeSource: isSourceUser

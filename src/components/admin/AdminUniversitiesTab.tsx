@@ -3903,8 +3903,11 @@ export function AdminUniversitiesTab({
                               </div>
 
                               <div className="text-right shrink-0">
-                                <span className="inline-block px-2.5 py-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[11px] font-black">
-                                  {st.subjectsCount || st.subjects?.length || 0} {isAr ? 'مادة' : 'subjs'}
+                                <span className="inline-block px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 text-[11px] font-black">
+                                  {typeof st.specSubjectsCount === 'number' ? st.specSubjectsCount : (st.subjects || []).filter((x: Subject) => (x.yearIndex || 1) > Number(st.specializationStartYear || 2) || ((x.yearIndex || 1) === Number(st.specializationStartYear || 2) && (x.semesterIndex || 1) >= Number(st.specializationStartSemester || 1))).length} {isAr ? 'مادة تخصص' : 'spec subjs'}
+                                </span>
+                                <span className="block mt-1 text-[10px] font-bold text-zinc-400">
+                                  {st.subjectsCount || st.subjects?.length || 0} {isAr ? 'إجمالي المواد' : 'total'}
                                 </span>
                               </div>
                             </div>

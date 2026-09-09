@@ -1031,7 +1031,7 @@ export function Settings() {
               </div>
             </div>
 
-            {formData.specialization ? (
+            {formData.specialization && formData.specializationDatabaseId ? (
               <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-amber-50/80 to-purple-50/40 dark:from-amber-950/30 dark:to-zinc-900 border border-amber-200/80 dark:border-amber-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-start sm:items-center gap-3 sm:gap-3.5 min-w-0 flex-1">
                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-amber-600 text-white flex items-center justify-center shadow-md shadow-amber-600/20 shrink-0 mt-0.5 sm:mt-0">
@@ -1047,15 +1047,15 @@ export function Settings() {
                       </span>
                       {formData.specializationStartYear && (
                         <span className="text-[11px] px-2 py-0.5 rounded-lg font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
-                          {isAr 
-                            ? `السنة ${formData.specializationStartYear} (الترم ${formData.specializationStartSemester || 1})` 
+                          {isAr
+                            ? `السنة ${formData.specializationStartYear} (الترم ${formData.specializationStartSemester || 1})`
                             : `Year ${formData.specializationStartYear} (Term ${formData.specializationStartSemester || 1})`}
                         </span>
                       )}
                     </div>
                     <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed">
-                      {isAr 
-                        ? 'الخطة مربوطة تلقائياً مع تخصصك المعتمد. التحديثات المعتمدة تنعكس في حسابك فورياً بالتكامل مع مواد الكلية العامة.' 
+                      {isAr
+                        ? 'الخطة مربوطة تلقائياً مع تخصصك المعتمد. التحديثات المعتمدة تنعكس في حسابك فورياً بالتكامل مع مواد الكلية العامة.'
                         : 'Accredited specialization plan is connected. Updates reflect instantly.'}
                     </p>
                   </div>
@@ -1081,6 +1081,50 @@ export function Settings() {
                   >
                     <Unlink size={13} />
                     <span>{isAr ? 'إلغاء ربط التخصص' : 'Disconnect'}</span>
+                  </button>
+                </div>
+              </div>
+            ) : formData.specialization ? (
+              <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-zinc-50 to-amber-50/60 dark:from-zinc-900 dark:to-amber-950/20 border border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-start sm:items-center gap-3 sm:gap-3.5 min-w-0 flex-1">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-zinc-300 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                    <Compass size={20} className="sm:w-6 sm:h-6" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-zinc-700 dark:text-zinc-300">
+                        {isAr ? 'تخصصك المختار:' : 'Selected Specialization:'}
+                      </span>
+                      <span className="max-w-full truncate px-2.5 sm:px-3 py-1 rounded-xl text-xs font-black bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                        {formData.specialization}
+                      </span>
+                      {formData.specializationStartYear && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-lg font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 shrink-0">
+                          {isAr
+                            ? `السنة ${formData.specializationStartYear} (الترم ${formData.specializationStartSemester || 1})`
+                            : `Year ${formData.specializationStartYear} (Term ${formData.specializationStartSemester || 1})`}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed">
+                      {isAr
+                        ? 'لم يتم استرداد قاعدة بيانات التخصص بعد — مواد التخصص غير موجودة في حسابك حالياً. استردها الآن مع الحفاظ التام على مواد الكلية العامة.'
+                        : 'Specialization database not restored yet — no specialization subjects in your account. Restore them now while keeping all general foundation subjects.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRestoreModalMode('specialization');
+                      setIsRestoreModalOpen(true);
+                    }}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-black transition-all cursor-pointer shadow-md shadow-amber-500/20"
+                  >
+                    <Sparkles size={15} />
+                    <span>{isAr ? 'استرداد مواد التخصص الآن' : 'Restore Specialization Now'}</span>
                   </button>
                 </div>
               </div>
