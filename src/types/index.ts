@@ -64,6 +64,9 @@ export type DriveFile = {
   createdAt: string;
   url?: string;
   b2FileId?: string;
+  // Academic phase this file belongs to (drives general-vs-spec routing)
+  yearIndex?: number;
+  semesterIndex?: number;
 };
 
 export type Note = {

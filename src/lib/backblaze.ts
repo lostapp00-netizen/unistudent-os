@@ -297,6 +297,12 @@ export async function triggerBrowserDownload(url: string, filename: string): Pro
 
 /**
  * Unified file handler for opening or downloading files from Backblaze / Base64 / URL
+ *
+ * IMPORTANT: the browser only allows window.open() while "transient user
+ * activation" is alive (~a few seconds after the click). Downloading the whole
+ * object from B2 in the browser before opening it used to exceed that window,
+ * so previews/downloads silently did nothing. The primary path is now a fast
+ * presigned URL generation followed by an immediate open/click.
  */
 export async function openOrDownloadFile(
   file: { name: string; url?: string; b2FileId?: string },
@@ -323,28 +329,20 @@ export async function openOrDownloadFile(
       return;
     }
 
-    // Backblaze S3 direct / presigned inline URL
+    // Backblaze S3 key: presigned inline URL (fast — keeps user activation alive)
     if (b2Key) {
       try {
-        // Try direct S3 getObject to create a local blob for seamless preview
-        try {
-          const res = await b2Client.send(new GetObjectCommand({
-            Bucket: BUCKET_NAME,
-            Key: b2Key,
-          }));
-          const bytes = await res.Body?.transformToByteArray();
-          if (bytes) {
-            const blob = new Blob([bytes as BlobPart], { type: res.ContentType || 'application/octet-stream' });
-            const blobUrl = window.URL.createObjectURL(blob);
-            window.open(blobUrl, '_blank');
-            return;
-          }
-        } catch (clientErr) {
-          console.warn('Direct client getObject preview fallback to presigned:', clientErr);
-        }
-
         const presignedUrl = await getPresignedDownloadUrl(b2Key, undefined, true);
-        window.open(presignedUrl, '_blank');
+        const win = window.open(presignedUrl, '_blank');
+        if (win) return;
+        // Popup blocked — last resort anchor click
+        const link = document.createElement('a');
+        link.href = presignedUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
         return;
       } catch (err) {
         console.warn('Error generating preview URL for B2 key:', b2Key, err);
@@ -369,37 +367,15 @@ export async function openOrDownloadFile(
       return;
     }
 
-    // Backblaze S3 key: fetch directly as Blob to guarantee 100% reliable download with exact filename
+    // Backblaze S3 key: presigned attachment URL guarantees the exact filename
+    // and works on private buckets (no CORS-prone in-browser fetch needed).
     if (b2Key) {
       try {
-        const res = await b2Client.send(new GetObjectCommand({
-          Bucket: BUCKET_NAME,
-          Key: b2Key,
-        }));
-        const bytes = await res.Body?.transformToByteArray();
-        if (bytes) {
-          const blob = new Blob([bytes as BlobPart], { type: res.ContentType || 'application/octet-stream' });
-          const blobUrl = window.URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = blobUrl;
-          link.download = file.name;
-          document.body.appendChild(link);
-          link.click();
-          setTimeout(() => {
-            window.URL.revokeObjectURL(blobUrl);
-            if (document.body.contains(link)) document.body.removeChild(link);
-          }, 3000);
-          return;
-        }
-      } catch (directErr) {
-        console.warn('Direct S3 download fallback to presigned download URL:', directErr);
-        try {
-          const presignedUrl = await getPresignedDownloadUrl(b2Key, file.name);
-          await triggerBrowserDownload(presignedUrl, file.name);
-          return;
-        } catch (presignedErr) {
-          console.warn('Presigned download error:', presignedErr);
-        }
+        const presignedUrl = await getPresignedDownloadUrl(b2Key, file.name);
+        await triggerBrowserDownload(presignedUrl, file.name);
+        return;
+      } catch (presignedErr) {
+        console.warn('Presigned download error:', presignedErr);
       }
     }
 

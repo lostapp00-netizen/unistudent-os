@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
   FolderPlus, 
@@ -128,6 +128,7 @@ export function DriveTab() {
   const { t, i18n } = useTranslation();
   const isAr = i18n.language === 'ar';
   const files = useAppStore(state => state.files);
+  const settings = useAppStore(state => state.settings);
   const addFile = useAppStore(state => state.addFile);
   const updateFile = useAppStore(state => state.updateFile);
   const deleteFile = useAppStore(state => state.deleteFile);
@@ -178,29 +179,63 @@ export function DriveTab() {
   };
 
   const [isUploading, setIsUploading] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [uploadFileSelected, setUploadFileSelected] = useState<File | null>(null);
+  const [uploadForm, setUploadForm] = useState({ name: '', yearIndex: '1', semesterIndex: '1' });
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    
-    const uploadedFile = e.target.files[0];
+  // Current year/semester marked in Settings (Semesters Manager)
+  const currentSemesterInfo = (settings.semesters || []).find(s => s.isCurrent);
+  const totalYears = Number(settings.totalYears) || 4;
+  const semestersPerYear = Number(settings.semestersPerYear) || 2;
+
+  const openUploadModal = () => {
+    setUploadFileSelected(null);
+    setUploadForm({
+      name: '',
+      yearIndex: String(currentSemesterInfo?.yearIndex || 1),
+      semesterIndex: String(currentSemesterInfo?.semesterIndex || 1)
+    });
+    setIsUploadModalOpen(true);
+  };
+
+  const handleUploadFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0] || null;
+    setUploadFileSelected(picked);
+    if (picked && !uploadForm.name.trim()) {
+      setUploadForm(prev => ({ ...prev, name: picked.name }));
+    }
+    e.target.value = '';
+  };
+
+  const confirmUpload = async () => {
+    if (!uploadFileSelected) return;
+
+    const uploadedFile = uploadFileSelected;
     const fileId = uuidv4();
     const b2Path = `${fileId}_${uploadedFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-    
+    const displayName = uploadForm.name.trim() || uploadedFile.name;
+    const yearIdx = Number(uploadForm.yearIndex) || 1;
+    const semIdx = Number(uploadForm.semesterIndex) || 1;
+
     setIsUploading(true);
     try {
       const { uploadToB2 } = await import('../../lib/backblaze');
       const publicUrl = await uploadToB2(uploadedFile, b2Path);
-      
+
       addFile({
         id: fileId,
-        name: uploadedFile.name,
+        name: displayName,
         size: uploadedFile.size,
         type: 'file',
         parentId: currentFolderId,
         createdAt: new Date().toISOString().split('T')[0],
         url: publicUrl,
-        b2FileId: b2Path
+        b2FileId: b2Path,
+        yearIndex: yearIdx,
+        semesterIndex: semIdx
       });
+      setIsUploadModalOpen(false);
     } catch (err: any) {
       console.warn('B2 upload fallback to persistent base64 URL:', err);
       // Persistent base64 data URL fallback
@@ -209,18 +244,21 @@ export function DriveTab() {
         const base64Url = reader.result as string;
         addFile({
           id: fileId,
-          name: uploadedFile.name,
+          name: displayName,
           size: uploadedFile.size,
           type: 'file',
           parentId: currentFolderId,
           createdAt: new Date().toISOString().split('T')[0],
-          url: base64Url
+          url: base64Url,
+          yearIndex: yearIdx,
+          semesterIndex: semIdx
         });
       };
       reader.readAsDataURL(uploadedFile);
+      setIsUploadModalOpen(false);
     } finally {
       setIsUploading(false);
-      e.target.value = '';
+      setUploadFileSelected(null);
     }
   };
 
@@ -390,13 +428,15 @@ export function DriveTab() {
             <span>{isAr ? 'إنشاء مجلد' : 'Create Folder'}</span>
           </button>
 
-          <label className={`flex-1 sm:flex-none flex items-center justify-center gap-2 ${
-            isUploading ? 'bg-zinc-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 cursor-pointer text-white shadow-md shadow-blue-500/25'
-          } px-4 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer`}>
+          <button
+            onClick={openUploadModal}
+            disabled={isUploading}
+            className={`flex-1 sm:flex-none flex items-center justify-center gap-2 ${
+              isUploading ? 'bg-zinc-400 cursor-not-allowed text-white' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 cursor-pointer text-white shadow-md shadow-blue-500/25'
+            } px-4 py-2.5 rounded-2xl text-xs font-bold transition-all`}>
             {isUploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
             <span>{isUploading ? (isAr ? 'جاري الرفع...' : 'Uploading...') : (isAr ? 'رفع ملف' : 'Upload File')}</span>
-            <input type="file" className="hidden" disabled={isUploading} onChange={handleFileUpload} />
-          </label>
+          </button>
         </div>
       </div>
 
@@ -574,6 +614,110 @@ export function DriveTab() {
                   {isAr ? 'نقل إلى هنا' : 'Move Here'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload File Modal */}
+      {isUploadModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-md w-full shadow-2xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2">
+                <Upload className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="font-bold text-base text-zinc-900 dark:text-white">
+                  {isAr ? 'رفع ملف جديد' : 'Upload New File'}
+                </h3>
+              </div>
+              <button
+                onClick={() => !isUploading && setIsUploadModalOpen(false)}
+                className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 mb-1.5">
+                  {isAr ? 'اختر الملف من جهازك' : 'Pick a file from your device'}
+                </label>
+                <input
+                  ref={uploadInputRef}
+                  type="file"
+                  onChange={handleUploadFilePicked}
+                  className="w-full text-xs text-zinc-600 dark:text-zinc-300 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-50 dark:file:bg-blue-950/40 file:text-blue-600 dark:file:text-blue-300 file:cursor-pointer cursor-pointer bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700"
+                />
+                {uploadFileSelected && (
+                  <p className="text-[11px] text-zinc-400 mt-1.5 flex items-center gap-1.5">
+                    <FileText size={12} className="shrink-0" />
+                    <span className="truncate">{uploadFileSelected.name} • {(uploadFileSelected.size / 1024).toFixed(0)} KB</span>
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 mb-1.5">
+                  {isAr ? 'اسم الملف' : 'File name'}
+                </label>
+                <input
+                  type="text"
+                  value={uploadForm.name}
+                  onChange={(e) => setUploadForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder={isAr ? 'اكتب اسم الملف...' : 'File name...'}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 mb-1.5">
+                    {isAr ? 'السنة الدراسية' : 'Year'}
+                  </label>
+                  <select
+                    value={uploadForm.yearIndex}
+                    onChange={(e) => setUploadForm(prev => ({ ...prev, yearIndex: e.target.value }))}
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
+                  >
+                    {Array.from({ length: totalYears }, (_, i) => i + 1).map(y => (
+                      <option key={y} value={y}>{isAr ? `السنة ${y}` : `Year ${y}`}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 mb-1.5">
+                    {isAr ? 'الفصل الدراسي' : 'Semester'}
+                  </label>
+                  <select
+                    value={uploadForm.semesterIndex}
+                    onChange={(e) => setUploadForm(prev => ({ ...prev, semesterIndex: e.target.value }))}
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
+                  >
+                    {Array.from({ length: semestersPerYear }, (_, i) => i + 1).map(s => (
+                      <option key={s} value={s}>{isAr ? `الفصل ${s}` : `Semester ${s}`}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                onClick={() => setIsUploadModalOpen(false)}
+                disabled={isUploading}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isAr ? 'إلغاء' : 'Cancel'}
+              </button>
+              <button
+                onClick={confirmUpload}
+                disabled={!uploadFileSelected || isUploading}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white transition-all shadow-md shadow-blue-500/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                <span>{isUploading ? (isAr ? 'جاري الرفع...' : 'Uploading...') : (isAr ? 'رفع الملف' : 'Upload')}</span>
+              </button>
             </div>
           </div>
         </div>

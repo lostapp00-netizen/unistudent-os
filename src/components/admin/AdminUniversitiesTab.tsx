@@ -1262,9 +1262,9 @@ export function AdminUniversitiesTab({
       return;
     }
 
-    // Real File Branch
-    if (!driveFileToUpload && !driveForm.url.trim()) {
-      alert(isAr ? 'يرجى اختيار ملف من جهازك لرفعه أو إدخال رابط.' : 'Please select a file to upload or enter a URL.');
+    // Real File Branch (device upload only — external URLs removed)
+    if (!driveFileToUpload) {
+      alert(isAr ? 'يرجى اختيار ملف من جهازك لرفعه.' : 'Please select a file to upload.');
       return;
     }
 
@@ -1273,7 +1273,7 @@ export function AdminUniversitiesTab({
 
     try {
       setIsUploadingDriveFile(true);
-      let publicUrl = driveForm.url.trim();
+      let publicUrl = '';
       let b2Path: string | undefined = undefined;
       const fileSize = driveFileToUpload ? driveFileToUpload.size : 0;
 
@@ -1482,8 +1482,15 @@ export function AdminUniversitiesTab({
               parentId: file.parentId || null,
               createdAt: file.createdAt || new Date().toISOString(),
               url: file.url || '',
-              b2FileId: file.b2FileId || file.b2_file_id
+              b2FileId: file.b2FileId || file.b2_file_id,
+              yearIndex: file.yearIndex !== undefined ? Number(file.yearIndex) : undefined,
+              semesterIndex: file.semesterIndex !== undefined ? Number(file.semesterIndex) : undefined
             };
+            // Orphan guard: if the referenced parent folder does not exist in
+            // this database's drive, surface the file at the root instead of
+            // letting it disappear inside a dangling reference.
+            const parentExists = !newFile.parentId || (targetDb.driveFiles || []).some(f => f.id === newFile.parentId && f.type === 'folder');
+            if (!parentExists) newFile.parentId = null;
             const filteredFiles = (targetDb.driveFiles || []).filter(f => f.id !== newFile.id && f.name !== newFile.name);
             return {
               ...targetDb,
@@ -4578,20 +4585,6 @@ export function AdminUniversitiesTab({
                       className="w-full px-4 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
-
-                  {/* Optional External URL Fallback */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-zinc-500 mb-1">
-                      {isAr ? 'أو رابط خارجي للملف (اختياري)' : 'Or External File URL (Optional)'}
-                    </label>
-                    <input
-                      type="text"
-                      value={driveForm.url}
-                      onChange={(e) => setDriveForm({ ...driveForm, url: e.target.value })}
-                      placeholder="https://..."
-                      className="w-full px-3.5 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs outline-none"
-                    />
-                  </div>
                 </div>
               ) : (
                 /* Folder Creation Form */
@@ -4625,7 +4618,7 @@ export function AdminUniversitiesTab({
               <button
                 type="button"
                 onClick={handleSaveDriveItem}
-                disabled={isUploadingDriveFile || (driveForm.type === 'folder' && !driveForm.name.trim()) || (driveForm.type === 'file' && !driveFileToUpload && !driveForm.url.trim())}
+                disabled={isUploadingDriveFile || (driveForm.type === 'folder' && !driveForm.name.trim()) || (driveForm.type === 'file' && !driveFileToUpload)}
                 className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-2 shadow-md shadow-indigo-500/20"
               >
                 {isUploadingDriveFile ? <Loader2 size={14} className="animate-spin" /> : (driveForm.type === 'file' ? <Upload size={14} /> : <Plus size={14} />)}

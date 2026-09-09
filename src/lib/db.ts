@@ -532,7 +532,7 @@ export const db = {
     return (data || []).map(mapDriveFileFromDB);
   },
   async addDriveFile(userId: string, file: DriveFile & { b2FileId?: string }) {
-    const { error } = await supabase.from('drive_files').insert([{ 
+    const { error } = await supabase.from('drive_files').insert([{
       id: file.id,
       user_id: userId,
       name: file.name,
@@ -541,7 +541,9 @@ export const db = {
       url: file.url || '',
       upload_date: file.createdAt,
       b2_file_id: file.b2FileId,
-      parent_id: file.parentId || null
+      parent_id: file.parentId || null,
+      year_index: file.yearIndex ?? null,
+      semester_index: file.semesterIndex ?? null
     }]);
     if (error) console.error('Error adding drive_file:', error);
   },
@@ -550,6 +552,8 @@ export const db = {
     if (file.name !== undefined) payload.name = file.name;
     if (file.parentId !== undefined) payload.parent_id = file.parentId;
     if (file.url !== undefined) payload.url = file.url;
+    if (file.yearIndex !== undefined) payload.year_index = file.yearIndex;
+    if (file.semesterIndex !== undefined) payload.semester_index = file.semesterIndex;
 
     const { error } = await supabase.from('drive_files').update(payload).eq('id', id).eq('user_id', userId);
     if (error) console.error('Error updating drive_file:', error);
@@ -2862,7 +2866,9 @@ function mapDriveFileFromDB(row: any): DriveFile {
     url: row.url,
     createdAt: row.upload_date,
     parentId: row.parent_id,
-    b2FileId: row.b2_file_id
+    b2FileId: row.b2_file_id,
+    yearIndex: row.year_index ?? undefined,
+    semesterIndex: row.semester_index ?? undefined
   };
 }
 
