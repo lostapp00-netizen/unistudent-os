@@ -135,6 +135,19 @@ export function Schedule() {
 
   const selectedDayCounts = getCountsForDay(selectedDayOfWeek);
 
+  // Header counter: per-type counts only (lectures / sections / labs) — the
+  // generic "حصة ومحاضرة" total was confusing ("0 حصة ومحاضرة").
+  const headerCountParts: string[] = (() => {
+    const lectures = filteredScheduleItems.filter(s => s.type === 'lecture').length;
+    const tutorials = filteredScheduleItems.filter(s => s.type === 'tutorial').length;
+    const labs = filteredScheduleItems.filter(s => s.type === 'lab').length;
+    const parts: string[] = [];
+    if (lectures > 0) parts.push(`${lectures} ${isAr ? (lectures === 1 ? 'محاضرة' : 'محاضرات') : (lectures === 1 ? 'Lecture' : 'Lectures')}`);
+    if (tutorials > 0) parts.push(`${tutorials} ${isAr ? (tutorials === 1 ? 'سكشن' : 'سكاشن') : (tutorials === 1 ? 'Section' : 'Sections')}`);
+    if (labs > 0) parts.push(`${labs} ${isAr ? (labs === 1 ? 'معمل' : 'لابات') : (labs === 1 ? 'Lab' : 'Labs')}`);
+    return parts;
+  })();
+
   return (
     <div className="flex flex-col min-h-full gap-6 pb-8">
       {/* Header */}
@@ -143,9 +156,11 @@ export function Schedule() {
           <h1 className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white">{isAr ? 'جدولي' : 'My Schedule'}</h1>
           <div className="mt-1.5 flex items-center gap-2">
             <UnifiedFilterBadge filterYears={filterYears} filterSemesters={filterSemesters} />
-            <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-xl">
-              {filteredScheduleItems.length} {isAr ? 'حصة ومحاضرة' : 'classes'}
-            </span>
+            {headerCountParts.length > 0 && (
+              <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-xl">
+                {headerCountParts.join(' • ')}
+              </span>
+            )}
           </div>
         </div>
         

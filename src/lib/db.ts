@@ -108,7 +108,7 @@ function recordFailedWrite(ctx: WriteContext): void {
   setPendingWrites(ctx.userId, ops);
   try {
     window.dispatchEvent(new CustomEvent('unistudent-save-error', {
-      detail: { table: ctx.table, message: ctx.errorMessage || 'تعذر الحفظ في قاعدة البيانات' }
+      detail: { table: ctx.table, message: ctx.errorMessage || 'تعذر الحفظ في قاعدة البيانات', pendingCount: ops.length }
     }));
   } catch {}
 }
@@ -159,6 +159,14 @@ export async function flushPendingWrites(userId: string): Promise<void> {
       }
     }
     setPendingWrites(userId, remaining);
+    const flushed = ops.length - remaining.length;
+    if (flushed > 0) {
+      try {
+        window.dispatchEvent(new CustomEvent('unistudent-save-success', {
+          detail: { flushed, stillPending: remaining.length }
+        }));
+      } catch {}
+    }
   } finally {
     flushInFlight = false;
   }
@@ -720,25 +728,26 @@ export const db = {
       attachments: item.attachments || [],
     });
     const payload = mapScheduleItemToDB(userId, item);
-    // Primary insert includes optional text columns. If the live schema
-    // predates them (PGRST204 — by code or message), retry without them so
-    // the item never silently vanishes after refresh.
-    const isSchemaColumnError = (err: any) =>
-      (err && (err as any).code === 'PGRST204') ||
-      (err && typeof err.message === 'string' && /Could not find the|column/i.test(err.message));
-    let res = await supabase.from('schedule_items').insert([payload]);
-    if (res.error && isSchemaColumnError(res.error)) {
-      console.warn('schedule_items optional columns missing. Retrying without them.');
-      const minimal: any = { ...payload };
-      delete minimal.location;
-      delete minimal.instructor;
-      res = await supabase.from('schedule_items').insert([minimal]);
+    // Insert, dropping any column the live schema doesn't have yet
+    // (schema-cache/migration lag) so the item is never lost entirely.
+    let error: any = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const res = await supabase.from('schedule_items').insert([payload]);
+      error = res.error;
+      if (!error) break;
+      const missing = missingColumnFromError(error);
+      if (missing && Object.prototype.hasOwnProperty.call(payload, missing)) {
+        console.warn(`schedule_items insert: dropping missing column '${missing}' and retrying.`);
+        delete payload[missing];
+        continue;
+      }
+      break;
     }
-    if (res.error) {
-      console.error('Error adding schedule_item:', res.error);
+    if (error) {
+      console.error('Error adding schedule_item:', error);
       recordFailedWrite({
         userId, table: 'schedule_items', op: 'insert', payload,
-        errorMessage: describeError(res.error)
+        errorMessage: describeError(error)
       });
     } else {
       void flushPendingWrites(userId).catch(() => {});
@@ -753,9 +762,28 @@ export const db = {
     const payload = mapScheduleItemToDB(userId, item as ScheduleItem);
     delete (payload as any).user_id;
 
-    await resilientWrite('updateScheduleItem', () => supabase.from('schedule_items').update(payload).eq('id', id).eq('user_id', userId), {
-      userId, table: 'schedule_items', op: 'update', payload, matchId: id
-    });
+    let error: any = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const res = await supabase.from('schedule_items').update(payload).eq('id', id).eq('user_id', userId);
+      error = res.error;
+      if (!error) break;
+      const missing = missingColumnFromError(error);
+      if (missing && Object.prototype.hasOwnProperty.call(payload, missing)) {
+        console.warn(`schedule_items update: dropping missing column '${missing}' and retrying.`);
+        delete payload[missing];
+        continue;
+      }
+      break;
+    }
+    if (error) {
+      console.error('Error updating schedule_item:', error);
+      recordFailedWrite({
+        userId, table: 'schedule_items', op: 'update', payload, matchId: id,
+        errorMessage: describeError(error)
+      });
+    } else {
+      void flushPendingWrites(userId).catch(() => {});
+    }
   },
   async deleteScheduleItem(userId: string, id: string) {
     removeEntityExtra(userId, 'schedule_items', id);

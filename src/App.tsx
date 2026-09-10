@@ -29,34 +29,72 @@ import { Appointments } from './pages/productivity/Appointments';
 
 import { useAppStore } from './store/useAppStore';
 
-// Renders a short red toast whenever a database write fails permanently
-// (db.ts dispatches `unistudent-save-error`). The failed write is queued and
-// retried automatically on the next app start — this toast just makes the
-// failure visible instead of silent.
+// Persistent red banner whenever a database write fails (db.ts dispatches
+// `unistudent-save-error`). It stays on screen until the user dismisses it —
+// the raw database error is shown in full so the actual SQL problem is never
+// hidden behind a silent "saved anyway" behavior.
 function SaveErrorToast() {
-  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; pendingCount: number } | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    let hideTimer: ReturnType<typeof setTimeout> | undefined;
-    const handler = (e: Event) => {
+    let hideSuccessTimer: ReturnType<typeof setTimeout> | undefined;
+    const errorHandler = (e: Event) => {
       const detail = (e as CustomEvent).detail || {};
-      setMessage(detail.message || 'تعذر الحفظ في قاعدة البيانات');
-      if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(() => setMessage(null), 6000);
+      setError({
+        message: detail.message || 'خطأ غير معروف من قاعدة البيانات',
+        pendingCount: detail.pendingCount || 0
+      });
     };
-    window.addEventListener('unistudent-save-error', handler);
+    const successHandler = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      setSuccess(`تم رفع ${detail.flushed} عملية كانت محفوظة مؤقتًا — كل البيانات سليمة الآن`);
+      if (hideSuccessTimer) clearTimeout(hideSuccessTimer);
+      hideSuccessTimer = setTimeout(() => setSuccess(null), 8000);
+    };
+    window.addEventListener('unistudent-save-error', errorHandler);
+    window.addEventListener('unistudent-save-success', successHandler);
     return () => {
-      window.removeEventListener('unistudent-save-error', handler);
-      if (hideTimer) clearTimeout(hideTimer);
+      window.removeEventListener('unistudent-save-error', errorHandler);
+      window.removeEventListener('unistudent-save-success', successHandler);
+      if (hideSuccessTimer) clearTimeout(hideSuccessTimer);
     };
   }, []);
 
-  if (!message) return null;
   return (
-    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] max-w-md w-[92%] bg-rose-600 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
-      <span className="w-2 h-2 rounded-full bg-white shrink-0 animate-pulse" />
-      <span className="leading-relaxed">تعذر الحفظ في قاعدة البيانات — سيتم إعادة المحاولة تلقائيًا: {message}</span>
-    </div>
+    <>
+      {error && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[100] max-w-lg w-[94%] bg-rose-600 text-white text-xs px-4 py-3.5 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200" dir="rtl">
+          <div className="flex items-start gap-2.5">
+            <span className="w-2 h-2 rounded-full bg-white shrink-0 animate-pulse mt-1.5" />
+            <div className="flex-1 min-w-0 space-y-1.5">
+              <p className="font-black">تعذر الحفظ في قاعدة البيانات — المشكلة في إعدادات الـ SQL وليست من جهازك</p>
+              <p className="font-mono bg-black/25 rounded-xl px-2.5 py-1.5 leading-relaxed break-words text-[11px]" dir="ltr">
+                {error.message}
+              </p>
+              {error.pendingCount > 0 && (
+                <p className="text-white/85">
+                  فيه {error.pendingCount} عملية محفوظة مؤقتًا على جهازك — هتترفع تلقائيًا بعد حل المشكلة دي
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="shrink-0 p-1 rounded-lg hover:bg-white/15 transition-colors cursor-pointer font-black"
+              title="إغلاق التنبيه"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+      {success && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[100] max-w-md w-[92%] bg-emerald-600 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200" dir="rtl">
+          <span className="w-2 h-2 rounded-full bg-white shrink-0" />
+          <span className="leading-relaxed">{success}</span>
+        </div>
+      )}
+    </>
   );
 }
 
