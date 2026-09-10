@@ -681,13 +681,21 @@ export function AdminUniversitiesTab({
         includeInGpa: s.includeInGpa !== false && s.include_in_gpa !== false
       }));
 
-      // Clone drive files
+      // Clone drive files — two-pass id remap so the folder tree stays intact:
+      // every item gets a fresh id AND its parentId is remapped to the fresh
+      // id of its source parent. Keeping the student's original parentIds used
+      // to orphan every child (empty folders at the admin, flattened files
+      // at the pulling student).
+      const clonedDriveIdMap = new Map<string, string>();
+      studentFiles.forEach((f: any) => {
+        if (f && f.id) clonedDriveIdMap.set(String(f.id), uuidv4());
+      });
       const clonedDrive: DriveFile[] = studentFiles.map((f: any) => ({
-        id: uuidv4(),
+        id: clonedDriveIdMap.get(String(f.id)) || uuidv4(),
         name: f.name,
         size: Number(f.size || 0),
         type: f.type || 'file',
-        parentId: f.parentId || f.parent_id || null,
+        parentId: f.parentId ? (clonedDriveIdMap.get(String(f.parentId)) || null) : null,
         createdAt: f.createdAt || f.upload_date || new Date().toISOString(),
         url: f.url || '',
         b2FileId: f.b2FileId || f.b2_file_id
@@ -1486,11 +1494,17 @@ export function AdminUniversitiesTab({
               yearIndex: file.yearIndex !== undefined ? Number(file.yearIndex) : undefined,
               semesterIndex: file.semesterIndex !== undefined ? Number(file.semesterIndex) : undefined
             };
-            // Orphan guard: if the referenced parent folder does not exist in
-            // this database's drive, surface the file at the root instead of
-            // letting it disappear inside a dangling reference.
-            const parentExists = !newFile.parentId || (targetDb.driveFiles || []).some(f => f.id === newFile.parentId && f.type === 'folder');
-            if (!parentExists) newFile.parentId = null;
+            // Parent resolution: try the original parentId first, then fall
+            // back to the source folder NAME (ids differ between the student's
+            // drive and the cloned database), else surface at the root.
+            let resolvedParentId: string | null = newFile.parentId || null;
+            if (resolvedParentId && !(targetDb.driveFiles || []).some(f => f.id === resolvedParentId && f.type === 'folder')) {
+              const parentByName = file.parentName
+                ? (targetDb.driveFiles || []).find(f => f.type === 'folder' && f.name === file.parentName)
+                : undefined;
+              resolvedParentId = parentByName ? parentByName.id : null;
+            }
+            newFile.parentId = resolvedParentId;
             const filteredFiles = (targetDb.driveFiles || []).filter(f => f.id !== newFile.id && f.name !== newFile.name);
             return {
               ...targetDb,

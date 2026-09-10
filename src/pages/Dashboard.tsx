@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
 import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWarningRisk, calculateGraduationEstimate } from '../lib/academic';
@@ -15,6 +15,15 @@ export function Dashboard() {
   const totalGPA = calculateGPA(subjects, settings.gradingScale, undefined, undefined, settings.initialCumulativeGpa, settings.initialCompletedCreditHours);
   const [filterYears, setFilterYears] = useState<number[]>(currentSemester ? [currentSemester.yearIndex] : []);
   const [filterSemesters, setFilterSemesters] = useState<number[]>(currentSemester ? [currentSemester.semesterIndex] : []);
+
+  // Re-sync the default filter whenever the CURRENT SEMESTER changes (e.g.
+  // after a university-database restore) so stats always reflect the latest
+  // subjects instead of staying frozen at the mount-time semester.
+  useEffect(() => {
+    setFilterYears(currentSemester ? [currentSemester.yearIndex] : []);
+    setFilterSemesters(currentSemester ? [currentSemester.semesterIndex] : []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSemester?.yearIndex, currentSemester?.semesterIndex]);
 
   const filteredSubjects = subjects.filter(s => 
     (filterYears.length === 0 || filterYears.includes(s.yearIndex)) &&

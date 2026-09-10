@@ -495,12 +495,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addFile: (file) => {
-    const { userId, userEmail, settings } = get();
+    const { userId, userEmail, settings, files } = get();
     if (!userId) return;
     set((state) => ({ files: [...state.files, file] }));
     db.addDriveFile(userId, file);
 
-    checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'add_file', `رفع ملف إلى الدرايف: ${file.name}`, file);
+    // parentName lets the admin-side sync attach the file to the matching
+    // folder by name when its original parentId does not exist in the
+    // university database (fresh id-space after cloning).
+    const parentName = file.parentId
+      ? (files.find(f => f.id === file.parentId)?.name || '')
+      : '';
+
+    checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'add_file', `رفع ملف إلى الدرايف: ${file.name}`, { ...file, parentName });
   },
   updateFile: (id, updatedFields) => {
     const { userId } = get();

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
@@ -36,6 +36,16 @@ export function AcademicDashboard() {
   const currentSemester = settings.semesters.find(s => s.isCurrent);
   const [filterYears, setFilterYears] = useState<number[]>(currentSemester ? [currentSemester.yearIndex] : []);
   const [filterSemesters, setFilterSemesters] = useState<number[]>(currentSemester ? [currentSemester.semesterIndex] : []);
+
+  // Re-sync the default filter whenever the CURRENT SEMESTER changes (e.g.
+  // after a university-database restore). Without this, the filter stayed
+  // frozen at the mount-time semester and dashboard stats ignored newly
+  // added/imported subjects.
+  useEffect(() => {
+    setFilterYears(currentSemester ? [currentSemester.yearIndex] : []);
+    setFilterSemesters(currentSemester ? [currentSemester.semesterIndex] : []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSemester?.yearIndex, currentSemester?.semesterIndex]);
 
   const filteredSubjects = subjects.filter(s => 
     (filterYears.length === 0 || filterYears.includes(s.yearIndex)) &&

@@ -129,15 +129,27 @@ export async function flushPendingWrites(userId: string): Promise<void> {
         if (op.op === 'insert') {
           let payload = op.payload;
           let res = await supabase.from(op.table).insert([payload]);
-          // If the live schema lacks a column (e.g. pending SQL migration),
-          // drop it and retry so the queued row is not stuck forever.
           for (let i = 0; i < 4 && res.error; i++) {
+            // Missing column (schema-cache/migration lag): drop and retry.
             const missing = missingColumnFromError(res.error);
             if (payload && missing && Object.prototype.hasOwnProperty.call(payload, missing)) {
               console.warn(`Flush ${op.table}: dropping missing column '${missing}' and retrying.`);
               delete payload[missing];
               res = await supabase.from(op.table).insert([payload]);
-            } else break;
+              continue;
+            }
+            // NOT NULL violation (legacy live schema requires a column the
+            // payload omitted, e.g. schedule_items.title): fill a placeholder.
+            const notNull = res.error && typeof res.error.message === 'string'
+              ? (res.error.message.match(/null value in column "(\w+)"/i)?.[1] || null)
+              : null;
+            if (payload && notNull && !Object.prototype.hasOwnProperty.call(payload, notNull)) {
+              console.warn(`Flush ${op.table}: filling required column '${notNull}' and retrying.`);
+              payload[notNull] = 'item';
+              res = await supabase.from(op.table).insert([payload]);
+              continue;
+            }
+            break;
           }
           error = res.error;
           // Already applied on a previous pass — treat as success.
@@ -3148,6 +3160,11 @@ function mapScheduleItemToDB(userId: string, item: ScheduleItem) {
   if (item.endTime !== undefined) payload.end_time = item.endTime;
   if (item.location !== undefined) payload.location = item.location;
   if (item.type !== undefined) payload.type = item.type;
+  // Legacy live schema has a NOT NULL `title` column that the UI never
+  // displays — supply a sensible value from the type. On fresh schemas
+  // (created by the SQL migration, without title) the strip-and-retry logic
+  // drops this key automatically.
+  payload.title = (item as any).title || item.type || 'item';
   if (item.doctorName !== undefined || item.instructor !== undefined) {
     payload.instructor = item.doctorName ?? item.instructor;
   }
