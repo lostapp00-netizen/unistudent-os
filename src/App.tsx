@@ -29,6 +29,37 @@ import { Appointments } from './pages/productivity/Appointments';
 
 import { useAppStore } from './store/useAppStore';
 
+// Renders a short red toast whenever a database write fails permanently
+// (db.ts dispatches `unistudent-save-error`). The failed write is queued and
+// retried automatically on the next app start — this toast just makes the
+// failure visible instead of silent.
+function SaveErrorToast() {
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let hideTimer: ReturnType<typeof setTimeout> | undefined;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      setMessage(detail.message || 'تعذر الحفظ في قاعدة البيانات');
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => setMessage(null), 6000);
+    };
+    window.addEventListener('unistudent-save-error', handler);
+    return () => {
+      window.removeEventListener('unistudent-save-error', handler);
+      if (hideTimer) clearTimeout(hideTimer);
+    };
+  }, []);
+
+  if (!message) return null;
+  return (
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] max-w-md w-[92%] bg-rose-600 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+      <span className="w-2 h-2 rounded-full bg-white shrink-0 animate-pulse" />
+      <span className="leading-relaxed">تعذر الحفظ في قاعدة البيانات — سيتم إعادة المحاولة تلقائيًا: {message}</span>
+    </div>
+  );
+}
+
 export function App() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -205,6 +236,7 @@ export function App() {
 
   return (
     <BrowserRouter>
+      <SaveErrorToast />
       <Routes>
         <Route path="/admin" element={<Admin />} />
         

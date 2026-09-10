@@ -645,18 +645,38 @@ export function DriveTab() {
                 <label className="block text-xs font-bold text-zinc-500 mb-1.5">
                   {isAr ? 'اختر الملف من جهازك' : 'Pick a file from your device'}
                 </label>
+                {/* Hidden native input driven by the custom button — the visible
+                    state text comes from React, so it always reflects the real
+                    picked file instead of the browser's "no file chosen" label. */}
                 <input
                   ref={uploadInputRef}
                   type="file"
                   onChange={handleUploadFilePicked}
-                  className="w-full text-xs text-zinc-600 dark:text-zinc-300 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-50 dark:file:bg-blue-950/40 file:text-blue-600 dark:file:text-blue-300 file:cursor-pointer cursor-pointer bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700"
+                  className="hidden"
                 />
-                {uploadFileSelected && (
-                  <p className="text-[11px] text-zinc-400 mt-1.5 flex items-center gap-1.5">
-                    <FileText size={12} className="shrink-0" />
-                    <span className="truncate">{uploadFileSelected.name} • {(uploadFileSelected.size / 1024).toFixed(0)} KB</span>
-                  </p>
-                )}
+                <div className="flex items-center gap-2.5 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-2">
+                  <div className="flex-1 min-w-0 text-xs px-1">
+                    {uploadFileSelected ? (
+                      <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
+                        <FileText size={13} className="shrink-0" />
+                        <span className="truncate">
+                          {uploadFileSelected.name} • {(uploadFileSelected.size / 1024).toFixed(0)} KB
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-zinc-400 font-bold">
+                        {isAr ? 'لم يتم اختيار أي ملف' : 'No file chosen'}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => uploadInputRef.current?.click()}
+                    className="shrink-0 px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white transition-all shadow-md shadow-blue-500/25 cursor-pointer"
+                  >
+                    {isAr ? 'اختيار ملف' : 'Choose file'}
+                  </button>
+                </div>
               </div>
 
               <div>

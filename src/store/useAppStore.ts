@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, GraduationGradeRule, GradeRule, UniversityDatabase } from '../types';
-import { db } from '../lib/db';
+import { db, flushPendingWrites } from '../lib/db';
 import { normalizeSubjectName } from '../lib/academicTranslation';
 
 let activeSyncPromise: Promise<void> | null = null;
@@ -186,6 +186,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           localStorage.setItem(`unistudent_user_email_${userId}`, email);
         } catch {}
       }
+
+      // Replay any writes that failed on a previous session (DB hiccup /
+      // transient RLS/schema issue) BEFORE reading, so retried rows show up
+      // in this same load instead of appearing one refresh late.
+      await flushPendingWrites(userId).catch((e) => console.warn('Pending writes flush failed:', e));
 
       // Fetch all data for the user
       const [

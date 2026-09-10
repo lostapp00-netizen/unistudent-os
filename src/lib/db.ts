@@ -40,25 +40,136 @@ export async function broadcastUniversityDatabaseUpdate(payload: any): Promise<v
   }
 }
 
-// Runs a Supabase write once, and if it fails (network hiccup, transient
-// deadlock, brief schema drift) retries a single time before giving up.
-// Failures are logged loudly instead of being silently swallowed — silent
-// failures used to make user data vanish on the next refresh.
-async function resilientWrite(label: string, run: () => PromiseLike<{ error: any }>): Promise<void> {
+// --- Resilient persistence layer ---
+// 1. resilientWrite(): runs a Supabase write and retries once on failure.
+// 2. On permanent failure the operation is NOT silently dropped anymore:
+//    it is queued in localStorage and replayed by flushPendingWrites() on the
+//    next app start (and after any later successful write), so user data can
+//    never vanish just because the DB hiccuped at save time.
+// 3. A `unistudent-save-error` window event is dispatched with the real error
+//    message so the UI can surface it (App.tsx shows a red toast).
+interface WriteContext {
+  userId: string;
+  table: string;
+  op: 'insert' | 'update' | 'delete';
+  payload?: any;
+  matchId?: string;
+  errorMessage?: string;
+}
+
+interface PendingWriteOp {
+  id: string;
+  table: string;
+  op: 'insert' | 'update' | 'delete';
+  payload?: any;
+  matchId?: string;
+  ts: number;
+}
+
+function describeError(err: any): string {
+  if (!err) return 'خطأ غير معروف';
+  return (err.message || err.details || err.hint || String(err)).slice(0, 220);
+}
+
+function getPendingWrites(userId: string): PendingWriteOp[] {
+  try {
+    const raw = localStorage.getItem(`unistudent_pending_writes_${userId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function setPendingWrites(userId: string, ops: PendingWriteOp[]): void {
+  try {
+    localStorage.setItem(`unistudent_pending_writes_${userId}`, JSON.stringify(ops.slice(-2000)));
+  } catch {}
+}
+
+function recordFailedWrite(ctx: WriteContext): void {
+  if (!ctx.userId) return;
+  const ops = getPendingWrites(ctx.userId);
+  ops.push({
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+    table: ctx.table,
+    op: ctx.op,
+    payload: ctx.payload,
+    matchId: ctx.matchId,
+    ts: Date.now()
+  });
+  setPendingWrites(ctx.userId, ops);
+  try {
+    window.dispatchEvent(new CustomEvent('unistudent-save-error', {
+      detail: { table: ctx.table, message: ctx.errorMessage || 'تعذر الحفظ في قاعدة البيانات' }
+    }));
+  } catch {}
+}
+
+let flushInFlight = false;
+
+export async function flushPendingWrites(userId: string): Promise<void> {
+  if (!userId || flushInFlight) return;
+  const ops = getPendingWrites(userId);
+  if (ops.length === 0) return;
+
+  flushInFlight = true;
+  try {
+    const remaining: PendingWriteOp[] = [];
+    for (const op of ops) {
+      try {
+        let error: any = null;
+        if (op.op === 'insert') {
+          const res = await supabase.from(op.table).insert([op.payload]);
+          error = res.error;
+          // Already applied on a previous pass — treat as success.
+          if (error && (error as any).code === '23505') error = null;
+        } else if (op.op === 'update') {
+          const res = await supabase.from(op.table).update(op.payload).eq('id', op.matchId).eq('user_id', userId);
+          error = res.error;
+        } else if (op.op === 'delete') {
+          const res = await supabase.from(op.table).delete().eq('id', op.matchId).eq('user_id', userId);
+          error = res.error;
+        }
+        if (error) {
+          console.warn(`Pending write retry failed (${op.table}/${op.op}):`, error);
+          remaining.push(op);
+        }
+      } catch (e) {
+        console.warn(`Pending write retry threw (${op.table}/${op.op}):`, e);
+        remaining.push(op);
+      }
+    }
+    setPendingWrites(userId, remaining);
+  } finally {
+    flushInFlight = false;
+  }
+}
+
+async function resilientWrite(label: string, run: () => PromiseLike<{ error: any }>, ctx?: Omit<WriteContext, 'errorMessage'>): Promise<void> {
   let res: { error: any };
   try {
     res = await run();
   } catch (e) {
     res = { error: e };
   }
-  if (!res.error) return;
+  if (!res.error) {
+    if (ctx) void flushPendingWrites(ctx.userId).catch(() => {});
+    return;
+  }
   console.warn(`Write failed (${label}), retrying once...`, res.error);
   try {
     res = await run();
   } catch (e) {
     res = { error: e };
   }
-  if (res.error) console.error(`Write failed permanently (${label}):`, res.error);
+  if (res.error) {
+    console.error(`Write failed permanently (${label}):`, res.error);
+    if (ctx) {
+      recordFailedWrite({ ...ctx, errorMessage: describeError(res.error) });
+    }
+  } else if (ctx) {
+    void flushPendingWrites(ctx.userId).catch(() => {});
+  }
 }
 
 // Generic read helper: Supabase is authoritative and refreshes the per-user
@@ -292,16 +403,31 @@ export const db = {
     } catch {}
 
     try {
-      const { error } = await supabase.from('subjects').insert([mapSubjectToDB(userId, subject)]);
+      let { error } = await supabase.from('subjects').insert([mapSubjectToDB(userId, subject)]);
       if (error) {
         // Retry without non-critical columns if schema difference
         const payload: any = mapSubjectToDB(userId, subject);
         delete payload.include_in_gpa;
         delete payload.final_grade_letter;
-        await supabase.from('subjects').insert([payload]);
+        const retry = await supabase.from('subjects').insert([payload]);
+        if (retry.error) {
+          console.error('Error adding subject:', retry.error);
+          recordFailedWrite({
+            userId, table: 'subjects', op: 'insert', payload,
+            errorMessage: describeError(retry.error)
+          });
+        } else {
+          void flushPendingWrites(userId).catch(() => {});
+        }
+      } else {
+        void flushPendingWrites(userId).catch(() => {});
       }
     } catch (err) {
       console.warn('Supabase addSubject fallback:', err);
+      recordFailedWrite({
+        userId, table: 'subjects', op: 'insert', payload: mapSubjectToDB(userId, subject),
+        errorMessage: describeError(err)
+      });
     }
   },
   async updateSubject(userId: string, id: string, subject: Partial<Subject>) {
@@ -329,14 +455,20 @@ export const db = {
       if (error) {
         delete payload.final_grade_letter;
         const retry = await supabase.from('subjects').update(payload).eq('id', id).eq('user_id', userId);
-        if (retry.error) console.warn('subjects update still failing, retrying once more...', retry.error);
-        const retry2 = retry.error
-          ? await supabase.from('subjects').update(payload).eq('id', id).eq('user_id', userId)
-          : { error: null };
-        if (retry2.error) console.error('Error updating subject:', retry2.error);
+        if (retry.error) {
+          console.error('Error updating subject:', retry.error);
+          recordFailedWrite({
+            userId, table: 'subjects', op: 'update', payload, matchId: id,
+            errorMessage: describeError(retry.error)
+          });
+        }
       }
     } catch (e) {
       console.warn('Supabase updateSubject error:', e);
+      recordFailedWrite({
+        userId, table: 'subjects', op: 'update', payload, matchId: id,
+        errorMessage: describeError(e)
+      });
     }
   },
   async deleteSubject(userId: string, id: string) {
@@ -399,7 +531,9 @@ export const db = {
       linkedFileIds: task.linkedFileIds || [],
       linkedSubjectIds: task.linkedSubjectIds || [],
     });
-    await resilientWrite('addTask', () => supabase.from('tasks').insert([mapTaskToDB(userId, task)]));
+    await resilientWrite('addTask', () => supabase.from('tasks').insert([mapTaskToDB(userId, task)]), {
+      userId, table: 'tasks', op: 'insert', payload: mapTaskToDB(userId, task)
+    });
   },
   async updateTask(userId: string, id: string, task: Partial<Task>) {
     saveEntityExtra(userId, 'tasks', id, {
@@ -410,11 +544,15 @@ export const db = {
     });
     const payload = mapTaskToDB(userId, task as Task);
     delete (payload as any).user_id;
-    await resilientWrite('updateTask', () => supabase.from('tasks').update(payload).eq('id', id).eq('user_id', userId));
+    await resilientWrite('updateTask', () => supabase.from('tasks').update(payload).eq('id', id).eq('user_id', userId), {
+      userId, table: 'tasks', op: 'update', payload, matchId: id
+    });
   },
   async deleteTask(userId: string, id: string) {
     removeEntityExtra(userId, 'tasks', id);
-    await resilientWrite('deleteTask', () => supabase.from('tasks').delete().eq('id', id).eq('user_id', userId));
+    await resilientWrite('deleteTask', () => supabase.from('tasks').delete().eq('id', id).eq('user_id', userId), {
+      userId, table: 'tasks', op: 'delete', matchId: id
+    });
   },
 
   // --- Notes ---
@@ -445,7 +583,9 @@ export const db = {
       linkedFileIds: note.linkedFileIds || [],
       linkedSubjectIds: note.linkedSubjectIds || [],
     });
-    await resilientWrite('addNote', () => supabase.from('notes').insert([mapNoteToDB(userId, note)]));
+    await resilientWrite('addNote', () => supabase.from('notes').insert([mapNoteToDB(userId, note)]), {
+      userId, table: 'notes', op: 'insert', payload: mapNoteToDB(userId, note)
+    });
   },
   async updateNote(userId: string, id: string, note: Partial<Note>) {
     saveEntityExtra(userId, 'notes', id, {
@@ -457,11 +597,15 @@ export const db = {
     });
     const payload = mapNoteToDB(userId, note as Note);
     delete (payload as any).user_id;
-    await resilientWrite('updateNote', () => supabase.from('notes').update(payload).eq('id', id).eq('user_id', userId));
+    await resilientWrite('updateNote', () => supabase.from('notes').update(payload).eq('id', id).eq('user_id', userId), {
+      userId, table: 'notes', op: 'update', payload, matchId: id
+    });
   },
   async deleteNote(userId: string, id: string) {
     removeEntityExtra(userId, 'notes', id);
-    await resilientWrite('deleteNote', () => supabase.from('notes').delete().eq('id', id).eq('user_id', userId));
+    await resilientWrite('deleteNote', () => supabase.from('notes').delete().eq('id', id).eq('user_id', userId), {
+      userId, table: 'notes', op: 'delete', matchId: id
+    });
   },
 
   // --- Appointments ---
@@ -490,7 +634,9 @@ export const db = {
       linkedFileIds: appointment.linkedFileIds || [],
       linkedSubjectIds: appointment.linkedSubjectIds || [],
     });
-    await resilientWrite('addAppointment', () => supabase.from('appointments').insert([mapAppointmentToDB(userId, appointment)]));
+    await resilientWrite('addAppointment', () => supabase.from('appointments').insert([mapAppointmentToDB(userId, appointment)]), {
+      userId, table: 'appointments', op: 'insert', payload: mapAppointmentToDB(userId, appointment)
+    });
   },
   async updateAppointment(userId: string, id: string, appointment: Partial<Appointment>) {
     saveEntityExtra(userId, 'appointments', id, {
@@ -501,11 +647,15 @@ export const db = {
     });
     const payload = mapAppointmentToDB(userId, appointment as Appointment);
     delete (payload as any).user_id;
-    await resilientWrite('updateAppointment', () => supabase.from('appointments').update(payload).eq('id', id).eq('user_id', userId));
+    await resilientWrite('updateAppointment', () => supabase.from('appointments').update(payload).eq('id', id).eq('user_id', userId), {
+      userId, table: 'appointments', op: 'update', payload, matchId: id
+    });
   },
   async deleteAppointment(userId: string, id: string) {
     removeEntityExtra(userId, 'appointments', id);
-    await resilientWrite('deleteAppointment', () => supabase.from('appointments').delete().eq('id', id).eq('user_id', userId));
+    await resilientWrite('deleteAppointment', () => supabase.from('appointments').delete().eq('id', id).eq('user_id', userId), {
+      userId, table: 'appointments', op: 'delete', matchId: id
+    });
   },
 
   // --- Schedule Items ---
@@ -534,10 +684,13 @@ export const db = {
     });
     const payload = mapScheduleItemToDB(userId, item);
     // Primary insert includes optional text columns. If the live schema
-    // predates them (PGRST204), retry without them so the item never
-    // silently vanishes after refresh.
+    // predates them (PGRST204 — by code or message), retry without them so
+    // the item never silently vanishes after refresh.
+    const isSchemaColumnError = (err: any) =>
+      (err && (err as any).code === 'PGRST204') ||
+      (err && typeof err.message === 'string' && /Could not find the|column/i.test(err.message));
     let res = await supabase.from('schedule_items').insert([payload]);
-    if (res.error && (res.error as any).code === 'PGRST204') {
+    if (res.error && isSchemaColumnError(res.error)) {
       console.warn('schedule_items optional columns missing. Retrying without them.');
       const minimal: any = { ...payload };
       delete minimal.location;
@@ -545,9 +698,13 @@ export const db = {
       res = await supabase.from('schedule_items').insert([minimal]);
     }
     if (res.error) {
-      console.warn('schedule_items insert failed, retrying once...', res.error);
-      const retry = await supabase.from('schedule_items').insert([payload]);
-      if (retry.error) console.error('Error adding schedule_item:', retry.error);
+      console.error('Error adding schedule_item:', res.error);
+      recordFailedWrite({
+        userId, table: 'schedule_items', op: 'insert', payload,
+        errorMessage: describeError(res.error)
+      });
+    } else {
+      void flushPendingWrites(userId).catch(() => {});
     }
   },
   async updateScheduleItem(userId: string, id: string, item: Partial<ScheduleItem>) {
@@ -558,12 +715,16 @@ export const db = {
     });
     const payload = mapScheduleItemToDB(userId, item as ScheduleItem);
     delete (payload as any).user_id;
-    
-    await resilientWrite('updateScheduleItem', () => supabase.from('schedule_items').update(payload).eq('id', id).eq('user_id', userId));
+
+    await resilientWrite('updateScheduleItem', () => supabase.from('schedule_items').update(payload).eq('id', id).eq('user_id', userId), {
+      userId, table: 'schedule_items', op: 'update', payload, matchId: id
+    });
   },
   async deleteScheduleItem(userId: string, id: string) {
     removeEntityExtra(userId, 'schedule_items', id);
-    await resilientWrite('deleteScheduleItem', () => supabase.from('schedule_items').delete().eq('id', id).eq('user_id', userId));
+    await resilientWrite('deleteScheduleItem', () => supabase.from('schedule_items').delete().eq('id', id).eq('user_id', userId), {
+      userId, table: 'schedule_items', op: 'delete', matchId: id
+    });
   },
 
   // --- Groups ---
@@ -626,7 +787,15 @@ export const db = {
       console.warn('drive_files phase columns missing (apply migration 202609060004). Retrying without them.');
       res = await supabase.from('drive_files').insert([baseRow]);
     }
-    if (res.error) console.error('Error adding drive_file:', res.error);
+    if (res.error) {
+      console.error('Error adding drive_file:', res.error);
+      recordFailedWrite({
+        userId, table: 'drive_files', op: 'insert', payload: baseRow,
+        errorMessage: describeError(res.error)
+      });
+    } else {
+      void flushPendingWrites(userId).catch(() => {});
+    }
   },
   async updateDriveFile(userId: string, id: string, file: Partial<DriveFile>) {
     const payload: any = {};
@@ -637,12 +806,14 @@ export const db = {
     if (file.semesterIndex !== undefined) payload.semester_index = file.semesterIndex;
 
     await resilientWrite('updateDriveFile', () =>
-      supabase.from('drive_files').update(payload).eq('id', id).eq('user_id', userId)
+      supabase.from('drive_files').update(payload).eq('id', id).eq('user_id', userId),
+      { userId, table: 'drive_files', op: 'update', payload, matchId: id }
     );
   },
   async deleteDriveFile(userId: string, id: string) {
     await resilientWrite('deleteDriveFile', () =>
-      supabase.from('drive_files').delete().eq('id', id).eq('user_id', userId)
+      supabase.from('drive_files').delete().eq('id', id).eq('user_id', userId),
+      { userId, table: 'drive_files', op: 'delete', matchId: id }
     );
   },
 
