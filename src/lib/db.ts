@@ -40,6 +40,50 @@ export async function broadcastUniversityDatabaseUpdate(payload: any): Promise<v
   }
 }
 
+// Runs a Supabase write once, and if it fails (network hiccup, transient
+// deadlock, brief schema drift) retries a single time before giving up.
+// Failures are logged loudly instead of being silently swallowed — silent
+// failures used to make user data vanish on the next refresh.
+async function resilientWrite(label: string, run: () => PromiseLike<{ error: any }>): Promise<void> {
+  let res: { error: any };
+  try {
+    res = await run();
+  } catch (e) {
+    res = { error: e };
+  }
+  if (!res.error) return;
+  console.warn(`Write failed (${label}), retrying once...`, res.error);
+  try {
+    res = await run();
+  } catch (e) {
+    res = { error: e };
+  }
+  if (res.error) console.error(`Write failed permanently (${label}):`, res.error);
+}
+
+// Generic read helper: Supabase is authoritative and refreshes the per-user
+// cache; the cache is only used when Supabase itself failed to respond
+// (offline), mirroring the getSubjects() pattern.
+function cacheRead<T>(key: string, fetchFn: () => PromiseLike<T[] | null>): Promise<T[]> {
+  return (async () => {
+    let rows: T[] | null = null;
+    try {
+      rows = await fetchFn();
+    } catch (e) {
+      console.warn(`Supabase read failed (${key}), checking cache:`, e);
+    }
+    if (rows !== null) {
+      try { localStorage.setItem(key, JSON.stringify(rows)); } catch {}
+      return rows;
+    }
+    try {
+      const cached = localStorage.getItem(key);
+      if (cached) return JSON.parse(cached) as T[];
+    } catch {}
+    return [];
+  })();
+}
+
 export const db = {
   // --- Settings ---
   async getSettings(userId: string): Promise<UserSettings | null> {
@@ -284,7 +328,12 @@ export const db = {
       const { error } = await supabase.from('subjects').update(payload).eq('id', id).eq('user_id', userId);
       if (error) {
         delete payload.final_grade_letter;
-        await supabase.from('subjects').update(payload).eq('id', id).eq('user_id', userId);
+        const retry = await supabase.from('subjects').update(payload).eq('id', id).eq('user_id', userId);
+        if (retry.error) console.warn('subjects update still failing, retrying once more...', retry.error);
+        const retry2 = retry.error
+          ? await supabase.from('subjects').update(payload).eq('id', id).eq('user_id', userId)
+          : { error: null };
+        if (retry2.error) console.error('Error updating subject:', retry2.error);
       }
     } catch (e) {
       console.warn('Supabase updateSubject error:', e);
@@ -298,8 +347,7 @@ export const db = {
     } catch {}
 
     try {
-      const { error } = await supabase.from('subjects').delete().eq('id', id).eq('user_id', userId);
-      if (error) console.error('Error deleting subject in Supabase:', error);
+      await resilientWrite('deleteSubject', () => supabase.from('subjects').delete().eq('id', id).eq('user_id', userId));
     } catch (e) {
       console.error('Error deleting subject:', e);
     }
@@ -327,11 +375,13 @@ export const db = {
 
   // --- Tasks ---
   async getTasks(userId: string) {
-    const { data, error } = await supabase.from('tasks').select('*').eq('user_id', userId);
-    if (error) console.error('Error fetching tasks:', error);
+    const rows = await cacheRead<any>(`unistudent_tasks_${userId}`, async () => {
+      const { data, error } = await supabase.from('tasks').select('*').eq('user_id', userId);
+      if (error) { console.error('Error fetching tasks:', error); return null; }
+      return (data || []).map(mapTaskFromDB);
+    });
     const extras = getEntityExtras(userId, 'tasks');
-    return (data || []).map(row => {
-      const task = mapTaskFromDB(row);
+    return rows.map(task => {
       const extra = extras[task.id] || {};
       return {
         ...task,
@@ -349,8 +399,7 @@ export const db = {
       linkedFileIds: task.linkedFileIds || [],
       linkedSubjectIds: task.linkedSubjectIds || [],
     });
-    const { error } = await supabase.from('tasks').insert([mapTaskToDB(userId, task)]);
-    if (error) console.error('Error adding task:', error);
+    await resilientWrite('addTask', () => supabase.from('tasks').insert([mapTaskToDB(userId, task)]));
   },
   async updateTask(userId: string, id: string, task: Partial<Task>) {
     saveEntityExtra(userId, 'tasks', id, {
@@ -361,22 +410,22 @@ export const db = {
     });
     const payload = mapTaskToDB(userId, task as Task);
     delete (payload as any).user_id;
-    const { error } = await supabase.from('tasks').update(payload).eq('id', id).eq('user_id', userId);
-    if (error) console.error('Error updating task:', error);
+    await resilientWrite('updateTask', () => supabase.from('tasks').update(payload).eq('id', id).eq('user_id', userId));
   },
   async deleteTask(userId: string, id: string) {
     removeEntityExtra(userId, 'tasks', id);
-    const { error } = await supabase.from('tasks').delete().eq('id', id).eq('user_id', userId);
-    if (error) console.error('Error deleting task:', error);
+    await resilientWrite('deleteTask', () => supabase.from('tasks').delete().eq('id', id).eq('user_id', userId));
   },
 
   // --- Notes ---
   async getNotes(userId: string) {
-    const { data, error } = await supabase.from('notes').select('*').eq('user_id', userId);
-    if (error) console.error('Error fetching notes:', error);
+    const rows = await cacheRead<any>(`unistudent_notes_${userId}`, async () => {
+      const { data, error } = await supabase.from('notes').select('*').eq('user_id', userId);
+      if (error) { console.error('Error fetching notes:', error); return null; }
+      return (data || []).map(mapNoteFromDB);
+    });
     const extras = getEntityExtras(userId, 'notes');
-    return (data || []).map(row => {
-      const note = mapNoteFromDB(row);
+    return rows.map(note => {
       const extra = extras[note.id] || {};
       return {
         ...note,
@@ -396,8 +445,7 @@ export const db = {
       linkedFileIds: note.linkedFileIds || [],
       linkedSubjectIds: note.linkedSubjectIds || [],
     });
-    const { error } = await supabase.from('notes').insert([mapNoteToDB(userId, note)]);
-    if (error) console.error('Error adding note:', error);
+    await resilientWrite('addNote', () => supabase.from('notes').insert([mapNoteToDB(userId, note)]));
   },
   async updateNote(userId: string, id: string, note: Partial<Note>) {
     saveEntityExtra(userId, 'notes', id, {
@@ -409,22 +457,22 @@ export const db = {
     });
     const payload = mapNoteToDB(userId, note as Note);
     delete (payload as any).user_id;
-    const { error } = await supabase.from('notes').update(payload).eq('id', id).eq('user_id', userId);
-    if (error) console.error('Error updating note:', error);
+    await resilientWrite('updateNote', () => supabase.from('notes').update(payload).eq('id', id).eq('user_id', userId));
   },
   async deleteNote(userId: string, id: string) {
     removeEntityExtra(userId, 'notes', id);
-    const { error } = await supabase.from('notes').delete().eq('id', id).eq('user_id', userId);
-    if (error) console.error('Error deleting note:', error);
+    await resilientWrite('deleteNote', () => supabase.from('notes').delete().eq('id', id).eq('user_id', userId));
   },
 
   // --- Appointments ---
   async getAppointments(userId: string) {
-    const { data, error } = await supabase.from('appointments').select('*').eq('user_id', userId);
-    if (error) console.error('Error fetching appointments:', error);
+    const rows = await cacheRead<any>(`unistudent_appointments_${userId}`, async () => {
+      const { data, error } = await supabase.from('appointments').select('*').eq('user_id', userId);
+      if (error) { console.error('Error fetching appointments:', error); return null; }
+      return (data || []).map(mapAppointmentFromDB);
+    });
     const extras = getEntityExtras(userId, 'appointments');
-    return (data || []).map(row => {
-      const appt = mapAppointmentFromDB(row);
+    return rows.map(appt => {
       const extra = extras[appt.id] || {};
       return {
         ...appt,
@@ -442,8 +490,7 @@ export const db = {
       linkedFileIds: appointment.linkedFileIds || [],
       linkedSubjectIds: appointment.linkedSubjectIds || [],
     });
-    const { error } = await supabase.from('appointments').insert([mapAppointmentToDB(userId, appointment)]);
-    if (error) console.error('Error adding appointment:', error);
+    await resilientWrite('addAppointment', () => supabase.from('appointments').insert([mapAppointmentToDB(userId, appointment)]));
   },
   async updateAppointment(userId: string, id: string, appointment: Partial<Appointment>) {
     saveEntityExtra(userId, 'appointments', id, {
@@ -454,22 +501,22 @@ export const db = {
     });
     const payload = mapAppointmentToDB(userId, appointment as Appointment);
     delete (payload as any).user_id;
-    const { error } = await supabase.from('appointments').update(payload).eq('id', id).eq('user_id', userId);
-    if (error) console.error('Error updating appointment:', error);
+    await resilientWrite('updateAppointment', () => supabase.from('appointments').update(payload).eq('id', id).eq('user_id', userId));
   },
   async deleteAppointment(userId: string, id: string) {
     removeEntityExtra(userId, 'appointments', id);
-    const { error } = await supabase.from('appointments').delete().eq('id', id).eq('user_id', userId);
-    if (error) console.error('Error deleting appointment:', error);
+    await resilientWrite('deleteAppointment', () => supabase.from('appointments').delete().eq('id', id).eq('user_id', userId));
   },
 
   // --- Schedule Items ---
   async getScheduleItems(userId: string) {
-    const { data, error } = await supabase.from('schedule_items').select('*').eq('user_id', userId);
-    if (error) console.error('Error fetching schedule_items:', error);
+    const rows = await cacheRead<any>(`unistudent_schedule_items_${userId}`, async () => {
+      const { data, error } = await supabase.from('schedule_items').select('*').eq('user_id', userId);
+      if (error) { console.error('Error fetching schedule_items:', error); return null; }
+      return (data || []).map(mapScheduleItemFromDB);
+    });
     const extras = getEntityExtras(userId, 'schedule_items');
-    return (data || []).map(row => {
-      const item = mapScheduleItemFromDB(row);
+    return rows.map(item => {
       const extra = extras[item.id] || {};
       return {
         ...item,
@@ -485,8 +532,23 @@ export const db = {
       groupId: item.groupId,
       attachments: item.attachments || [],
     });
-    const { error } = await supabase.from('schedule_items').insert([mapScheduleItemToDB(userId, item)]);
-    if (error) console.error('Error adding schedule_item:', error);
+    const payload = mapScheduleItemToDB(userId, item);
+    // Primary insert includes optional text columns. If the live schema
+    // predates them (PGRST204), retry without them so the item never
+    // silently vanishes after refresh.
+    let res = await supabase.from('schedule_items').insert([payload]);
+    if (res.error && (res.error as any).code === 'PGRST204') {
+      console.warn('schedule_items optional columns missing. Retrying without them.');
+      const minimal: any = { ...payload };
+      delete minimal.location;
+      delete minimal.instructor;
+      res = await supabase.from('schedule_items').insert([minimal]);
+    }
+    if (res.error) {
+      console.warn('schedule_items insert failed, retrying once...', res.error);
+      const retry = await supabase.from('schedule_items').insert([payload]);
+      if (retry.error) console.error('Error adding schedule_item:', retry.error);
+    }
   },
   async updateScheduleItem(userId: string, id: string, item: Partial<ScheduleItem>) {
     saveEntityExtra(userId, 'schedule_items', id, {
@@ -497,13 +559,11 @@ export const db = {
     const payload = mapScheduleItemToDB(userId, item as ScheduleItem);
     delete (payload as any).user_id;
     
-    const { error } = await supabase.from('schedule_items').update(payload).eq('id', id).eq('user_id', userId);
-    if (error) console.error('Error updating schedule_item:', error);
+    await resilientWrite('updateScheduleItem', () => supabase.from('schedule_items').update(payload).eq('id', id).eq('user_id', userId));
   },
   async deleteScheduleItem(userId: string, id: string) {
     removeEntityExtra(userId, 'schedule_items', id);
-    const { error } = await supabase.from('schedule_items').delete().eq('id', id).eq('user_id', userId);
-    if (error) console.error('Error deleting schedule_item:', error);
+    await resilientWrite('deleteScheduleItem', () => supabase.from('schedule_items').delete().eq('id', id).eq('user_id', userId));
   },
 
   // --- Groups ---
@@ -576,12 +636,14 @@ export const db = {
     if (file.yearIndex !== undefined) payload.year_index = file.yearIndex;
     if (file.semesterIndex !== undefined) payload.semester_index = file.semesterIndex;
 
-    const { error } = await supabase.from('drive_files').update(payload).eq('id', id).eq('user_id', userId);
-    if (error) console.error('Error updating drive_file:', error);
+    await resilientWrite('updateDriveFile', () =>
+      supabase.from('drive_files').update(payload).eq('id', id).eq('user_id', userId)
+    );
   },
   async deleteDriveFile(userId: string, id: string) {
-    const { error } = await supabase.from('drive_files').delete().eq('id', id).eq('user_id', userId);
-    if (error) console.error('Error deleting drive_file:', error);
+    await resilientWrite('deleteDriveFile', () =>
+      supabase.from('drive_files').delete().eq('id', id).eq('user_id', userId)
+    );
   },
 
   // --- Feedback & Suggestions ---
@@ -2831,6 +2893,9 @@ function mapScheduleItemFromDB(row: any): ScheduleItem {
     location: row.location,
     type: row.type,
     instructor: row.instructor,
+    // The UI edits/renders the doctor name as `doctorName`; the DB column is
+    // `instructor`. Keep both in sync so the name survives refreshes.
+    doctorName: row.instructor || undefined,
     groupId: row.group_id,
     priority: row.priority || 'medium',
     attachments: row.attachments || []
@@ -2847,7 +2912,9 @@ function mapScheduleItemToDB(userId: string, item: ScheduleItem) {
   if (item.endTime !== undefined) payload.end_time = item.endTime;
   if (item.location !== undefined) payload.location = item.location;
   if (item.type !== undefined) payload.type = item.type;
-  if (item.instructor !== undefined) payload.instructor = item.instructor;
+  if (item.doctorName !== undefined || item.instructor !== undefined) {
+    payload.instructor = item.doctorName ?? item.instructor;
+  }
   // if (item.groupId !== undefined) payload.group_id = item.groupId === '' ? null : item.groupId;
   // if (item.priority !== undefined) payload.priority = item.priority;
   // if (item.attachments !== undefined) payload.attachments = item.attachments;

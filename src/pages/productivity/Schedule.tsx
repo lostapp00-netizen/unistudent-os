@@ -670,12 +670,12 @@ export function Schedule() {
                                   </h4>
                                 </div>
 
-                                {(item.doctorName || item.location) && (
+                                {(item.doctorName || item.instructor || item.location) && (
                                   <div className="pt-1.5 border-t border-black/5 dark:border-white/10 flex flex-col gap-0.5 text-[10px] font-bold text-zinc-600 dark:text-zinc-300">
-                                    {item.doctorName && (
+                                    {(item.doctorName || item.instructor) && (
                                       <div className="flex items-center gap-1.5 truncate">
                                         <User size={11} className="shrink-0 opacity-70 text-blue-600 dark:text-blue-400" />
-                                        <span className="truncate">{item.doctorName}</span>
+                                        <span className="truncate">{item.doctorName || item.instructor}</span>
                                       </div>
                                     )}
                                     {item.location && (

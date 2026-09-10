@@ -453,19 +453,21 @@ export function DriveTab() {
             {currentFiles.map(file => (
               <li 
                 key={file.id} 
-                className="group flex items-center justify-between p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer" 
+                className="group p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors" 
                 onClick={() => handleItemClick(file)}
               >
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <div className={`p-3 rounded-2xl ${
+                {/* Name block: wraps up to 3 lines — the card grows with the name,
+                    nothing ever hides behind the action buttons */}
+                <div className="flex items-start gap-3.5">
+                  <div className={`p-3 rounded-2xl shrink-0 ${
                     file.type === 'folder' 
                       ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/40' 
                       : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700/60'
                   }`}>
                     {file.type === 'folder' ? <Folder size={22} /> : <FileText size={22} />}
                   </div>
-                  <div className="min-w-0">
-                    <p className="font-bold text-sm text-zinc-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-sm text-zinc-900 dark:text-white whitespace-normal break-words line-clamp-3 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors cursor-pointer">
                       {file.name}
                     </p>
                     <p className="text-xs text-zinc-400 mt-0.5">
@@ -474,15 +476,15 @@ export function DriveTab() {
                   </div>
                 </div>
 
-                {/* Actions: 2x2 grid so the file name keeps its full width */}
-                <div className="grid grid-cols-2 gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                {/* Actions: 2x2 grid BELOW the name — full-width buttons */}
+                <div className="grid grid-cols-2 gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
                   {/* Transfer / Move Button */}
                   <button
                     onClick={() => openMoveModal(file)}
                     className="p-2 text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 dark:hover:text-blue-400 border border-zinc-200 dark:border-zinc-700/60 rounded-xl transition-all shadow-2xs cursor-pointer"
                     title={isAr ? 'نقل إلى مجلد آخر' : 'Move to another folder'}
                   >
-                    <Move size={15} />
+                    <Move size={15} className="mx-auto" />
                   </button>
 
                   {/* Preview / View in Browser */}
@@ -492,7 +494,7 @@ export function DriveTab() {
                       className="p-2 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-all rounded-xl shadow-2xs cursor-pointer"
                       title={isAr ? 'معاينة في المتصفح' : 'Preview'}
                     >
-                      <Eye size={15} />
+                      <Eye size={15} className="mx-auto" />
                     </button>
                   )}
 
@@ -504,7 +506,7 @@ export function DriveTab() {
                       className="p-2 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 disabled:opacity-50 transition-all rounded-xl shadow-2xs cursor-pointer"
                       title={isAr ? 'تنزيل الملف' : 'Download'}
                     >
-                      {downloadingFileId === file.id ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                      {downloadingFileId === file.id ? <Loader2 size={15} className="animate-spin mx-auto" /> : <Download size={15} className="mx-auto" />}
                     </button>
                   )}
 
@@ -514,7 +516,7 @@ export function DriveTab() {
                     className="p-2 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all rounded-xl shadow-2xs cursor-pointer"
                     title={isAr ? 'حذف' : 'Delete'}
                   >
-                    <Trash2 size={15} />
+                    <Trash2 size={15} className="mx-auto" />
                   </button>
                 </div>
               </li>
