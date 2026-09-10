@@ -18,7 +18,8 @@ import {
   Home,
   Check,
   X,
-  Loader2
+  Loader2,
+  Pencil
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { DriveFile } from '../../types';
@@ -57,7 +58,7 @@ function FolderTreeItem({
   return (
     <div className="space-y-1">
       <div
-        className={`flex items-center justify-between p-2.5 rounded-2xl border transition-all cursor-pointer ${
+        className={`w-max min-w-full flex items-center justify-between p-2.5 rounded-2xl border transition-all cursor-pointer ${
           isSelected
             ? 'border-blue-600 bg-blue-50/80 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-bold shadow-xs'
             : 'border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 text-zinc-800 dark:text-zinc-200'
@@ -91,7 +92,7 @@ function FolderTreeItem({
             <Folder size={16} className="text-blue-500 shrink-0" />
           )}
 
-          <span className="text-xs truncate font-medium">{folder.name}</span>
+          <span className="text-xs whitespace-nowrap font-medium">{folder.name}</span>
           {hasChildren && (
             <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-400 font-bold">
               {children.length}
@@ -182,6 +183,9 @@ export function DriveTab() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [uploadFileSelected, setUploadFileSelected] = useState<File | null>(null);
   const [uploadForm, setUploadForm] = useState({ name: '', yearIndex: '1', semesterIndex: '1' });
+  // When set, the upload modal renders in EDIT mode: the file is already
+  // uploaded — only name / year / semester are editable, no re-upload.
+  const [editingFile, setEditingFile] = useState<DriveFile | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
   // Current year/semester marked in Settings (Semesters Manager)
@@ -191,12 +195,36 @@ export function DriveTab() {
 
   const openUploadModal = () => {
     setUploadFileSelected(null);
+    setEditingFile(null);
     setUploadForm({
       name: '',
       yearIndex: String(currentSemesterInfo?.yearIndex || 1),
       semesterIndex: String(currentSemesterInfo?.semesterIndex || 1)
     });
     setIsUploadModalOpen(true);
+  };
+
+  const openEditModal = (file: DriveFile) => {
+    setEditingFile(file);
+    setUploadFileSelected(null);
+    setUploadForm({
+      name: file.name,
+      yearIndex: String(Number(file.yearIndex) || 1),
+      semesterIndex: String(Number(file.semesterIndex) || 1)
+    });
+    setIsUploadModalOpen(true);
+  };
+
+  const confirmEdit = () => {
+    if (!editingFile) return;
+    const displayName = uploadForm.name.trim() || editingFile.name;
+    updateFile(editingFile.id, {
+      name: displayName,
+      yearIndex: Number(uploadForm.yearIndex) || 1,
+      semesterIndex: Number(uploadForm.semesterIndex) || 1
+    });
+    setIsUploadModalOpen(false);
+    setEditingFile(null);
   };
 
   const handleUploadFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -510,6 +538,17 @@ export function DriveTab() {
                     </button>
                   )}
 
+                  {/* Edit Button (name / year / semester) */}
+                  {file.type === 'file' && (
+                    <button
+                      onClick={() => openEditModal(file)}
+                      className="p-2 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-all rounded-xl shadow-2xs cursor-pointer"
+                      title={isAr ? 'تعديل الاسم أو السنة أو الفصل' : 'Edit name, year or semester'}
+                    >
+                      <Pencil size={15} className="mx-auto" />
+                    </button>
+                  )}
+
                   {/* Delete Button */}
                   <button
                     onClick={() => setFileToDelete(file)}
@@ -550,12 +589,18 @@ export function DriveTab() {
                   {isAr ? 'اختر مجلد الوجهة (اضغط على السهم لفتح المجلدات الفرعية):' : 'Select Destination (click arrow to expand subfolders):'}
                 </label>
               </div>
+              <p className="text-[11px] text-zinc-400 -mt-1.5">
+                {isAr ? 'اسحب يمين وشمال لاستكشاف المسارات الطويلة 🡒🡐' : 'Swipe left / right to explore long paths'}
+              </p>
 
-              <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+              {/* Horizontal "map" navigation: rows expand beyond the panel and
+                  can be panned left/right with a finger, like the calendar —
+                  deeply nested folder names are never clipped. */}
+              <div className="space-y-1.5 max-h-72 overflow-y-auto overflow-x-auto pr-1">
                 {/* Root Destination Option */}
                 <div
                   onClick={() => setSelectedDestinationFolderId(null)}
-                  className={`p-2.5 rounded-2xl border flex items-center justify-between cursor-pointer transition-all ${
+                  className={`w-max min-w-full p-2.5 rounded-2xl border flex items-center justify-between cursor-pointer transition-all ${
                     selectedDestinationFolderId === null
                       ? 'border-blue-600 bg-blue-50/80 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-bold shadow-xs'
                       : 'border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 text-zinc-800 dark:text-zinc-200'
@@ -626,14 +671,17 @@ export function DriveTab() {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-md w-full shadow-2xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
-              <div className="flex items-center gap-2">
-                <Upload className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                <h3 className="font-bold text-base text-zinc-900 dark:text-white">
-                  {isAr ? 'رفع ملف جديد' : 'Upload New File'}
+              <div className="flex items-center gap-2 min-w-0">
+                {editingFile ? <Pencil className="w-5 h-5 text-amber-500 shrink-0" /> : <Upload className="w-5 h-5 text-blue-600 dark:text-blue-400" />}
+                <h3 className="font-bold text-base text-zinc-900 dark:text-white truncate">
+                  {editingFile
+                    ? (isAr ? 'تعديل الملف: ' : 'Edit File: ')
+                    : (isAr ? 'رفع ملف جديد' : 'Upload New File')}
+                  {editingFile && <span className="text-amber-500">{editingFile.name}</span>}
                 </h3>
               </div>
               <button
-                onClick={() => !isUploading && setIsUploadModalOpen(false)}
+                onClick={() => { if (!isUploading) { setIsUploadModalOpen(false); setEditingFile(null); } }}
                 className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg cursor-pointer"
               >
                 <X size={18} />
@@ -641,6 +689,20 @@ export function DriveTab() {
             </div>
 
             <div className="space-y-3.5">
+              {editingFile ? (
+                /* EDIT MODE: the file is already uploaded — no picker. */
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 mb-1.5">
+                    {isAr ? 'الملف المرفوع' : 'Uploaded file'}
+                  </label>
+                  <div className="flex items-center gap-2.5 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-2.5">
+                    <FileText size={16} className="text-blue-500 shrink-0" />
+                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-200 truncate">
+                      {editingFile.name} • {formatSize(editingFile.size)}
+                    </span>
+                  </div>
+                </div>
+              ) : (
               <div>
                 <label className="block text-xs font-bold text-zinc-500 mb-1.5">
                   {isAr ? 'اختر الملف من جهازك' : 'Pick a file from your device'}
@@ -678,6 +740,7 @@ export function DriveTab() {
                   </button>
                 </div>
               </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-zinc-500 mb-1.5">
@@ -726,20 +789,30 @@ export function DriveTab() {
 
             <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-100 dark:border-zinc-800">
               <button
-                onClick={() => setIsUploadModalOpen(false)}
+                onClick={() => { setIsUploadModalOpen(false); setEditingFile(null); }}
                 disabled={isUploading}
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer disabled:opacity-50"
               >
                 {isAr ? 'إلغاء' : 'Cancel'}
               </button>
-              <button
-                onClick={confirmUpload}
-                disabled={!uploadFileSelected || isUploading}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white transition-all shadow-md shadow-blue-500/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                <span>{isUploading ? (isAr ? 'جاري الرفع...' : 'Uploading...') : (isAr ? 'رفع الملف' : 'Upload')}</span>
-              </button>
+              {editingFile ? (
+                <button
+                  onClick={confirmEdit}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white transition-all shadow-md shadow-amber-500/25 cursor-pointer flex items-center gap-2"
+                >
+                  <Pencil size={14} />
+                  <span>{isAr ? 'حفظ التعديلات' : 'Save Changes'}</span>
+                </button>
+              ) : (
+                <button
+                  onClick={confirmUpload}
+                  disabled={!uploadFileSelected || isUploading}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white transition-all shadow-md shadow-blue-500/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  <span>{isUploading ? (isAr ? 'جاري الرفع...' : 'Uploading...') : (isAr ? 'رفع الملف' : 'Upload')}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
