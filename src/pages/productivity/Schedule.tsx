@@ -73,6 +73,19 @@ export function Schedule() {
 
   const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
   const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+
+  // Jump to the current month AND scroll the today cell into view — the
+  // calendar is wide (min-w-[1200px]) so on phones today's column can be
+  // off-screen horizontally.
+  const gotoToday = () => {
+    const now = new Date();
+    setCurrentDate(now);
+    const key = format(now, 'yyyy-MM-dd');
+    setTimeout(() => {
+      document.querySelector(`[data-date="${key}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }, 80);
+  };
+
   const monthName = new Intl.DateTimeFormat(i18n.language, { month: 'long', year: 'numeric' }).format(currentDate);
 
   const openAdd = (dayIdx?: number) => {
@@ -527,9 +540,9 @@ export function Schedule() {
       {/* View Mode: Month Calendar */}
       {viewMode === 'month' && (
         <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col flex-1">
-          <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/70 dark:bg-zinc-800/40">
-            <button 
-              onClick={prevMonth} 
+          <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2 bg-zinc-50/70 dark:bg-zinc-800/40">
+            <button
+              onClick={prevMonth}
               className="p-2 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-colors shadow-2xs cursor-pointer"
               title={isAr ? 'الشهر السابق' : 'Previous Month'}
             >
@@ -539,13 +552,22 @@ export function Schedule() {
               <h2 className="text-lg font-bold text-zinc-900 dark:text-white capitalize">{monthName}</h2>
               <p className="text-[11px] text-zinc-400">{isAr ? 'تقويم الجدول الدراسي فقط' : 'Schedule items only'}</p>
             </div>
-            <button 
-              onClick={nextMonth} 
-              className="p-2 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-colors shadow-2xs cursor-pointer"
-              title={isAr ? 'الشهر التالي' : 'Next Month'}
-            >
-              <ChevronLeft size={18} className={isAr ? '' : 'rotate-180'} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={gotoToday}
+                className="px-3.5 py-2 font-bold text-xs rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md shadow-blue-500/20 transition-all cursor-pointer"
+                title={isAr ? 'العودة لليوم الحالي' : 'Go to today'}
+              >
+                {isAr ? 'اليوم' : 'Today'}
+              </button>
+              <button
+                onClick={nextMonth}
+                className="p-2 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-colors shadow-2xs cursor-pointer"
+                title={isAr ? 'الشهر التالي' : 'Next Month'}
+              >
+                <ChevronLeft size={18} className={isAr ? '' : 'rotate-180'} />
+              </button>
+            </div>
           </div>
           
           <div className="overflow-x-auto flex-1">
@@ -564,10 +586,11 @@ export function Schedule() {
                   const dayItems = filteredScheduleItems.filter(s => s.dayOfWeek === dayOfWeek).sort((a, b) => a.startTime.localeCompare(b.startTime));
                   const isToday = isSameDay(day, new Date());
                   const isCurrentMonth = isSameMonth(day, currentDate);
-                  
+
                   return (
-                    <div 
-                      key={day.toString()} 
+                    <div
+                      key={day.toString()}
+                      data-date={format(day, 'yyyy-MM-dd')}
                       className={`min-h-[420px] p-2.5 transition-colors flex flex-col justify-between ${
                         !isCurrentMonth ? 'bg-zinc-50/70 dark:bg-zinc-900/40 text-zinc-400 dark:text-zinc-600' : 'bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200'
                       }`}
@@ -584,11 +607,20 @@ export function Schedule() {
                           </span>
 
                           <div className="flex items-center gap-1.5">
-                            {dayItems.length > 0 && (
-                              <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
-                                {dayItems.length} {isAr ? 'حصص' : 'classes'}
-                              </span>
-                            )}
+                            {dayItems.length > 0 && (() => {
+                              const lectures = dayItems.filter(s => s.type === 'lecture').length;
+                              const tutorials = dayItems.filter(s => s.type === 'tutorial').length;
+                              const labs = dayItems.filter(s => s.type === 'lab').length;
+                              const parts: string[] = [];
+                              if (lectures > 0) parts.push(`${lectures} ${isAr ? (lectures === 1 ? 'محاضرة' : 'محاضرات') : (lectures === 1 ? 'Lec' : 'Lecs')}`);
+                              if (tutorials > 0) parts.push(`${tutorials} ${isAr ? (tutorials === 1 ? 'سكشن' : 'سكاشن') : (tutorials === 1 ? 'Sec' : 'Secs')}`);
+                              if (labs > 0) parts.push(`${labs} ${isAr ? (labs === 1 ? 'معمل' : 'لابات') : (labs === 1 ? 'Lab' : 'Labs')}`);
+                              return parts.length > 0 ? (
+                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
+                                  {parts.join(' • ')}
+                                </span>
+                              ) : null;
+                            })()}
                             <button
                               onClick={() => openAdd(dayOfWeek)}
                               className="p-1 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition-colors cursor-pointer"
@@ -625,12 +657,12 @@ export function Schedule() {
                                 className={`p-2.5 rounded-2xl border transition-all hover:scale-[1.01] hover:shadow-md cursor-pointer flex flex-col justify-between gap-1.5 ${pillStyle}`}
                               >
                                 <div className="space-y-1 min-w-0">
-                                  <div className="flex items-center justify-between gap-1">
+                                  <div className="flex flex-wrap items-center justify-between gap-1">
                                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-md shrink-0 ${badgeStyle}`}>
                                       {typeText}
                                     </span>
-                                    <span className="flex items-center gap-1 font-black text-[10px] opacity-90 shrink-0">
-                                      <Clock size={10} /> {item.startTime} - {item.endTime}
+                                    <span className="flex items-center gap-1 font-black text-[10px] opacity-90 whitespace-nowrap">
+                                      <Clock size={10} className="shrink-0" /> {item.startTime} - {item.endTime}
                                     </span>
                                   </div>
                                   <h4 className="font-black text-xs sm:text-sm text-zinc-900 dark:text-white leading-tight line-clamp-2">

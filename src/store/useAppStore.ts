@@ -141,6 +141,31 @@ export interface AppState {
   syncWithUniversityDatabase: () => Promise<void>;
 }
 
+// --- Deleted template-file tombstones ---
+// Records template ids of drive items the user deleted on purpose, so the
+// university-database sync never resurrects them (the "deleted folder comes
+// back" bug). Per-device by design; survives sign-out.
+function getDeletedTemplateFileIds(userId: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(`unistudent_deleted_template_files_${userId}`);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function addDeletedTemplateFileId(userId: string, templateId: string): void {
+  try {
+    const key = `unistudent_deleted_template_files_${userId}`;
+    const raw = localStorage.getItem(key);
+    const list: string[] = raw ? JSON.parse(raw) : [];
+    if (!list.includes(templateId)) {
+      list.push(templateId);
+      localStorage.setItem(key, JSON.stringify(list.slice(-5000)));
+    }
+  } catch {}
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   userId: null,
   userEmail: null,
@@ -483,6 +508,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!userId) return;
     const target = files.find(f => f.id === id);
     if (target) {
+      // Tombstone template-derived items: folder deletes call deleteFile() per
+      // descendant, so the whole subtree gets recorded automatically and the
+      // sync will never re-import them.
+      if (target.universityTemplateId) {
+        addDeletedTemplateFileId(userId, target.universityTemplateId);
+      }
       import('../lib/backblaze').then(({ deleteFromB2, extractB2KeyFromUrl }) => {
         const key = target.b2FileId || extractB2KeyFromUrl(target.url);
         if (key) {
@@ -1604,6 +1635,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       // 3. Sync Drive Files
+      const deletedTemplateFileIds = getDeletedTemplateFileIds(userId);
       const combinedDriveFiles: DriveFile[] = [
         ...(!isCollegeSource ? (matchedDb.driveFiles || []) : []),
         ...(!isSpecSource && specDb ? (specDb.driveFiles || []) : [])
@@ -1625,6 +1657,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         const importTemplateFile = async (tFile: DriveFile): Promise<void> => {
           if (!tFile || processedTemplates.has(tFile.id)) return;
           processedTemplates.add(tFile.id);
+
+          // User deleted this template item on purpose — never resurrect it.
+          if (deletedTemplateFileIds.has(tFile.id)) return;
 
           if (tFile.parentId) {
             await importTemplateFile(templateById.get(tFile.parentId));
@@ -1679,11 +1714,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           await importTemplateFile(tFile);
         }
 
-        // Remove drive files that were deleted from template
+        // Remove drive files that were deleted from template. Only rows
+        // carrying a template id are template-derived — treating any file
+        // with a URL as template-derived used to auto-delete the student's
+        // own uploads a few seconds after upload (uploads have URLs too).
         const remainingFiles: DriveFile[] = [];
         for (const f of currentFiles) {
           const fName = (f.name || '').trim().toLowerCase();
-          const isFromTemplate = Boolean(f.universityTemplateId) || Boolean(f.url);
+          const isFromTemplate = Boolean(f.universityTemplateId);
           const stillInTemplate = (f.universityTemplateId && templateFileMap.has(f.universityTemplateId)) || templateNames.has(fName);
 
           if (isFromTemplate && !stillInTemplate) {

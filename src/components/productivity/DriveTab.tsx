@@ -474,8 +474,8 @@ export function DriveTab() {
                   </div>
                 </div>
 
-                {/* Actions */}
-                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                {/* Actions: 2x2 grid so the file name keeps its full width */}
+                <div className="grid grid-cols-2 gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                   {/* Transfer / Move Button */}
                   <button
                     onClick={() => openMoveModal(file)}

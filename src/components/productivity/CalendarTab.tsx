@@ -30,6 +30,17 @@ export function CalendarTab() {
   
   const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
   const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+
+  // Jump to the current month AND scroll the today cell into view — the
+  // calendar is wide (min-w-[1200px]) so on phones today's column can be
+  // off-screen horizontally.
+  const gotoToday = () => {
+    setCurrentDate(new Date());
+    const key = format(new Date(), 'yyyy-MM-dd');
+    setTimeout(() => {
+      document.querySelector(`[data-date="${key}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }, 80);
+  };
   
   const monthName = new Intl.DateTimeFormat(i18n.language, { month: 'long', year: 'numeric' }).format(currentDate);
   
@@ -143,8 +154,8 @@ export function CalendarTab() {
           >
             <ChevronRight size={18} className={isAr ? '' : 'rotate-180'} />
           </button>
-          <button 
-            onClick={() => setCurrentDate(new Date())} 
+          <button
+            onClick={gotoToday}
             className="px-5 py-2 font-bold text-xs rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md shadow-blue-500/20 transition-all cursor-pointer"
           >
             {isAr ? 'اليوم الحالي' : 'Today'}
@@ -179,11 +190,12 @@ export function CalendarTab() {
                 const dayFormatted = format(day, 'yyyy-MM-dd');
                 
                 return (
-                  <div 
-                    key={day.toString()} 
+                  <div
+                    key={day.toString()}
+                    data-date={dayFormatted}
                     className={`min-h-[420px] p-2.5 transition-colors flex flex-col justify-between ${
-                      !isCurrentMonth 
-                        ? 'bg-zinc-50/70 dark:bg-zinc-900/40 text-zinc-400 dark:text-zinc-600' 
+                      !isCurrentMonth
+                        ? 'bg-zinc-50/70 dark:bg-zinc-900/40 text-zinc-400 dark:text-zinc-600'
                         : 'bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200'
                     }`}
                   >
@@ -273,14 +285,14 @@ export function CalendarTab() {
                               className={`p-2.5 rounded-2xl border transition-all hover:scale-[1.01] hover:shadow-md cursor-pointer flex flex-col justify-between gap-1.5 ${pillStyle}`}
                             >
                               <div className="space-y-1 min-w-0">
-                                <div className="flex items-center justify-between gap-1">
+                                <div className="flex flex-wrap items-center justify-between gap-1">
                                   <span className={`text-[10px] font-black px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0 ${badgeStyle}`}>
                                     {icon}
                                     <span>{tagLabel}</span>
                                   </span>
                                   {event.time && (
-                                    <span className="flex items-center gap-1 font-black text-[10px] opacity-90 shrink-0">
-                                      <Clock size={10} /> {event.time} {event.endTime ? `- ${event.endTime}` : ''}
+                                    <span className="flex items-center gap-1 font-black text-[10px] opacity-90 whitespace-nowrap">
+                                      <Clock size={10} className="shrink-0" /> {event.time} {event.endTime ? `- ${event.endTime}` : ''}
                                     </span>
                                   )}
                                 </div>
