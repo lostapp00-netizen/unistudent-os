@@ -78,6 +78,10 @@ ALTER TABLE public.subjects ADD COLUMN IF NOT EXISTS include_in_gpa BOOLEAN DEFA
 ALTER TABLE public.subjects ADD COLUMN IF NOT EXISTS final_grade_letter TEXT;
 ALTER TABLE public.subjects ADD COLUMN IF NOT EXISTS university_template_id TEXT;
 
+CREATE INDEX IF NOT EXISTS subjects_university_template_id_idx
+    ON public.subjects (user_id, university_template_id)
+    WHERE university_template_id IS NOT NULL;
+
 ALTER TABLE public.subjects ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow authenticated all subjects" ON public.subjects;
 CREATE POLICY "allow authenticated all subjects" ON public.subjects
@@ -239,6 +243,11 @@ ALTER TABLE public.drive_files ADD COLUMN IF NOT EXISTS b2_file_id TEXT;
 ALTER TABLE public.drive_files ADD COLUMN IF NOT EXISTS parent_id TEXT;
 ALTER TABLE public.drive_files ADD COLUMN IF NOT EXISTS year_index INTEGER;
 ALTER TABLE public.drive_files ADD COLUMN IF NOT EXISTS semester_index INTEGER;
+ALTER TABLE public.drive_files ADD COLUMN IF NOT EXISTS university_template_id TEXT;
+
+CREATE INDEX IF NOT EXISTS drive_files_university_template_id_idx
+    ON public.drive_files (user_id, university_template_id)
+    WHERE university_template_id IS NOT NULL;
 
 ALTER TABLE public.drive_files ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow authenticated all drive_files" ON public.drive_files;
@@ -268,3 +277,9 @@ ALTER TABLE public.university_pending_updates ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all access university_pending_updates" ON public.university_pending_updates;
 CREATE POLICY "Allow all access university_pending_updates" ON public.university_pending_updates
 FOR ALL USING (true) WITH CHECK (true);
+
+-- ------------------------------------------------------------------------------
+-- 10) تحديث كاش PostgREST — لو ظهر خطأ "Could not find the ... column ...
+--     in the schema cache" بعد تنفيذ الملف، الأمر ده بيفرض إعادة تحميل الكاش.
+-- ------------------------------------------------------------------------------
+NOTIFY pgrst, 'reload schema';

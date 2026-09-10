@@ -71,6 +71,14 @@ function describeError(err: any): string {
   return (err.message || err.details || err.hint || String(err)).slice(0, 220);
 }
 
+// PostgREST names missing columns in schema-cache errors, e.g.:
+// "Could not find the 'university_template_id' column of 'subjects' in the schema cache"
+function missingColumnFromError(err: any): string | null {
+  const msg = err && typeof err.message === 'string' ? err.message : '';
+  const m = msg.match(/Could not find the '([^']+)' column/i);
+  return m ? m[1] : null;
+}
+
 function getPendingWrites(userId: string): PendingWriteOp[] {
   try {
     const raw = localStorage.getItem(`unistudent_pending_writes_${userId}`);
@@ -119,7 +127,18 @@ export async function flushPendingWrites(userId: string): Promise<void> {
       try {
         let error: any = null;
         if (op.op === 'insert') {
-          const res = await supabase.from(op.table).insert([op.payload]);
+          let payload = op.payload;
+          let res = await supabase.from(op.table).insert([payload]);
+          // If the live schema lacks a column (e.g. pending SQL migration),
+          // drop it and retry so the queued row is not stuck forever.
+          for (let i = 0; i < 4 && res.error; i++) {
+            const missing = missingColumnFromError(res.error);
+            if (payload && missing && Object.prototype.hasOwnProperty.call(payload, missing)) {
+              console.warn(`Flush ${op.table}: dropping missing column '${missing}' and retrying.`);
+              delete payload[missing];
+              res = await supabase.from(op.table).insert([payload]);
+            } else break;
+          }
           error = res.error;
           // Already applied on a previous pass — treat as success.
           if (error && (error as any).code === '23505') error = null;
@@ -403,22 +422,28 @@ export const db = {
     } catch {}
 
     try {
-      let { error } = await supabase.from('subjects').insert([mapSubjectToDB(userId, subject)]);
-      if (error) {
-        // Retry without non-critical columns if schema difference
-        const payload: any = mapSubjectToDB(userId, subject);
-        delete payload.include_in_gpa;
-        delete payload.final_grade_letter;
-        const retry = await supabase.from('subjects').insert([payload]);
-        if (retry.error) {
-          console.error('Error adding subject:', retry.error);
-          recordFailedWrite({
-            userId, table: 'subjects', op: 'insert', payload,
-            errorMessage: describeError(retry.error)
-          });
-        } else {
-          void flushPendingWrites(userId).catch(() => {});
+      const payload: any = mapSubjectToDB(userId, subject);
+      let error: any = null;
+      // Insert, dropping any column the live schema doesn't have yet
+      // (schema-cache/migration lag) so the row is never lost entirely.
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const res = await supabase.from('subjects').insert([payload]);
+        error = res.error;
+        if (!error) break;
+        const missing = missingColumnFromError(error);
+        if (missing && Object.prototype.hasOwnProperty.call(payload, missing)) {
+          console.warn(`subjects insert: dropping missing column '${missing}' and retrying.`);
+          delete payload[missing];
+          continue;
         }
+        break;
+      }
+      if (error) {
+        console.error('Error adding subject:', error);
+        recordFailedWrite({
+          userId, table: 'subjects', op: 'insert', payload,
+          errorMessage: describeError(error)
+        });
       } else {
         void flushPendingWrites(userId).catch(() => {});
       }
@@ -437,36 +462,48 @@ export const db = {
       localStorage.setItem(key, JSON.stringify(list.map(s => s.id === id ? { ...s, ...subject } : s)));
     } catch {}
 
-    const payload: any = {};
-    if (subject.code !== undefined) payload.code = subject.code;
-    if (subject.name !== undefined) payload.name = subject.name;
-    if (subject.creditHours !== undefined) payload.credit_hours = subject.creditHours;
-    if (subject.totalMarks !== undefined) payload.total_marks = subject.totalMarks;
-    if (subject.yearIndex !== undefined) payload.year_index = subject.yearIndex;
-    if (subject.semesterIndex !== undefined) payload.semester_index = subject.semesterIndex;
-    if (subject.status !== undefined) payload.status = subject.status;
-    if (subject.distributions !== undefined) payload.distributions = subject.distributions;
-    if (subject.finalGradeLetter !== undefined) payload.final_grade_letter = subject.finalGradeLetter;
-    if (subject.universityTemplateId !== undefined) payload.university_template_id = subject.universityTemplateId;
-    if (subject.includeInGpa !== undefined) payload.include_in_gpa = subject.includeInGpa;
-    
     try {
-      const { error } = await supabase.from('subjects').update(payload).eq('id', id).eq('user_id', userId);
-      if (error) {
-        delete payload.final_grade_letter;
-        const retry = await supabase.from('subjects').update(payload).eq('id', id).eq('user_id', userId);
-        if (retry.error) {
-          console.error('Error updating subject:', retry.error);
-          recordFailedWrite({
-            userId, table: 'subjects', op: 'update', payload, matchId: id,
-            errorMessage: describeError(retry.error)
-          });
+      const payload: any = {};
+      if (subject.code !== undefined) payload.code = subject.code;
+      if (subject.name !== undefined) payload.name = subject.name;
+      if (subject.creditHours !== undefined) payload.credit_hours = subject.creditHours;
+      if (subject.totalMarks !== undefined) payload.total_marks = subject.totalMarks;
+      if (subject.yearIndex !== undefined) payload.year_index = subject.yearIndex;
+      if (subject.semesterIndex !== undefined) payload.semester_index = subject.semesterIndex;
+      if (subject.status !== undefined) payload.status = subject.status;
+      if (subject.distributions !== undefined) payload.distributions = subject.distributions;
+      if (subject.finalGradeLetter !== undefined) payload.final_grade_letter = subject.finalGradeLetter;
+      if (subject.universityTemplateId !== undefined) payload.university_template_id = subject.universityTemplateId;
+      if (subject.includeInGpa !== undefined) payload.include_in_gpa = subject.includeInGpa;
+
+      let error: any = null;
+      // Update, dropping any column the live schema doesn't have yet.
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const res = await supabase.from('subjects').update(payload).eq('id', id).eq('user_id', userId);
+        error = res.error;
+        if (!error) break;
+        const missing = missingColumnFromError(error);
+        if (missing && Object.prototype.hasOwnProperty.call(payload, missing)) {
+          console.warn(`subjects update: dropping missing column '${missing}' and retrying.`);
+          delete payload[missing];
+          continue;
         }
+        break;
+      }
+      if (error) {
+        console.error('Error updating subject:', error);
+        recordFailedWrite({
+          userId, table: 'subjects', op: 'update', payload, matchId: id,
+          errorMessage: describeError(error)
+        });
+      } else {
+        void flushPendingWrites(userId).catch(() => {});
       }
     } catch (e) {
       console.warn('Supabase updateSubject error:', e);
       recordFailedWrite({
-        userId, table: 'subjects', op: 'update', payload, matchId: id,
+        userId, table: 'subjects', op: 'update',
+        payload: mapSubjectToDB(userId, subject as Subject), matchId: id,
         errorMessage: describeError(e)
       });
     }
