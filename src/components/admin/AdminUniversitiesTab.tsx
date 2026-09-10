@@ -3703,7 +3703,7 @@ export function AdminUniversitiesTab({
       {/* --- MODAL: CREATE SPECIALIZATION IN COLLEGE --- */}
       {isCreateSpecModalOpen && selectedCollegeDb && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-2xl max-h-[92vh] shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-3xl max-h-[92vh] shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
             
             {/* Header */}
             <div className="p-6 sm:p-7 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
@@ -3873,49 +3873,63 @@ export function AdminUniversitiesTab({
                             <div
                               key={st.userId}
                               onClick={() => handleSelectStudentForSpec(st)}
-                              className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                                isSelected 
-                                  ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-500 shadow-xs ring-2 ring-purple-500/20' 
+                              className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-500 shadow-xs ring-2 ring-purple-500/20'
                                   : 'bg-zinc-50/50 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700/60 hover:border-purple-300 dark:hover:border-purple-800'
                               }`}
                             >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
-                                  isSelected 
-                                    ? 'bg-purple-600 text-white' 
+                              <div className="flex items-start gap-3">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shrink-0 ${
+                                  isSelected
+                                    ? 'bg-purple-600 text-white'
                                     : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300'
                                 }`}>
-                                  {isSelected ? <Check size={16} /> : (st.name?.slice(0, 1) || 'S')}
+                                  {isSelected ? <Check size={18} /> : (st.name?.slice(0, 1) || 'S')}
                                 </div>
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-black text-xs text-zinc-900 dark:text-white truncate">
+
+                                <div className="min-w-0 flex-1 space-y-1.5">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-black text-sm text-zinc-900 dark:text-white">
                                       {st.name}
                                     </span>
                                     {st.specialization ? (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-black shrink-0 border border-purple-200 dark:border-purple-800">
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-black border border-purple-200 dark:border-purple-800">
                                         <Compass size={11} />
                                         <span>{st.specialization}</span>
                                       </span>
                                     ) : (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 text-[10px] font-medium shrink-0">
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 text-[10px] font-medium">
                                         <span>{isAr ? 'بدون تخصص مسجل' : 'No Major'}</span>
                                       </span>
                                     )}
                                   </div>
-                                  <span className="text-[11px] text-zinc-400 truncate block">
+                                  <p className="text-xs text-zinc-500 dark:text-zinc-400 break-all leading-relaxed">
                                     {st.email}
+                                  </p>
+                                  <div className="flex items-center gap-2 flex-wrap text-[10px] font-bold">
+                                    <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">
+                                      {st.university || (isAr ? 'جامعة غير محددة' : 'No university')}
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">
+                                      {st.college || (isAr ? 'كلية غير محددة' : 'No college')}
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900/60">
+                                      {isAr
+                                        ? `الترم الحالي: سنة ${st.currentYear || 1} - فصل ${st.currentSemester || 1}`
+                                        : `Now: Y${st.currentYear || 1}-S${st.currentSemester || 1}`}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="text-right shrink-0 space-y-1">
+                                  <span className="block px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 text-[11px] font-black">
+                                    {typeof st.specSubjectsCount === 'number' ? st.specSubjectsCount : (st.subjects || []).filter((x: Subject) => (x.yearIndex || 1) > Number(st.specializationStartYear || 2) || ((x.yearIndex || 1) === Number(st.specializationStartYear || 2) && (x.semesterIndex || 1) >= Number(st.specializationStartSemester || 1))).length} {isAr ? 'مادة تخصص' : 'spec subjs'}
+                                  </span>
+                                  <span className="block px-2 py-0.5 text-[10px] font-bold text-zinc-400">
+                                    {st.subjectsCount || st.subjects?.length || 0} {isAr ? 'إجمالي' : 'total'}
                                   </span>
                                 </div>
-                              </div>
-
-                              <div className="text-right shrink-0">
-                                <span className="inline-block px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 text-[11px] font-black">
-                                  {typeof st.specSubjectsCount === 'number' ? st.specSubjectsCount : (st.subjects || []).filter((x: Subject) => (x.yearIndex || 1) > Number(st.specializationStartYear || 2) || ((x.yearIndex || 1) === Number(st.specializationStartYear || 2) && (x.semesterIndex || 1) >= Number(st.specializationStartSemester || 1))).length} {isAr ? 'مادة تخصص' : 'spec subjs'}
-                                </span>
-                                <span className="block mt-1 text-[10px] font-bold text-zinc-400">
-                                  {st.subjectsCount || st.subjects?.length || 0} {isAr ? 'إجمالي المواد' : 'total'}
-                                </span>
                               </div>
                             </div>
                           );

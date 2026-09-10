@@ -222,10 +222,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         email: email || settingsData?.email || localSettings.email || ''
       };
 
-      if (email && (!mergedSettings.email || mergedSettings.email !== email)) {
-        mergedSettings.email = email;
-        db.upsertSettings(userId, { email }).catch(() => {});
-      }
+      // Always persist the settings row on login. Brand-new accounts previously
+      // never wrote a row (the old equality check always matched), so they were
+      // invisible in the admin panel until the student saved something manually.
+      db.upsertSettings(userId, { email: email || undefined, name: mergedSettings.name } as any).catch(() => {});
 
       try {
         const knownRaw = localStorage.getItem('unistudent_known_users');
@@ -957,25 +957,54 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Drive files: Non-destructive append & merge
       if (options?.importDrive !== false) {
-        const incomingDriveFiles: DriveFile[] = specDb 
+        const incomingDriveFiles: DriveFile[] = specDb
           ? (specDb.driveFiles || [])
           : (mainCollegeDb.driveFiles || []);
 
         if (incomingDriveFiles.length > 0) {
           const currentDrive = get().files || [];
-          const existingNames = new Set(currentDrive.map(f => `${f.name}-${f.type}-${f.parentId || 'root'}`));
+          const existingTemplateIds = new Set(
+            currentDrive.map(f => f.universityTemplateId).filter(Boolean) as string[]
+          );
+          const existingSignatures = new Set(currentDrive.map(f => `${f.name}-${f.type}-${f.parentId || 'root'}`));
 
           const idMap = new Map<string, string>();
           const clonedFiles: DriveFile[] = [];
-          const sortedFiles = [...incomingDriveFiles].sort((a, b) => (a.type === 'folder' ? -1 : 1));
+          const clonedTemplateIds = new Set<string>();
 
-          for (const file of sortedFiles) {
+          // Parent-first (topological) clone: a folder is always cloned before
+          // its children so idMap can link them. The old flat "folders first"
+          // sort used an invalid comparator that produced arbitrary order and
+          // flattened nested folders to the root.
+          const byId = new Map(incomingDriveFiles.map(f => [f.id, f]));
+          const inProgress = new Set<string>();
+          const cloneFile = async (file: DriveFile): Promise<void> => {
+            if (!file || clonedTemplateIds.has(file.id) || inProgress.has(file.id)) return;
+            inProgress.add(file.id);
+
+            // Clone parent chain first
+            if (file.parentId) {
+              await cloneFile(byId.get(file.parentId));
+            }
+
+            clonedTemplateIds.add(file.id);
+
+            // Idempotency: skip if this template item was already imported
+            if (existingTemplateIds.has(file.id)) {
+              idMap.set(file.id, currentDrive.find(f => f.universityTemplateId === file.id)!.id);
+              return;
+            }
             const signature = `${file.name}-${file.type}-${file.parentId || 'root'}`;
-            if (existingNames.has(signature)) continue;
+            if (existingSignatures.has(signature)) {
+              // Map to the existing local twin so children can attach to it
+              const twin = currentDrive.find(f => f.type === file.type && f.name === file.name);
+              if (twin) idMap.set(file.id, twin.id);
+              return;
+            }
 
             const newId = uuidv4();
             idMap.set(file.id, newId);
-            const newParentId = file.parentId ? idMap.get(file.parentId) || null : null;
+            const newParentId = file.parentId ? (idMap.get(file.parentId) || null) : null;
 
             const cloned: DriveFile = {
               id: newId,
@@ -986,10 +1015,16 @@ export const useAppStore = create<AppState>((set, get) => ({
               parentId: newParentId,
               createdAt: new Date().toISOString(),
               url: file.url,
-              b2FileId: file.b2FileId
+              b2FileId: file.b2FileId,
+              yearIndex: file.yearIndex,
+              semesterIndex: file.semesterIndex
             };
             clonedFiles.push(cloned);
             await db.addDriveFile(userId, cloned);
+          };
+
+          for (const file of incomingDriveFiles) {
+            await cloneFile(file);
           }
 
           if (clonedFiles.length > 0) {
@@ -1569,13 +1604,27 @@ export const useAppStore = create<AppState>((set, get) => ({
       ];
 
       if (combinedDriveFiles.length > 0) {
-        const templateFiles = combinedDriveFiles;
-        const templateFileMap = new Map(templateFiles.map((f: DriveFile) => [f.id, f]));
-        const templateNames = new Set(templateFiles.map((f: DriveFile) => (f.name || '').trim().toLowerCase()));
+        const templateFileMap = new Map(combinedDriveFiles.map((f: DriveFile) => [f.id, f]));
+        const templateNames = new Set(combinedDriveFiles.map((f: DriveFile) => (f.name || '').trim().toLowerCase()));
 
-        // Add or update drive files
-        for (const tFile of templateFiles) {
-          const existingFile = currentFiles.find(f => 
+        // Process parents before children so every new item can link to its
+        // parent's LOCAL id (not the template id — that was the cause of
+        // "only the first folder is visible, and it's empty").
+        const templateById = new Map(combinedDriveFiles.map((f: DriveFile) => [f.id, f]));
+        const processedTemplates = new Set<string>();
+        const templateToLocalId = new Map<string, string>(
+          currentFiles.filter(f => f.universityTemplateId).map(f => [f.universityTemplateId as string, f.id])
+        );
+
+        const importTemplateFile = async (tFile: DriveFile): Promise<void> => {
+          if (!tFile || processedTemplates.has(tFile.id)) return;
+          processedTemplates.add(tFile.id);
+
+          if (tFile.parentId) {
+            await importTemplateFile(templateById.get(tFile.parentId));
+          }
+
+          const existingFile = currentFiles.find(f =>
             (f.universityTemplateId && f.universityTemplateId === tFile.id) ||
             (f.name.trim().toLowerCase() === (tFile.name || '').trim().toLowerCase() && f.type === tFile.type)
           );
@@ -1587,17 +1636,26 @@ export const useAppStore = create<AppState>((set, get) => ({
               name: tFile.name,
               size: Number(tFile.size || 0),
               type: tFile.type || 'file',
-              parentId: tFile.parentId || null,
+              parentId: tFile.parentId ? (templateToLocalId.get(tFile.parentId) || null) : null,
               createdAt: tFile.createdAt || new Date().toISOString(),
               url: tFile.url || '',
               b2FileId: tFile.b2FileId
             };
             currentFiles.push(newF);
+            templateToLocalId.set(tFile.id, newF.id);
             await db.addDriveFile(userId, newF);
             hasFileChanges = true;
           } else {
-            // Check if file URL or name changed
-            if (existingFile.url !== tFile.url || existingFile.name !== tFile.name || existingFile.universityTemplateId !== tFile.id) {
+            templateToLocalId.set(tFile.id, existingFile.id);
+
+            // Heal dangling parents from earlier buggy syncs: recompute the
+            // expected local parent and update if it differs.
+            const expectedParentId = tFile.parentId ? (templateToLocalId.get(tFile.parentId) || null) : null;
+            if ((existingFile.parentId || null) !== expectedParentId) {
+              existingFile.parentId = expectedParentId;
+              await db.updateDriveFile(userId, existingFile.id, { parentId: expectedParentId }).catch(() => {});
+              hasFileChanges = true;
+            } else if (existingFile.url !== tFile.url || existingFile.name !== tFile.name || existingFile.universityTemplateId !== tFile.id) {
               existingFile.url = tFile.url;
               existingFile.name = tFile.name;
               existingFile.universityTemplateId = tFile.id;
@@ -1609,6 +1667,10 @@ export const useAppStore = create<AppState>((set, get) => ({
               hasFileChanges = true;
             }
           }
+        };
+
+        for (const tFile of combinedDriveFiles) {
+          await importTemplateFile(tFile);
         }
 
         // Remove drive files that were deleted from template

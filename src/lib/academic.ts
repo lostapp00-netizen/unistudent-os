@@ -91,8 +91,10 @@ export function calculateGPA(
   }
 
   filteredSubjects.forEach(subject => {
+    if (subject.includeInGpa === false) return;
+
     let gradeObj = calculateSubjectGrade(subject, cleanScale);
-    
+
     // If no distributions but has a manual finalGradeLetter
     if (!gradeObj && subject.finalGradeLetter) {
       const g = cleanScale.find(rule => rule.letter.trim().toLowerCase() === (subject.finalGradeLetter || '').trim().toLowerCase());
@@ -106,10 +108,11 @@ export function calculateGPA(
       }
     }
 
-    if (gradeObj && subject.includeInGpa !== false) {
-      totalPointsAndHours += gradeObj.points * subject.creditHours;
-      totalCreditHours += subject.creditHours;
-    }
+    // GPA is inclusive: subjects without any entered grades count as 0 points
+    // but their credit hours still count — so a fully-ungraded semester shows
+    // 0.00 and partial grades average the ungraded ones as zero.
+    totalPointsAndHours += (gradeObj?.points ?? 0) * subject.creditHours;
+    totalCreditHours += subject.creditHours;
   });
 
   if (totalCreditHours === 0) return 0;

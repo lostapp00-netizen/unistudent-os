@@ -532,7 +532,7 @@ export const db = {
     return (data || []).map(mapDriveFileFromDB);
   },
   async addDriveFile(userId: string, file: DriveFile & { b2FileId?: string }) {
-    const { error } = await supabase.from('drive_files').insert([{
+    const baseRow: any = {
       id: file.id,
       user_id: userId,
       name: file.name,
@@ -541,11 +541,23 @@ export const db = {
       url: file.url || '',
       upload_date: file.createdAt,
       b2_file_id: file.b2FileId,
-      parent_id: file.parentId || null,
+      parent_id: file.parentId || null
+    };
+    const phaseRow = {
+      ...baseRow,
       year_index: file.yearIndex ?? null,
       semester_index: file.semesterIndex ?? null
-    }]);
-    if (error) console.error('Error adding drive_file:', error);
+    };
+
+    // Primary insert includes the phase columns. If the database schema predates
+    // the 202609060004 migration (columns missing), PostgREST rejects the whole
+    // insert — retry once without them so uploads never silently vanish.
+    let res = await supabase.from('drive_files').insert([phaseRow]);
+    if (res.error && (res.error as any).code === 'PGRST204') {
+      console.warn('drive_files phase columns missing (apply migration 202609060004). Retrying without them.');
+      res = await supabase.from('drive_files').insert([baseRow]);
+    }
+    if (res.error) console.error('Error adding drive_file:', res.error);
   },
   async updateDriveFile(userId: string, id: string, file: Partial<DriveFile>) {
     const payload: any = {};
@@ -1309,6 +1321,8 @@ export const db = {
         return y > stuStartYr || (y === stuStartYr && sem >= stuStartSem);
       }).length;
 
+      const stuCurrentSem = (s.semesters || []).find((sem: any) => sem && sem.isCurrent);
+
       matchingStudents.push({
         userId: uid,
         name: s.name || 'طالب',
@@ -1318,6 +1332,8 @@ export const db = {
         specialization: studentSpec,
         specializationStartYear: stuStartYr,
         specializationStartSemester: stuStartSem,
+        currentYear: Number(stuCurrentSem?.yearIndex || 1),
+        currentSemester: Number(stuCurrentSem?.semesterIndex || 1),
         subjectsCount: studentSubjects.length,
         specSubjectsCount,
         subjects: studentSubjects,
