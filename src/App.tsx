@@ -70,11 +70,19 @@ export function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
-      if (session?.user?.id) {
-        initialize(session.user.id, session.user.email).catch(console.error);
-      } else {
+      // Only re-initialize when the authenticated user actually CHANGES.
+      // Supabase emits TOKEN_REFRESHED / duplicate SIGNED_IN events when the
+      // window regains focus (e.g. after closing the OS file picker or
+      // switching apps). Re-running initialize() for the same user used to
+      // flip isInitialized to false and unmount the whole UI — that was the
+      // cause of the "page refreshes itself and wipes my form" bug.
+      const nextUserId = session?.user?.id || null;
+      const currentUserId = useAppStore.getState().userId;
+      if (nextUserId && nextUserId !== currentUserId) {
+        initialize(nextUserId, session.user.email).catch(console.error);
+      } else if (!nextUserId && currentUserId) {
         clearData();
       }
     });

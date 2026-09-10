@@ -284,10 +284,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         console.warn('Silent uni resolve in initialize error:', e);
       }
 
+      // Re-initializing the SAME already-initialized user must never flip
+      // isInitialized back to false: that renders the full-screen spinner and
+      // unmounts every route, destroying open modals/forms (upload dialog,
+      // add-subject form...). Only the first boot or a real user switch may
+      // show the loading screen.
+      const wasInitializedForSameUser = get().userId === userId && get().isInitialized;
       set({
         userId,
         userEmail: email || null,
-        isInitialized: false,
+        isInitialized: wasInitializedForSameUser ? true : false,
         settings: mergedSettings,
         subjects: finalSubjects,
         tasks: tasks || [],

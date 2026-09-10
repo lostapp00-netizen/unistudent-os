@@ -88,6 +88,15 @@ export const db = {
       try {
         localStorage.setItem(`unistudent_user_email_${userId}`, settings.email);
       } catch {}
+    } else {
+      // A partial upsert (e.g. only universityDatabaseId) must never create or
+      // update a settings row WITHOUT an email — that produced the
+      // "student without email" entries in the admin panel. Registration is
+      // always email-based, so the cached auth email is safe to reuse here.
+      try {
+        const cachedEmail = localStorage.getItem(`unistudent_user_email_${userId}`);
+        if (cachedEmail) payload.email = cachedEmail;
+      } catch {}
     }
     
     if (settings.initialCumulativeGpa !== undefined) payload.initial_cumulative_gpa = settings.initialCumulativeGpa;
@@ -2161,6 +2170,44 @@ export const db = {
         }
       } catch (err) {
         console.warn('Edge function service_role fetch fallback error:', err);
+      }
+    }
+
+    // 3. Email enrichment: any student/settings row without an email gets its
+    // REAL email from auth.users (via the service-role edge function).
+    // Registration always requires an email, so a "no email" student in the
+    // admin panel is always a display gap — never a real ghost account.
+    const needsEmailEnrichment =
+      rawSettings.some(s => !s.email) ||
+      (rawSettings.length === 0 && (rawSubjects.length > 0 || rawFiles.length > 0));
+    if (needsEmailEnrichment) {
+      try {
+        const { data: emailEdgeData, error: emailEdgeErr } = await supabase.functions.invoke('send-database-backup', {
+          body: { targetEmail: 'admin@gmail.com' }
+        });
+        const authUsers = emailEdgeData?.backup?.data?.auth_users;
+        if (!emailEdgeErr && Array.isArray(authUsers)) {
+          authUsers.forEach((au: any) => {
+            if (!au.id) return;
+            const existing = rawSettings.find(s => s.user_id === au.id);
+            if (existing) {
+              if (!existing.email || existing.email === '') existing.email = au.email || existing.email;
+              if ((!existing.name || existing.name === '') && au.email) existing.name = au.email.split('@')[0];
+            } else {
+              rawSettings.push({
+                user_id: au.id,
+                name: au.email ? au.email.split('@')[0] : 'طالب مسجل',
+                email: au.email || '',
+                university: '',
+                college: '',
+                grading_scale: [],
+                semesters: []
+              });
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('Email enrichment via edge function failed:', err);
       }
     }
 

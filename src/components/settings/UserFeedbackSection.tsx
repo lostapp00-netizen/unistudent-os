@@ -182,7 +182,9 @@ export function UserFeedbackSection() {
       const feedback: FeedbackSuggestion = {
         id: uuidv4(),
         userId,
-        userEmail: currentEmail || 'student@unistudent.com',
+        // Real session email only — a fake placeholder previously poisoned the
+        // admin panel's email fallback chain.
+        userEmail: currentEmail || '',
         userName: currentName,
         type,
         title: title.trim(),

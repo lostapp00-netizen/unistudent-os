@@ -250,8 +250,14 @@ export function Admin() {
         }
       } catch {}
 
-      const feedbackEmail = userFeedbacks.find(fb => fb.userEmail)?.userEmail || '';
-      const finalEmail = userSettingsRow.email || savedEmail || knownEmail || feedbackEmail || (isAr ? 'لم يحدد بريد' : 'No email');
+      // Ignore fake placeholder emails previously stored with feedback; only
+      // real addresses count. settings row email (already enriched with the
+      // auth email in getAdminAllData) is the primary source.
+      const PLACEHOLDER_EMAILS = new Set(['student@unistudent.com', 'unknown@unistudent.com']);
+      const feedbackEmail = userFeedbacks
+        .map(fb => (fb.userEmail || '').trim())
+        .find(e => e && !PLACEHOLDER_EMAILS.has(e.toLowerCase())) || '';
+      const finalEmail = userSettingsRow.email || feedbackEmail || savedEmail || knownEmail || (isAr ? 'لم يحدد بريد' : 'No email');
 
       const gradingScale = userSettingsRow.grading_scale || settings.gradingScale || [];
       const semesters = userSettingsRow.semesters || [];
