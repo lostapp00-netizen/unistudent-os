@@ -3032,9 +3032,12 @@ function mapSettingsFromDB(row: any): UserSettings {
     ? row.grading_scale.find((g: any) => g && g.id === '__student_spec_meta__')
     : null;
 
+  // Link IDs come from the database row ONLY. A stale localStorage value or
+  // the JSONB spec-meta backup must never resurrect a link that was cleared
+  // (e.g. after an unlink) — otherwise the student appears linked forever.
   const resolvedDbId = (row.university_database_id && row.university_database_id !== 'null')
     ? row.university_database_id
-    : (localExtra.universityDatabaseId || undefined);
+    : undefined;
 
   const cleanGradingScale = Array.isArray(row.grading_scale)
     ? row.grading_scale.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))))
@@ -3054,7 +3057,7 @@ function mapSettingsFromDB(row: any): UserSettings {
 
   const resolvedSpecDbId = row.specialization_database_id != null 
     ? row.specialization_database_id 
-    : (specMeta?.specializationDatabaseId || localExtra.specializationDatabaseId || undefined);
+    : undefined;
 
   const deletedMeta = Array.isArray(row.grading_scale)
     ? row.grading_scale.find((g: any) => g && g.id === '__student_deleted_subjects__')
