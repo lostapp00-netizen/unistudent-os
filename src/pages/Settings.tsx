@@ -172,12 +172,12 @@ export function Settings() {
       await unlinkUniversityDatabase();
       setIsUnlinkModalOpen(false);
       isDirtyRef.current = false;
+      // Keep the typed profile names (the store preserves them); only the
+      // explicit link ids are cleared so the form matches the store exactly.
       setFormData(prev => ({
         ...prev,
-        university: 'غير محدد',
-        college: 'غير محدد',
-        specialization: '',
-        specializationDatabaseId: ''
+        universityDatabaseId: undefined,
+        specializationDatabaseId: undefined
       }));
       setSaveStatus({
         type: 'success',
@@ -202,10 +202,11 @@ export function Settings() {
       await unlinkSpecializationDatabase();
       setIsUnlinkSpecModalOpen(false);
       isDirtyRef.current = false;
+      // Keep the typed specialization name (the store preserves it); only the
+      // explicit link id is cleared so the form matches the store exactly.
       setFormData(prev => ({
         ...prev,
-        specialization: '',
-        specializationDatabaseId: ''
+        specializationDatabaseId: undefined
       }));
       setSaveStatus({
         type: 'success',
@@ -924,8 +925,9 @@ export function Settings() {
               </div>
             </div>
 
-            {/* Linked Status */}
-            {settings.university && settings.college && settings.university !== 'غير محدد' ? (
+            {/* Linked Status — the explicit database id is REQUIRED: typed
+                names alone are profile data and must never render as a link */}
+            {settings.universityDatabaseId && settings.university && settings.college && settings.university !== 'غير محدد' ? (
               <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-indigo-50/80 to-blue-50/50 dark:from-indigo-950/40 dark:to-zinc-900 border border-indigo-200/80 dark:border-indigo-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-start sm:items-center gap-3 sm:gap-3.5 min-w-0 flex-1">
                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-600/20 shrink-0 mt-0.5 sm:mt-0">
@@ -1340,9 +1342,9 @@ export function Settings() {
                 {isAr ? 'إلغاء استخدام قاعدة بيانات الجامعة' : 'Disconnect University Database'}
               </h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                {isAr 
-                  ? 'هل أنت متأكد من رغبتك في إلغاء ربط واستخدام قاعدة البيانات؟ سيتم حذف جميع المواد المستردة وملفات الدرايف وإعادة ضبط جدول التقديرات إلى اللائحة الافتراضية القياسية.'
-                  : 'Are you sure you want to disconnect? All imported subjects and drive files will be deleted, and your grading scale will reset to the standard scale.'}
+                {isAr
+                  ? 'هل أنت متأكد من رغبتك في إلغاء ربط قاعدة البيانات؟ سيتم حذف المواد وملفات الدرايف المستوردة من القاعدة فقط، وستبقى كل الإضافات الشخصية (موادك ودرجاتك وملفاتك وملاحظاتك) كما هي.'
+                  : 'Are you sure you want to disconnect? Only subjects and drive files imported from the database will be removed — everything you added personally (subjects, grades, files, notes) stays untouched.'}
               </p>
             </div>
 
