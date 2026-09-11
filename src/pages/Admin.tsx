@@ -904,7 +904,7 @@ export function Admin() {
                     <h3 className="text-3xl font-black text-zinc-900 dark:text-white mt-1">{totalStudents}</h3>
                     <p className="text-[11px] text-zinc-500 mt-1">{isAr ? 'حسابات مسجلة بالمنصة' : 'Registered accounts'}</p>
                   </div>
-                  <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                  <div className="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
                     <Users size={28} />
                   </div>
                 </div>
@@ -977,15 +977,15 @@ export function Admin() {
 
                           <div>
                             <div className="flex justify-between text-xs font-bold mb-1.5">
-                              <span className="text-indigo-600 dark:text-indigo-400">
+                              <span className="text-blue-600 dark:text-blue-400">
                                 {isAr ? 'أداء مستقر وجيد (2.50 - 3.49)' : 'Good Standing (2.50 - 3.49)'}
                               </span>
                               <span className="font-black text-zinc-900 dark:text-white">
-                                {goodStudents} {isAr ? (goodStudents === 1 ? 'طالب' : 'طلاب') : (goodStudents === 1 ? 'student' : 'students')} <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">({goodPct}%)</span>
+                                {goodStudents} {isAr ? (goodStudents === 1 ? 'طالب' : 'طلاب') : (goodStudents === 1 ? 'student' : 'students')} <span className="text-blue-600 dark:text-blue-400 font-extrabold">({goodPct}%)</span>
                               </span>
                             </div>
                             <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
-                              <div className="bg-indigo-500 h-full rounded-full transition-all duration-500" style={{ width: `${goodPct}%` }}></div>
+                              <div className="bg-blue-500 h-full rounded-full transition-all duration-500" style={{ width: `${goodPct}%` }}></div>
                             </div>
                           </div>
 
@@ -1008,7 +1008,7 @@ export function Admin() {
                   </div>
                 </div>
 
-                <div className="bg-gradient-to-br from-blue-900/10 via-indigo-900/5 to-transparent dark:from-blue-950/30 dark:via-zinc-900 dark:to-zinc-900 p-6 sm:p-7 rounded-3xl border border-blue-200/60 dark:border-blue-900/40 shadow-xs flex flex-col justify-between">
+                <div className="bg-gradient-to-br from-blue-900/10 via-blue-900/5 to-transparent dark:from-blue-950/30 dark:via-zinc-900 dark:to-zinc-900 p-6 sm:p-7 rounded-3xl border border-blue-200/60 dark:border-blue-900/40 shadow-xs flex flex-col justify-between">
                   <div>
                     <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-bold mb-2">
                       <Sparkles size={18} />
@@ -1154,7 +1154,7 @@ export function Admin() {
                               st.cgpa >= 3.5 
                                 ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60' 
                                 : (st.cgpa >= 2.0 
-                                    ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60' 
+                                    ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60' 
                                     : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60')
                             }`}>
                               {Number(st.cgpa || 0).toFixed(2)} CGPA
@@ -1361,7 +1361,7 @@ export function Admin() {
                                           : tType === 'bug'
                                           ? 'bg-amber-600 text-white shadow-2xs'
                                           : tType === 'suggestion'
-                                          ? 'bg-indigo-600 text-white shadow-2xs'
+                                          ? 'bg-blue-600 text-white shadow-2xs'
                                           : 'bg-zinc-700 text-white shadow-2xs')
                                       : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
                                   }`}
@@ -1410,7 +1410,7 @@ export function Admin() {
                                 studentCgpa >= 3.5 
                                   ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800' 
                                   : studentCgpa >= 2.0 
-                                  ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800' 
+                                  ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-800' 
                                   : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
                               }`}>
                                 {Number(studentCgpa || 0).toFixed(2)} CGPA
@@ -1548,7 +1548,7 @@ export function Admin() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-white dark:bg-zinc-900 p-6 sm:p-7 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-5">
                   <div className="flex items-center gap-3 pb-3 border-b border-zinc-100 dark:border-zinc-800">
-                    <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
                       <Database size={20} />
                     </div>
                     <div>
@@ -1570,7 +1570,7 @@ export function Admin() {
                       <button
                         onClick={handleExportBackup}
                         disabled={backupLoading}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5"
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5"
                       >
                         <Download size={14} />
                         <span>{backupLoading ? (isAr ? 'جاري التجهيز...' : 'Preparing...') : (isAr ? 'تنزيل JSON' : 'Export')}</span>
@@ -1983,7 +1983,7 @@ export function Admin() {
                                   : tType === 'bug' 
                                   ? 'bg-amber-600 text-white shadow-xs' 
                                   : tType === 'suggestion' 
-                                  ? 'bg-indigo-600 text-white shadow-xs' 
+                                  ? 'bg-blue-600 text-white shadow-xs' 
                                   : 'bg-zinc-700 text-white shadow-xs')
                               : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                           }`}

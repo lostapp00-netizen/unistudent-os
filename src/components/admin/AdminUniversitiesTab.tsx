@@ -1809,7 +1809,7 @@ export function AdminUniversitiesTab({
                   onClick={() => setUpdatesCategoryFilter('specializations')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                     updatesCategoryFilter === 'specializations'
-                      ? 'bg-purple-600 text-white shadow-xs'
+                      ? 'bg-blue-600 text-white shadow-xs'
                       : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                   }`}
                 >
@@ -1908,14 +1908,14 @@ export function AdminUniversitiesTab({
                     {/* Group Header Card */}
                     <div className="p-5 sm:p-6 bg-zinc-50/50 dark:bg-zinc-800/30 border-b border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                       <div className="flex items-center gap-3.5">
-                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
                           {group.studentName ? group.studentName.charAt(0).toUpperCase() : 'S'}
                         </div>
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <h4 className="font-black text-base text-zinc-900 dark:text-white">{group.studentName}</h4>
                             {group.collegeDb?.isSpecialization ? (
-                              <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40 flex items-center gap-1">
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/40 flex items-center gap-1">
                                 <Sparkles size={11} />
                                 <span>{group.collegeDb.universityNameAr} • {group.collegeDb.collegeNameAr} (تخصص: {group.collegeDb.specializationNameAr || ''})</span>
                               </span>
@@ -1994,7 +1994,7 @@ export function AdminUniversitiesTab({
                               {update.data && (
                                 <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                                   {update.data.yearIndex !== undefined && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-black">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-black">
                                       <Calendar size={11} />
                                       <span>{isAr ? `سنة ${update.data.yearIndex}` : `Year ${update.data.yearIndex}`}</span>
                                     </span>
@@ -2083,7 +2083,7 @@ export function AdminUniversitiesTab({
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-zinc-900 p-6 sm:p-7 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
                 <div>
                   <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
                       <Building2 size={20} />
                     </div>
                     <div>
@@ -2106,7 +2106,7 @@ export function AdminUniversitiesTab({
                       setUniStudentSearchQuery('');
                       setIsCreateUniModalOpen(true);
                     }}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-5 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25 transition-all cursor-pointer shrink-0"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 text-white px-5 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-blue-500/25 transition-all cursor-pointer shrink-0"
                   >
                     <Plus size={18} />
                     <span>{isAr ? 'إضافة جامعة جديدة' : 'Add University'}</span>
@@ -2122,7 +2122,7 @@ export function AdminUniversitiesTab({
                   value={globalSearch}
                   onChange={(e) => setGlobalSearch(e.target.value)}
                   placeholder={isAr ? 'بحث سريع عن اسم جامعة، كلية، أو طالب مصدر...' : 'Search universities, colleges, or students...'}
-                  className="w-full pl-11 rtl:pl-4 rtl:pr-11 pr-4 py-3.5 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs sm:text-sm font-bold text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                  className="w-full pl-11 rtl:pl-4 rtl:pr-11 pr-4 py-3.5 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs sm:text-sm font-bold text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
                 />
               </div>
 
@@ -2130,7 +2130,7 @@ export function AdminUniversitiesTab({
               <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs overflow-hidden">
                 <div className="p-5 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
                   <h3 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white flex items-center gap-2">
-                    <Building2 size={18} className="text-indigo-600" />
+                    <Building2 size={18} className="text-blue-600" />
                     <span>{isAr ? 'جدول الجامعات المسجلة' : 'Universities List'}</span>
                   </h3>
                   <span className="text-xs font-bold text-zinc-400">
@@ -2155,7 +2155,7 @@ export function AdminUniversitiesTab({
                         <tr key={group.key} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors group">
                           <td className="py-4 px-6">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 flex items-center justify-center font-bold shrink-0">
+                              <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950 text-blue-600 flex items-center justify-center font-bold shrink-0">
                                 <Building2 size={20} />
                               </div>
                               <div>
@@ -2272,7 +2272,7 @@ export function AdminUniversitiesTab({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setSelectedUniversityKey(null)}
-                    className="inline-flex items-center gap-2 text-xs sm:text-sm font-black text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                    className="inline-flex items-center gap-2 text-xs sm:text-sm font-black text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
                   >
                     <BackIcon size={16} />
                     <span>{isAr ? 'العودة لقائمة الجامعات' : 'Back to Universities'}</span>
@@ -2320,7 +2320,7 @@ export function AdminUniversitiesTab({
                       setCollegeStudentSearchQuery('');
                       setIsCreateCollegeModalOpen(true);
                     }}
-                    className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shadow-md shadow-indigo-500/25 transition-all cursor-pointer shrink-0"
+                    className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shadow-md shadow-blue-500/25 transition-all cursor-pointer shrink-0"
                   >
                     <Plus size={16} />
                     <span>{isAr ? 'إضافة كلية للجامعة' : 'Add College to University'}</span>
@@ -2396,7 +2396,7 @@ export function AdminUniversitiesTab({
                                       const specsCount = databases.filter(d => d.isSpecialization && d.parentDatabaseId === collegeDb.id).length;
                                       if (specsCount === 0) return null;
                                       return (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40">
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/40">
                                           <Sparkles size={10} />
                                           <span>{specsCount} {isAr ? 'تخصص' : 'specs'}</span>
                                         </span>
@@ -2461,7 +2461,7 @@ export function AdminUniversitiesTab({
                                     setSelectedSemesterIndex(1);
                                     setActiveStudioTab('subjects');
                                   }}
-                                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
                                 >
                                   <span>{isAr ? 'إدارة الكلية' : 'Manage'}</span>
                                   <ArrowIcon size={13} />
@@ -2601,7 +2601,7 @@ export function AdminUniversitiesTab({
                   </button>
 
                   {!selectedCollegeDb.isSpecialization && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/50 rounded-xl text-xs font-bold">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50 rounded-xl text-xs font-bold">
                       <Compass size={13} />
                       <span>{isAr ? `تخصص يبدأ: سنة ${selectedCollegeDb.specializationStartYear || 2} ترم ${selectedCollegeDb.specializationStartSemester || 1}` : `Spec starts: Y${selectedCollegeDb.specializationStartYear || 2} T${selectedCollegeDb.specializationStartSemester || 1}`}</span>
                     </span>
@@ -2622,9 +2622,9 @@ export function AdminUniversitiesTab({
 
               {/* Specialization Notice Banner (if active database is a specialization) */}
               {selectedCollegeDb.isSpecialization && (
-                <div className="bg-purple-50/70 dark:bg-purple-950/40 p-4 rounded-2xl border border-purple-200 dark:border-purple-800/40 flex items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2 text-purple-900 dark:text-purple-200">
-                    <Sparkles size={18} className="text-purple-600 shrink-0" />
+                <div className="bg-blue-50/70 dark:bg-blue-950/40 p-4 rounded-2xl border border-blue-200 dark:border-blue-800/40 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2 text-blue-900 dark:text-blue-200">
+                    <Sparkles size={18} className="text-blue-600 shrink-0" />
                     <span>
                       {isAr ? 'قاعدة بيانات تخصص فرعي:' : 'Specialization Database:'} <strong>{selectedCollegeDb.specializationNameAr || selectedCollegeDb.collegeNameAr}</strong> ({isAr ? `يبدأ من سنة ${selectedCollegeDb.specializationStartYear || 1} - ترم ${selectedCollegeDb.specializationStartSemester || 1}` : `Starts Year ${selectedCollegeDb.specializationStartYear || 1} - Semester ${selectedCollegeDb.specializationStartSemester || 1}`})
                     </span>
@@ -2636,7 +2636,7 @@ export function AdminUniversitiesTab({
                         setSelectedCollegeId(selectedCollegeDb.parentDatabaseId!);
                         setActiveStudioTab('specializations');
                       }}
-                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition-all"
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition-all"
                     >
                       <BackIcon size={13} />
                       <span>{isAr ? 'العودة للكلية الأم' : 'Back to College'}</span>
@@ -2674,7 +2674,7 @@ export function AdminUniversitiesTab({
                     onClick={() => setActiveStudioTab('specializations')}
                     className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs sm:text-sm font-black transition-all cursor-pointer shrink-0 ${
                       activeStudioTab === 'specializations'
-                        ? 'bg-purple-600 text-white shadow-md shadow-purple-500/20'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
                         : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
                     }`}
                   >
@@ -2682,7 +2682,7 @@ export function AdminUniversitiesTab({
                     <span>{isAr ? 'تخصصات الكلية' : 'Specializations'}</span>
                     {collegeSpecializations.length > 0 && (
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                        activeStudioTab === 'specializations' ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
+                        activeStudioTab === 'specializations' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
                       }`}>
                         {collegeSpecializations.length}
                       </span>
@@ -2744,7 +2744,7 @@ export function AdminUniversitiesTab({
                             onClick={() => setSelectedYearIndex(year)}
                             className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer ${
                               selectedYearIndex === year
-                                ? 'bg-indigo-600 text-white shadow-sm'
+                                ? 'bg-blue-600 text-white shadow-sm'
                                 : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200'
                             }`}
                           >
@@ -2793,7 +2793,7 @@ export function AdminUniversitiesTab({
 
                           <button
                             onClick={handleOpenAddSubject}
-                            className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer"
+                            className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer"
                           >
                             <Plus size={14} />
                             <span>{isAr ? 'إضافة مادة' : 'Add Subject'}</span>
@@ -2806,7 +2806,7 @@ export function AdminUniversitiesTab({
                             <p className="font-bold text-xs">{isAr ? 'لا توجد مواد مسجلة لهذا الفصل الدراسي حتى الآن.' : 'No subjects registered for this semester yet.'}</p>
                             <button
                               onClick={handleOpenAddSubject}
-                              className="px-3.5 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold cursor-pointer"
+                              className="px-3.5 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-bold cursor-pointer"
                             >
                               {isAr ? '+ إضافة مادة الآن' : '+ Add Subject Now'}
                             </button>
@@ -2836,7 +2836,7 @@ export function AdminUniversitiesTab({
                                   <div className="flex items-center gap-1 shrink-0">
                                     <button
                                       onClick={() => handleOpenEditSubject(subj)}
-                                      className="p-2 rounded-xl text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950 transition-colors cursor-pointer"
+                                      className="p-2 rounded-xl text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950 transition-colors cursor-pointer"
                                       title={isAr ? 'تعديل المادة وتوزيع الدرجات' : 'Edit Subject'}
                                     >
                                       <Edit2 size={15} />
@@ -2860,7 +2860,7 @@ export function AdminUniversitiesTab({
                                     {(subj.distributions || []).map((d, dIdx) => (
                                       <span
                                         key={dIdx}
-                                        className="px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-100 dark:border-indigo-900/40"
+                                        className="px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-bold border border-blue-100 dark:border-blue-900/40"
                                       >
                                         {d.name}: <span className="font-black">{d.maxMarks}</span> {isAr ? 'درجة' : 'marks'}
                                       </span>
@@ -2888,7 +2888,7 @@ export function AdminUniversitiesTab({
                   {/* Header & Add Button */}
                   <div className="bg-white dark:bg-zinc-900 p-6 sm:p-7 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div className="flex items-center gap-3.5">
-                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-purple-500/20 shrink-0">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
                         <Sparkles size={24} />
                       </div>
                       <div>
@@ -2896,7 +2896,7 @@ export function AdminUniversitiesTab({
                           <h3 className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white">
                             {isAr ? 'تخصصات الكلية' : 'College Specializations'}
                           </h3>
-                          <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40">
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/40">
                             {collegeSpecializations.length} {isAr ? 'تخصص' : 'specializations'}
                           </span>
                         </div>
@@ -2911,7 +2911,7 @@ export function AdminUniversitiesTab({
                     <button
                       type="button"
                       onClick={handleOpenCreateSpecModal}
-                      className="w-full sm:w-auto px-5 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-md shadow-purple-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer hover:scale-[1.02]"
+                      className="w-full sm:w-auto px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer hover:scale-[1.02]"
                     >
                       <Plus size={18} />
                       <span>{isAr ? 'إضافة تخصص جديد للكلية' : 'Add Specialization'}</span>
@@ -2924,13 +2924,13 @@ export function AdminUniversitiesTab({
                       {collegeSpecializations.map(spec => (
                         <div
                           key={spec.id}
-                          className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 p-5 sm:p-6 shadow-xs hover:border-purple-300 dark:hover:border-purple-800 transition-all flex flex-col justify-between gap-4"
+                          className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 p-5 sm:p-6 shadow-xs hover:border-blue-300 dark:hover:border-blue-800 transition-all flex flex-col justify-between gap-4"
                         >
                           <div className="space-y-3">
                             <div className="flex items-start justify-between gap-2">
                               <div>
                                 <h4 className="font-black text-base text-zinc-900 dark:text-white flex items-center gap-1.5">
-                                  <Sparkles size={16} className="text-purple-600 shrink-0" />
+                                  <Sparkles size={16} className="text-blue-600 shrink-0" />
                                   <span>{spec.specializationNameAr || spec.collegeNameAr}</span>
                                 </h4>
                                 {spec.specializationNameEn && (
@@ -2950,7 +2950,7 @@ export function AdminUniversitiesTab({
                             </div>
 
                             {/* Milestone Badge */}
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40">
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/40">
                               <Clock size={13} />
                               <span>
                                 {isAr 
@@ -2962,7 +2962,7 @@ export function AdminUniversitiesTab({
                             {/* Counts */}
                             <div className="grid grid-cols-2 gap-2 pt-1">
                               <div className="bg-zinc-50 dark:bg-zinc-800/60 p-2.5 rounded-2xl border border-zinc-100 dark:border-zinc-800 flex items-center gap-2">
-                                <BookOpen size={16} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                <BookOpen size={16} className="text-blue-600 dark:text-blue-400 shrink-0" />
                                 <div>
                                   <span className="block font-black text-sm text-zinc-900 dark:text-white leading-none">
                                     {spec.subjects?.length || 0}
@@ -3007,7 +3007,7 @@ export function AdminUniversitiesTab({
                               setSelectedSemesterIndex(spec.specializationStartSemester || 1);
                               setActiveStudioTab('subjects');
                             }}
-                            className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl text-xs font-black shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+                            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-xs font-black shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
                           >
                             <span>{isAr ? 'إدارة منهج ومواد التخصص' : 'Manage Curriculum'}</span>
                             <ArrowIcon size={14} />
@@ -3017,7 +3017,7 @@ export function AdminUniversitiesTab({
                     </div>
                   ) : (
                     <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 p-12 text-center space-y-4">
-                      <div className="w-16 h-16 rounded-3xl bg-purple-100 dark:bg-purple-950/50 text-purple-600 flex items-center justify-center mx-auto shadow-sm">
+                      <div className="w-16 h-16 rounded-3xl bg-blue-100 dark:bg-blue-950/50 text-blue-600 flex items-center justify-center mx-auto shadow-sm">
                         <Sparkles size={32} />
                       </div>
                       <div className="max-w-md mx-auto space-y-1">
@@ -3033,7 +3033,7 @@ export function AdminUniversitiesTab({
                       <button
                         type="button"
                         onClick={handleOpenCreateSpecModal}
-                        className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs rounded-2xl shadow-sm transition-all cursor-pointer inline-flex items-center gap-2"
+                        className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-2xl shadow-sm transition-all cursor-pointer inline-flex items-center gap-2"
                       >
                         <Plus size={16} />
                         <span>{isAr ? 'إضافة أول تخصص للكلية' : 'Add First Specialization'}</span>
@@ -3052,7 +3052,7 @@ export function AdminUniversitiesTab({
                       <button
                         onClick={() => setCurrentDriveFolderId(null)}
                         className={`text-xs font-bold hover:underline cursor-pointer ${
-                          !currentDriveFolderId ? 'text-indigo-600 font-black' : 'text-zinc-500'
+                          !currentDriveFolderId ? 'text-blue-600 font-black' : 'text-zinc-500'
                         }`}
                       >
                         {isAr ? 'الدرايف الرئيسي' : 'Root Drive'}
@@ -3061,7 +3061,7 @@ export function AdminUniversitiesTab({
                       {currentFolderObject && (
                         <>
                           <span className="text-zinc-400">/</span>
-                          <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">
+                          <span className="text-xs font-black text-blue-600 dark:text-blue-400">
                             {currentFolderObject.name}
                           </span>
                         </>
@@ -3079,7 +3079,7 @@ export function AdminUniversitiesTab({
 
                       <button
                         onClick={() => openDriveModalFor('file')}
-                        className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                        className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs cursor-pointer"
                       >
                         <Plus size={15} />
                         <span>{isAr ? 'إضافة ملف مرجعي' : 'Add File'}</span>
@@ -3115,7 +3115,7 @@ export function AdminUniversitiesTab({
                                 {file.type === 'folder' ? <Folder size={22} /> : <FileText size={22} />}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <p className="font-bold text-sm text-zinc-900 dark:text-white whitespace-normal break-words line-clamp-3 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                <p className="font-bold text-sm text-zinc-900 dark:text-white whitespace-normal break-words line-clamp-3 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                                   {file.name}
                                 </p>
                                 <p className="text-xs text-zinc-400 mt-0.5">
@@ -3201,7 +3201,7 @@ export function AdminUniversitiesTab({
                           <h5 className="font-black text-xs sm:text-sm text-zinc-900 dark:text-white">{st.name}</h5>
                           <p className="text-[11px] text-zinc-400">{st.email}</p>
                         </div>
-                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
                           {st.subjects?.length || 0} {isAr ? 'مادة مسجلة' : 'subjects'}
                         </span>
                       </div>
@@ -3333,7 +3333,7 @@ export function AdminUniversitiesTab({
             
             <div className="p-6 sm:p-7 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
                   <Building2 size={20} />
                 </div>
                 <div>
@@ -3365,7 +3365,7 @@ export function AdminUniversitiesTab({
                     value={uniStudentSearchQuery}
                     onChange={(e) => setUniStudentSearchQuery(e.target.value)}
                     placeholder={isAr ? 'ابحث عن طالب أو جامعة...' : 'Search student or university...'}
-                    className="w-full pl-10 rtl:pl-4 rtl:pr-10 pr-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full pl-10 rtl:pl-4 rtl:pr-10 pr-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
@@ -3379,15 +3379,15 @@ export function AdminUniversitiesTab({
                           onClick={() => handleSelectStudentForUni(st)}
                           className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-2.5 cursor-pointer ${
                             isSelected
-                              ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
-                              : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-indigo-300 shadow-2xs'
+                              ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-500 ring-2 ring-blue-500/20 shadow-xs'
+                              : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-blue-300 shadow-2xs'
                           }`}
                         >
                           <div className="min-w-0 flex-1">
                             <h4 className="font-black text-xs text-zinc-900 dark:text-white truncate">
                               {st.name}
                             </h4>
-                            <p className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 truncate mt-0.5 flex items-center gap-1">
+                            <p className="text-[11px] font-bold text-blue-600 dark:text-blue-400 truncate mt-0.5 flex items-center gap-1">
                               <Building2 size={12} className="shrink-0" />
                               <span>{st.university && st.university !== 'غير محدد' ? st.university : (isAr ? 'غير محدد' : 'Not specified')}</span>
                             </p>
@@ -3396,7 +3396,7 @@ export function AdminUniversitiesTab({
                             type="button"
                             className={`px-2.5 py-1 rounded-xl text-[10px] font-black transition-all shrink-0 ${
                               isSelected
-                                ? 'bg-indigo-600 text-white'
+                                ? 'bg-blue-600 text-white'
                                 : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
                             }`}
                           >
@@ -3431,7 +3431,7 @@ export function AdminUniversitiesTab({
                         }));
                       }}
                       placeholder={isAr ? 'مثال: جامعة بنها' : 'e.g. Benha University'}
-                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div>
@@ -3443,7 +3443,7 @@ export function AdminUniversitiesTab({
                       value={createUniForm.nameEn}
                       onChange={(e) => setCreateUniForm(prev => ({ ...prev, nameEn: e.target.value }))}
                       placeholder="e.g. Benha University"
-                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 </div>
@@ -3463,7 +3463,7 @@ export function AdminUniversitiesTab({
                 type="button"
                 onClick={handleCreateUniversity}
                 disabled={creatingUni || (!createUniForm.nameAr.trim() && !createUniForm.nameEn.trim())}
-                className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 disabled:opacity-50 text-white px-6 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25 transition-all cursor-pointer"
+                className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 disabled:opacity-50 text-white px-6 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-blue-500/25 transition-all cursor-pointer"
               >
                 {creatingUni ? <Loader2 size={16} className="animate-spin" /> : <Building2 size={16} />}
                 <span>{isAr ? 'تسجيل وإنشاء الجامعة' : 'Register & Create University'}</span>
@@ -3538,7 +3538,7 @@ export function AdminUniversitiesTab({
                     value={collegeStudentSearchQuery}
                     onChange={(e) => setCollegeStudentSearchQuery(e.target.value)}
                     placeholder={isAr ? 'ابحث بالاسم، الكلية، أو البريد...' : 'Search student by name, college, email...'}
-                    className="w-full pl-10 rtl:pl-4 rtl:pr-10 pr-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full pl-10 rtl:pl-4 rtl:pr-10 pr-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
@@ -3560,7 +3560,7 @@ export function AdminUniversitiesTab({
                           }`}
                         >
                           <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
+                            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
                               {st.name ? st.name.charAt(0).toUpperCase() : 'S'}
                             </div>
                             <div className="min-w-0 flex-1">
@@ -3583,7 +3583,7 @@ export function AdminUniversitiesTab({
                                   <span>{st.college && st.college !== 'غير محدد' ? st.college : (isAr ? 'غير محدد' : 'No col')}</span>
                                 </span>
                                 {showAllStudentsForCollege && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-bold">
                                     <Building2 size={11} className="shrink-0" />
                                     <span>{st.university || ''}</span>
                                   </span>
@@ -3657,7 +3657,7 @@ export function AdminUniversitiesTab({
                         }));
                       }}
                       placeholder={isAr ? 'مثال: كلية الحاسبات والذكاء الاصطناعي' : 'e.g. Faculty of Computers'}
-                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div>
@@ -3669,7 +3669,7 @@ export function AdminUniversitiesTab({
                       value={createCollegeForm.collegeNameEn}
                       onChange={(e) => setCreateCollegeForm(prev => ({ ...prev, collegeNameEn: e.target.value }))}
                       placeholder="e.g. Faculty of Computers and AI"
-                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 </div>
@@ -3687,7 +3687,7 @@ export function AdminUniversitiesTab({
                     max={7}
                     value={createCollegeForm.customYears === '' ? '' : createCollegeForm.customYears}
                     onChange={(e) => setCreateCollegeForm(prev => ({ ...prev, customYears: e.target.value === '' ? '' : Number(e.target.value) }))}
-                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -3700,7 +3700,7 @@ export function AdminUniversitiesTab({
                     max={4}
                     value={createCollegeForm.customSemesters === '' ? '' : createCollegeForm.customSemesters}
                     onChange={(e) => setCreateCollegeForm(prev => ({ ...prev, customSemesters: e.target.value === '' ? '' : Number(e.target.value) }))}
-                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -3711,7 +3711,7 @@ export function AdminUniversitiesTab({
                   <label className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white block">
                     {isAr ? '4. نقطة بداية التخصص الأكاديمي بالكلية' : '4. Specialization Milestone (Year & Term)'}
                   </label>
-                  <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-0.5 rounded-lg">
+                  <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2.5 py-0.5 rounded-lg">
                     {isAr ? 'سحب المنهج العام التأسيسي' : 'General Foundation Slice'}
                   </span>
                 </div>
@@ -3724,7 +3724,7 @@ export function AdminUniversitiesTab({
                     <select
                       value={createCollegeForm.specializationStartYear}
                       onChange={(e) => setCreateCollegeForm(prev => ({ ...prev, specializationStartYear: Number(e.target.value) }))}
-                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                     >
                       {Array.from({ length: Number(createCollegeForm.customYears) || 4 }, (_, i) => i + 1).map(y => (
                         <option key={y} value={y}>{isAr ? `السنة الدراسية ${y}` : `Year ${y}`}</option>
@@ -3739,7 +3739,7 @@ export function AdminUniversitiesTab({
                     <select
                       value={createCollegeForm.specializationStartSemester}
                       onChange={(e) => setCreateCollegeForm(prev => ({ ...prev, specializationStartSemester: Number(e.target.value) }))}
-                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                      className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                     >
                       {Array.from({ length: Number(createCollegeForm.customSemesters) || 2 }, (_, i) => i + 1).map(s => (
                         <option key={s} value={s}>{isAr ? `الفصل ${s} (الترم ${s})` : `Term ${s}`}</option>
@@ -3812,7 +3812,7 @@ export function AdminUniversitiesTab({
                 type="button"
                 onClick={handleCreateCollege}
                 disabled={creatingCollege || (!createCollegeForm.collegeNameAr.trim() && !createCollegeForm.collegeNameEn.trim()) || !createCollegeForm.sourceUserId}
-                className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 text-white px-6 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-blue-500/25 transition-all cursor-pointer"
+                className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 disabled:opacity-50 text-white px-6 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-blue-500/25 transition-all cursor-pointer"
               >
                 {creatingCollege ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
                 <span>{isAr ? 'سحب وإنشاء الكلية للجامعة' : 'Clone & Create College'}</span>
@@ -3831,7 +3831,7 @@ export function AdminUniversitiesTab({
             {/* Header */}
             <div className="p-6 sm:p-7 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
                   <Sparkles size={20} />
                 </div>
                 <div>
@@ -3876,7 +3876,7 @@ export function AdminUniversitiesTab({
                         }
                       }}
                       placeholder={isAr ? 'مثال: هندسة الحاسبات والنظم' : 'e.g. Computer and Systems Engineering'}
-                      className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-purple-500"
+                      className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
 
@@ -3889,7 +3889,7 @@ export function AdminUniversitiesTab({
                       value={specForm.specializationNameEn}
                       onChange={(e) => setSpecForm(prev => ({ ...prev, specializationNameEn: e.target.value }))}
                       placeholder={isAr ? 'مثال: Computer Engineering' : 'e.g. Computer Engineering'}
-                      className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-purple-500"
+                      className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                       dir="ltr"
                     />
                   </div>
@@ -3909,7 +3909,7 @@ export function AdminUniversitiesTab({
                       <select
                         value={specForm.specializationStartYear}
                         onChange={(e) => setSpecForm(prev => ({ ...prev, specializationStartYear: Number(e.target.value) }))}
-                        className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-purple-500"
+                        className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         {Array.from({ length: selectedCollegeDb.totalYears || 5 }, (_, i) => i + 1).map(y => (
                           <option key={y} value={y}>
@@ -3926,7 +3926,7 @@ export function AdminUniversitiesTab({
                       <select
                         value={specForm.specializationStartSemester}
                         onChange={(e) => setSpecForm(prev => ({ ...prev, specializationStartSemester: Number(e.target.value) }))}
-                        className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-purple-500"
+                        className="w-full px-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         {Array.from({ length: selectedCollegeDb.semestersPerYear || 2 }, (_, i) => i + 1).map(s => (
                           <option key={s} value={s}>
@@ -3937,8 +3937,8 @@ export function AdminUniversitiesTab({
                     </div>
                   </div>
 
-                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 bg-purple-50/50 dark:bg-purple-950/20 p-2.5 rounded-xl border border-purple-100 dark:border-purple-900/30 flex items-start gap-1.5">
-                    <Info size={14} className="text-purple-600 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 bg-blue-50/50 dark:bg-blue-950/20 p-2.5 rounded-xl border border-blue-100 dark:border-blue-900/30 flex items-start gap-1.5">
+                    <Info size={14} className="text-blue-600 shrink-0 mt-0.5" />
                     <span>
                       {isAr 
                         ? `المواد السابقة لسنة ${specForm.specializationStartYear} ترم ${specForm.specializationStartSemester} تُعتبر سنوات إعدادية عامة وستُدار من الكلية الرئيسية مباشرة بدون تكرار.` 
@@ -3965,13 +3965,13 @@ export function AdminUniversitiesTab({
                       value={specStudentSearch}
                       onChange={(e) => setSpecStudentSearch(e.target.value)}
                       placeholder={isAr ? 'ابحث بالاسم، البريد، أو التخصص...' : 'Search student by name, email, or specialization...'}
-                      className="w-full pl-10 rtl:pl-4 rtl:pr-10 pr-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-purple-500"
+                      className="w-full pl-10 rtl:pl-4 rtl:pr-10 pr-4 py-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
 
                   {loadingSpecStudents ? (
                     <div className="p-8 text-center text-zinc-400 flex items-center justify-center gap-2">
-                      <Loader2 size={18} className="animate-spin text-purple-600" />
+                      <Loader2 size={18} className="animate-spin text-blue-600" />
                       <span className="text-xs font-bold">{isAr ? 'جاري فحص طلاب الكلية...' : 'Loading candidate students...'}</span>
                     </div>
                   ) : specStudentsList.length === 0 ? (
@@ -3998,14 +3998,14 @@ export function AdminUniversitiesTab({
                               onClick={() => handleSelectStudentForSpec(st)}
                               className={`p-4 rounded-2xl border transition-all cursor-pointer ${
                                 isSelected
-                                  ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-500 shadow-xs ring-2 ring-purple-500/20'
-                                  : 'bg-zinc-50/50 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700/60 hover:border-purple-300 dark:hover:border-purple-800'
+                                  ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-500 shadow-xs ring-2 ring-blue-500/20'
+                                  : 'bg-zinc-50/50 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700/60 hover:border-blue-300 dark:hover:border-blue-800'
                               }`}
                             >
                               <div className="flex items-start gap-3">
                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shrink-0 ${
                                   isSelected
-                                    ? 'bg-purple-600 text-white'
+                                    ? 'bg-blue-600 text-white'
                                     : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300'
                                 }`}>
                                   {isSelected ? <Check size={18} /> : (st.name?.slice(0, 1) || 'S')}
@@ -4017,7 +4017,7 @@ export function AdminUniversitiesTab({
                                       {st.name}
                                     </span>
                                     {st.specialization ? (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[10px] font-black border border-purple-200 dark:border-purple-800">
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-black border border-blue-200 dark:border-blue-800">
                                         <Compass size={11} />
                                         <span>{st.specialization}</span>
                                       </span>
@@ -4037,7 +4037,7 @@ export function AdminUniversitiesTab({
                                     <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">
                                       {st.college || (isAr ? 'كلية غير محددة' : 'No college')}
                                     </span>
-                                    <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900/60">
+                                    <span className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 border border-blue-100 dark:border-blue-900/60">
                                       {isAr
                                         ? `الترم الحالي: سنة ${st.currentYear || 1} - فصل ${st.currentSemester || 1}`
                                         : `Now: Y${st.currentYear || 1}-S${st.currentSemester || 1}`}
@@ -4046,7 +4046,7 @@ export function AdminUniversitiesTab({
                                 </div>
 
                                 <div className="text-right shrink-0 space-y-1">
-                                  <span className="block px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 text-[11px] font-black">
+                                  <span className="block px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60 text-[11px] font-black">
                                     {typeof st.specSubjectsCount === 'number' ? st.specSubjectsCount : (st.subjects || []).filter((x: Subject) => (x.yearIndex || 1) > Number(st.specializationStartYear || 2) || ((x.yearIndex || 1) === Number(st.specializationStartYear || 2) && (x.semesterIndex || 1) >= Number(st.specializationStartSemester || 1))).length} {isAr ? 'مادة تخصص' : 'spec subjs'}
                                   </span>
                                   <span className="block px-2 py-0.5 text-[10px] font-bold text-zinc-400">
@@ -4063,9 +4063,9 @@ export function AdminUniversitiesTab({
 
                 {/* 4. Smart Slicing Live Preview */}
                 {selectedStudentForSpec && (
-                  <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border border-purple-200 dark:border-purple-800/50 space-y-2 animate-in fade-in">
-                    <div className="flex items-center gap-2 text-xs font-black text-purple-900 dark:text-purple-200">
-                      <Sparkles size={16} className="text-purple-600 animate-pulse" />
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50 to-blue-50 dark:from-blue-950/30 dark:to-blue-950/30 border border-blue-200 dark:border-blue-800/50 space-y-2 animate-in fade-in">
+                    <div className="flex items-center gap-2 text-xs font-black text-blue-900 dark:text-blue-200">
+                      <Sparkles size={16} className="text-blue-600 animate-pulse" />
                       <span>{isAr ? 'معاينة السحب الذكي لمنهج التخصص:' : 'Smart Slicing Live Preview:'}</span>
                     </div>
 
@@ -4080,7 +4080,7 @@ export function AdminUniversitiesTab({
 
                       return (
                         <div className="text-xs space-y-1.5 pt-0.5">
-                          <p className="flex items-center gap-2 text-purple-800 dark:text-purple-300 font-bold">
+                          <p className="flex items-center gap-2 text-blue-800 dark:text-blue-300 font-bold">
                             <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
                             <span>
                               {isAr 
@@ -4116,7 +4116,7 @@ export function AdminUniversitiesTab({
                 <button
                   type="submit"
                   disabled={creatingSpec || !specForm.specializationNameAr.trim() || !specForm.sourceUserId}
-                  className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 text-white px-6 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-purple-500/25 transition-all cursor-pointer"
+                  className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 disabled:opacity-50 text-white px-6 py-3 rounded-2xl text-xs sm:text-sm font-black shadow-lg shadow-blue-500/25 transition-all cursor-pointer"
                 >
                   {creatingSpec ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
                   <span>{isAr ? 'إنشاء وسحب التخصص الأكاديمي' : 'Create Specialization'}</span>
@@ -4247,7 +4247,7 @@ export function AdminUniversitiesTab({
               <button
                 type="button"
                 onClick={handleSaveStructure}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer"
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold cursor-pointer"
               >
                 {isAr ? 'حفظ التعديلات' : 'Save Changes'}
               </button>
@@ -4315,7 +4315,7 @@ export function AdminUniversitiesTab({
                       }`}
                     >
                       <div className="flex items-start gap-3.5">
-                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
                           {st.name ? st.name.charAt(0).toUpperCase() : 'S'}
                         </div>
 
@@ -4349,7 +4349,7 @@ export function AdminUniversitiesTab({
 
                       <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-2 flex-wrap">
                         <div className="flex items-center gap-2 text-xs font-bold text-zinc-600 dark:text-zinc-300">
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-bold">
                             <BookOpen size={12} className="shrink-0" />
                             <span>{subjsCount} {isAr ? 'مواد' : 'subjs'}</span>
                           </span>
@@ -4439,7 +4439,7 @@ export function AdminUniversitiesTab({
                   value={subjectForm.name}
                   onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
                   placeholder={isAr ? 'مثال: هياكل البيانات والخوارزميات' : 'e.g. Data Structures'}
-                  className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
@@ -4453,7 +4453,7 @@ export function AdminUniversitiesTab({
                     value={subjectForm.code}
                     onChange={(e) => setSubjectForm({ ...subjectForm, code: e.target.value })}
                     placeholder={isAr ? 'مثال: CS211' : 'e.g. CS211'}
-                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -4466,7 +4466,7 @@ export function AdminUniversitiesTab({
                     max={12}
                     value={subjectForm.creditHours === '' ? '' : subjectForm.creditHours}
                     onChange={(e) => setSubjectForm({ ...subjectForm, creditHours: e.target.value === '' ? '' : Number(e.target.value) })}
-                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -4480,7 +4480,7 @@ export function AdminUniversitiesTab({
                     type="number"
                     value={subjectForm.totalMarks === '' ? '' : subjectForm.totalMarks}
                     onChange={(e) => setSubjectForm({ ...subjectForm, totalMarks: e.target.value === '' ? '' : Number(e.target.value) })}
-                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -4490,7 +4490,7 @@ export function AdminUniversitiesTab({
                   <select
                     value={subjectForm.yearIndex}
                     onChange={(e) => setSubjectForm({ ...subjectForm, yearIndex: Number(e.target.value) })}
-                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   >
                     {visibleYearsForSelectedCollege.map(yr => (
                       <option key={yr} value={yr}>{isAr ? `السنة ${yr}` : `Year ${yr}`}</option>
@@ -4507,7 +4507,7 @@ export function AdminUniversitiesTab({
                     max={selectedCollegeDb?.semestersPerYear || 2}
                     value={subjectForm.semesterIndex === '' ? '' : subjectForm.semesterIndex}
                     onChange={(e) => setSubjectForm({ ...subjectForm, semesterIndex: e.target.value === '' ? '' : Number(e.target.value) })}
-                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -4529,7 +4529,7 @@ export function AdminUniversitiesTab({
                         ]
                       });
                     }}
-                    className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                    className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
                   >
                     <Plus size={14} />
                     <span>{isAr ? 'إضافة بند درجة' : 'Add Item'}</span>
@@ -4591,7 +4591,7 @@ export function AdminUniversitiesTab({
               <button
                 type="button"
                 onClick={handleSaveSubject}
-                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs sm:text-sm font-black shadow-md shadow-indigo-500/20 cursor-pointer"
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-xs sm:text-sm font-black shadow-md shadow-blue-500/20 cursor-pointer"
               >
                 {isAr ? 'حفظ المادة في القالب' : 'Save Subject'}
               </button>
@@ -4654,7 +4654,7 @@ export function AdminUniversitiesTab({
                     <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
                       {isAr ? 'اختر ملفاً حقيقياً لرفعه (PDF, Docs, Slides, صور...)' : 'Select Real File to Upload'} *
                     </label>
-                    <div className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-2xl p-4 text-center bg-zinc-50/60 dark:bg-zinc-800/40 transition-all">
+                    <div className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-blue-500 dark:hover:border-blue-500 rounded-2xl p-4 text-center bg-zinc-50/60 dark:bg-zinc-800/40 transition-all">
                       <input
                         type="file"
                         id="admin-drive-file-picker"
@@ -4671,9 +4671,9 @@ export function AdminUniversitiesTab({
                       />
                       
                       {driveFileToUpload ? (
-                        <div className="flex items-center justify-between gap-3 p-3 bg-white dark:bg-zinc-900 rounded-xl border border-indigo-200 dark:border-indigo-800">
+                        <div className="flex items-center justify-between gap-3 p-3 bg-white dark:bg-zinc-900 rounded-xl border border-blue-200 dark:border-blue-800">
                           <div className="flex items-center gap-2.5 min-w-0 text-left rtl:text-right">
-                            <div className="w-9 h-9 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 flex items-center justify-center shrink-0">
+                            <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center shrink-0">
                               <FileText size={18} />
                             </div>
                             <div className="min-w-0">
@@ -4688,7 +4688,7 @@ export function AdminUniversitiesTab({
                           
                           <label
                             htmlFor="admin-drive-file-picker"
-                            className="px-2.5 py-1 text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950 rounded-lg cursor-pointer shrink-0"
+                            className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950 rounded-lg cursor-pointer shrink-0"
                           >
                             {isAr ? 'تغيير' : 'Change'}
                           </label>
@@ -4698,7 +4698,7 @@ export function AdminUniversitiesTab({
                           htmlFor="admin-drive-file-picker"
                           className="flex flex-col items-center justify-center gap-2 cursor-pointer py-3"
                         >
-                          <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                          <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
                             <Upload size={20} />
                           </div>
                           <div className="space-y-0.5">
@@ -4724,7 +4724,7 @@ export function AdminUniversitiesTab({
                       value={driveForm.name}
                       onChange={(e) => setDriveForm({ ...driveForm, name: e.target.value })}
                       placeholder={isAr ? 'اسم الملف أو المستند' : 'File Name'}
-                      className="w-full px-4 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-4 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 </div>
@@ -4739,7 +4739,7 @@ export function AdminUniversitiesTab({
                     value={driveForm.name}
                     onChange={(e) => setDriveForm({ ...driveForm, name: e.target.value })}
                     placeholder={isAr ? 'مثال: محاضرات الترم الأول' : 'e.g. Lecture Slides'}
-                    className="w-full px-4 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-4 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               ))}
@@ -4754,7 +4754,7 @@ export function AdminUniversitiesTab({
                   <select
                     value={driveForm.yearIndex}
                     onChange={(e) => setDriveForm({ ...driveForm, yearIndex: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   >
                     {Array.from({ length: Number(selectedCollegeDb?.totalYears) || 4 }, (_, i) => i + 1).map(y => (
                       <option key={y} value={y}>{isAr ? `السنة ${y}` : `Year ${y}`}</option>
@@ -4768,7 +4768,7 @@ export function AdminUniversitiesTab({
                   <select
                     value={driveForm.semesterIndex}
                     onChange={(e) => setDriveForm({ ...driveForm, semesterIndex: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   >
                     {Array.from({ length: Number(selectedCollegeDb?.semestersPerYear) || 2 }, (_, i) => i + 1).map(s => (
                       <option key={s} value={s}>{isAr ? `الفصل ${s}` : `Semester ${s}`}</option>
@@ -4806,7 +4806,7 @@ export function AdminUniversitiesTab({
                   type="button"
                   onClick={handleSaveDriveItem}
                   disabled={isUploadingDriveFile || (driveForm.type === 'folder' && !driveForm.name.trim()) || (driveForm.type === 'file' && !driveFileToUpload)}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-2 shadow-md shadow-indigo-500/20"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-2 shadow-md shadow-blue-500/20"
                 >
                   {isUploadingDriveFile ? <Loader2 size={14} className="animate-spin" /> : (driveForm.type === 'file' ? <Upload size={14} /> : <Plus size={14} />)}
                   <span>
@@ -4835,7 +4835,7 @@ export function AdminUniversitiesTab({
                 onClick={() => setTargetMoveFolderId(null)}
                 className={`w-full p-3 rounded-xl border text-xs font-bold flex items-center gap-2 cursor-pointer ${
                   targetMoveFolderId === null
-                    ? 'bg-indigo-50 dark:bg-indigo-950 border-indigo-500 text-indigo-700 dark:text-indigo-300'
+                    ? 'bg-blue-50 dark:bg-blue-950 border-blue-500 text-blue-700 dark:text-blue-300'
                     : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700'
                 }`}
               >
@@ -4850,7 +4850,7 @@ export function AdminUniversitiesTab({
                   onClick={() => setTargetMoveFolderId(folder.id)}
                   className={`w-full p-3 rounded-xl border text-xs font-bold flex items-center gap-2 cursor-pointer ${
                     targetMoveFolderId === folder.id
-                      ? 'bg-indigo-50 dark:bg-indigo-950 border-indigo-500 text-indigo-700 dark:text-indigo-300'
+                      ? 'bg-blue-50 dark:bg-blue-950 border-blue-500 text-blue-700 dark:text-blue-300'
                       : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700'
                   }`}
                 >
@@ -4871,7 +4871,7 @@ export function AdminUniversitiesTab({
               <button
                 type="button"
                 onClick={handleConfirmMoveFile}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer"
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold cursor-pointer"
               >
                 {isAr ? 'نقل العنصر' : 'Move Item'}
               </button>

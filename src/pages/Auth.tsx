@@ -87,7 +87,7 @@ export function Auth() {
       <div className="absolute top-4 sm:top-6 left-4 sm:left-6 right-4 sm:right-6 flex items-center justify-between z-20">
         <Link
           to="/"
-          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200 dark:hover:border-indigo-800 transition-all shadow-xs"
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-800 transition-all shadow-xs"
         >
           <BackIcon size={16} />
           <span>{isAr ? 'العودة للرئيسية' : 'Back to Home'}</span>
@@ -96,7 +96,7 @@ export function Auth() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => updateTheme(settings.theme === 'dark' ? 'light' : 'dark')}
-            className="p-2.5 rounded-2xl bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-indigo-600 transition-all shadow-xs"
+            className="p-2.5 rounded-2xl bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-blue-600 transition-all shadow-xs"
             title={settings.theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
           >
             {settings.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
@@ -104,7 +104,7 @@ export function Auth() {
 
           <button
             onClick={() => updateLanguage(isAr ? 'en' : 'ar')}
-            className="px-3 py-2 rounded-2xl bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 text-xs font-black text-zinc-700 dark:text-zinc-300 hover:text-indigo-600 transition-all shadow-xs uppercase tracking-wider"
+            className="px-3 py-2 rounded-2xl bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-zinc-200 dark:border-zinc-800 text-xs font-black text-zinc-700 dark:text-zinc-300 hover:text-blue-600 transition-all shadow-xs uppercase tracking-wider"
           >
             {isAr ? 'EN' : 'عربي'}
           </button>
@@ -112,8 +112,8 @@ export function Auth() {
       </div>
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center text-indigo-600 dark:text-indigo-400">
-          <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25">
+        <div className="flex justify-center text-blue-600 dark:text-blue-400">
+          <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-blue-600 to-blue-500 text-white flex items-center justify-center shadow-lg shadow-blue-500/25">
             <GraduationCap size={36} />
           </div>
         </div>
@@ -147,7 +147,7 @@ export function Auth() {
                 <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed font-medium">
                   {isAr ? 'تم إرسال رابط التفعيل وتأكيد الحساب إلى بريدك الإلكتروني:' : 'A verification link has been sent to your email:'}
                   <br />
-                  <strong className="text-indigo-600 dark:text-indigo-400 text-sm font-black mt-1 inline-block">{signUpSuccessEmail}</strong>
+                  <strong className="text-blue-600 dark:text-blue-400 text-sm font-black mt-1 inline-block">{signUpSuccessEmail}</strong>
                 </p>
 
                 {/* EXACT USER SPECIFIED NOTIFICATION MESSAGE */}
@@ -171,7 +171,7 @@ export function Auth() {
                   setIsLogin(true);
                   setPassword('');
                 }}
-                className="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-2 text-sm"
+                className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-2 text-sm"
               >
                 <LogIn size={18} />
                 <span>{isAr ? 'الذهاب إلى تسجيل الدخول' : 'Go to Login Page'}</span>
@@ -196,7 +196,7 @@ export function Auth() {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full border border-zinc-200 dark:border-zinc-800 rounded-2xl px-4 py-3 bg-zinc-50 dark:bg-zinc-800/60 text-xs sm:text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                    className="w-full border border-zinc-200 dark:border-zinc-800 rounded-2xl px-4 py-3 bg-zinc-50 dark:bg-zinc-800/60 text-xs sm:text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                     placeholder="student@university.edu"
                   />
                 </div>
@@ -210,7 +210,7 @@ export function Auth() {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full border border-zinc-200 dark:border-zinc-800 rounded-2xl px-4 py-3 bg-zinc-50 dark:bg-zinc-800/60 text-xs sm:text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                    className="w-full border border-zinc-200 dark:border-zinc-800 rounded-2xl px-4 py-3 bg-zinc-50 dark:bg-zinc-800/60 text-xs sm:text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                     placeholder="••••••••"
                   />
                 </div>
@@ -219,7 +219,7 @@ export function Auth() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-2xl shadow-md shadow-indigo-600/20 text-xs sm:text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-all"
+                    className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-2xl shadow-md shadow-blue-600/20 text-xs sm:text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all"
                   >
                     {loading ? (
                       <span className="animate-pulse">{isAr ? 'جاري التحقق...' : 'Processing...'}</span>
@@ -252,7 +252,7 @@ export function Auth() {
                       setIsLogin(!isLogin);
                       setError(null);
                     }}
-                    className="text-xs sm:text-sm font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 transition-colors"
+                    className="text-xs sm:text-sm font-bold text-blue-600 hover:text-blue-500 dark:text-blue-400 transition-colors"
                   >
                     {isLogin 
                       ? (isAr ? 'ليس لديك حساب؟ قم بإنشاء حساب جديد مجاناً' : "Don't have an account? Sign up for free") 

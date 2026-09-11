@@ -310,7 +310,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
         {/* Header */}
         <div className="p-5 sm:p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
           <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
+            <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
               {activeMode === 'specialization' ? <Compass size={22} /> : <Building2 size={22} />}
             </div>
             <div>
@@ -348,7 +348,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
             </div>
           ) : loading ? (
             <div className="py-16 flex flex-col items-center justify-center gap-3 text-zinc-500">
-              <Loader2 size={32} className="animate-spin text-indigo-600" />
+              <Loader2 size={32} className="animate-spin text-blue-600" />
               <p className="text-xs font-bold">{isAr ? 'جاري جلب قواعد بيانات الجامعات المتاحة...' : 'Loading available universities...'}</p>
             </div>
           ) : activeMode === 'specialization' && !selectedDb ? (
@@ -371,7 +371,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                 <button
                   type="button"
                   onClick={() => setActiveMode('college')}
-                  className="px-6 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 cursor-pointer inline-flex items-center gap-2"
+                  className="px-6 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 cursor-pointer inline-flex items-center gap-2"
                 >
                   <Building2 size={16} />
                   <span>{isAr ? 'استرداد قاعدة بيانات الكلية العامة الآن' : 'Restore General College Now'}</span>
@@ -380,13 +380,13 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
             ) : (
               <div className="space-y-5 animate-in fade-in duration-150">
                 {/* College & Standing Info Banner */}
-                <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/20 border border-indigo-200/80 dark:border-indigo-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-blue-50 to-blue-50 dark:from-blue-950/30 dark:to-blue-950/20 border border-blue-200/80 dark:border-blue-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
                   <div className="flex items-center gap-3.5">
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-indigo-500/20">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
                       <Compass size={24} />
                     </div>
                     <div>
-                      <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 block">
                         {isAr ? 'الكلية المستردة الحالية' : 'Active College'}
                       </span>
                       <h4 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white">
@@ -395,8 +395,8 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                     </div>
                   </div>
 
-                  <div className="px-3.5 py-2 rounded-2xl bg-white/80 dark:bg-zinc-900/80 border border-indigo-100 dark:border-indigo-900/50 flex items-center gap-2 text-xs self-start sm:self-auto">
-                    <Calendar size={15} className="text-indigo-600 dark:text-indigo-400" />
+                  <div className="px-3.5 py-2 rounded-2xl bg-white/80 dark:bg-zinc-900/80 border border-blue-100 dark:border-blue-900/50 flex items-center gap-2 text-xs self-start sm:self-auto">
+                    <Calendar size={15} className="text-blue-600 dark:text-blue-400" />
                     <span className="font-bold text-zinc-700 dark:text-zinc-300">
                       {isAr ? `مستواك الحالي: السنة ${currentYear} (الترم ${currentSemesterIndex})` : `Current Standing: Year ${currentYear} (Term ${currentSemesterIndex})`}
                     </span>
@@ -407,7 +407,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2">
-                      <Sparkles size={16} className="text-purple-600 dark:text-purple-400" />
+                      <Sparkles size={16} className="text-blue-600 dark:text-blue-400" />
                       <span>{isAr ? 'التخصصات الأكاديمية المعتمدة في كليتك:' : 'Accredited Specializations in Your College:'}</span>
                     </h4>
                     <span className="text-xs font-bold text-zinc-400">
@@ -439,7 +439,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                             }}
                             className={`p-5 rounded-2xl border transition-all flex flex-col justify-between gap-3.5 ${
                               hasReached
-                                ? 'bg-white dark:bg-zinc-900 border-purple-200 dark:border-purple-800/80 hover:border-purple-500 shadow-2xs hover:shadow-md cursor-pointer group'
+                                ? 'bg-white dark:bg-zinc-900 border-blue-200 dark:border-blue-800/80 hover:border-blue-500 shadow-2xs hover:shadow-md cursor-pointer group'
                                 : 'bg-zinc-50/80 dark:bg-zinc-800/30 border-zinc-200 dark:border-zinc-800 opacity-70 cursor-not-allowed'
                             }`}
                           >
@@ -448,7 +448,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                                 <div className="flex items-center gap-2.5">
                                   <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                                     hasReached 
-                                      ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform' 
+                                      ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform' 
                                       : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-500'
                                   }`}>
                                     {hasReached ? <Sparkles size={18} /> : <Lock size={16} />}
@@ -458,12 +458,12 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                                   </h5>
                                 </div>
                                 {hasReached && (
-                                  <ArrowIcon size={16} className="text-zinc-400 group-hover:text-purple-600 transition-transform group-hover:scale-110 shrink-0" />
+                                  <ArrowIcon size={16} className="text-zinc-400 group-hover:text-blue-600 transition-transform group-hover:scale-110 shrink-0" />
                                 )}
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-zinc-500">
-                                <span className="px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">
+                                <span className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
                                   {spec.subjects?.length || 0} {isAr ? 'مادة تخصصية' : 'specialized courses'}
                                 </span>
                                 <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
@@ -473,12 +473,12 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                             </div>
 
                             {hasReached ? (
-                              <div className="pt-2 border-t border-purple-100 dark:border-purple-950 flex items-center justify-between text-xs text-emerald-600 dark:text-emerald-400 font-bold">
+                              <div className="pt-2 border-t border-blue-100 dark:border-blue-950 flex items-center justify-between text-xs text-emerald-600 dark:text-emerald-400 font-bold">
                                 <span className="flex items-center gap-1.5">
                                   <CheckCircle2 size={14} />
                                   <span>{isAr ? 'متاح للاسترداد (وصلت لسنة التخصص)' : 'Eligible for restore'}</span>
                                 </span>
-                                <span className="text-purple-600 dark:text-purple-400 font-black group-hover:underline">
+                                <span className="text-blue-600 dark:text-blue-400 font-black group-hover:underline">
                                   {isAr ? 'معاينة واسترداد ←' : 'Preview & Restore →'}
                                 </span>
                               </div>
@@ -511,7 +511,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={isAr ? 'ابحث عن اسم الجامعة أو الكلية (عربي / English)...' : 'Search university or college (AR / EN)...'}
-                  className="w-full pl-11 rtl:pl-4 rtl:pr-11 pr-4 py-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                  className="w-full pl-11 rtl:pl-4 rtl:pr-11 pr-4 py-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-bold text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
                 />
               </div>
 
@@ -531,7 +531,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                         className="w-full p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-left rtl:text-right hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 transition-all cursor-pointer"
                       >
                         <div className="flex items-center gap-4 min-w-0 flex-1">
-                          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-blue-600 text-white flex items-center justify-center font-bold shrink-0 shadow-lg shadow-indigo-500/20">
+                          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 via-blue-600 to-blue-600 text-white flex items-center justify-center font-bold shrink-0 shadow-lg shadow-blue-500/20">
                             <Building2 size={26} />
                           </div>
                           <div className="min-w-0 flex-1 space-y-1">
@@ -539,7 +539,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                               <h4 className="font-black text-lg sm:text-xl text-zinc-900 dark:text-white tracking-tight leading-snug">
                                 {group.nameAr || group.nameEn}
                               </h4>
-                              <span className="text-xs font-black text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950 px-3 py-1 rounded-full border border-indigo-200/80 dark:border-indigo-800/80 shrink-0">
+                              <span className="text-xs font-black text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950 px-3 py-1 rounded-full border border-blue-200/80 dark:border-blue-800/80 shrink-0">
                                 {group.databases.length} {isAr ? 'كليات متاحة' : 'Colleges'}
                               </span>
                             </div>
@@ -552,10 +552,10 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                         </div>
 
                         <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-100 dark:border-zinc-800">
-                          <span className="text-xs sm:text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                          <span className="text-xs sm:text-sm font-bold text-blue-600 dark:text-blue-400">
                             {isExpanded ? (isAr ? 'إخفاء الكليات' : 'Hide Colleges') : (isAr ? 'استعراض الكليات المتاحة' : 'View Colleges')}
                           </span>
-                          <div className={`w-10 h-10 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-indigo-600 bg-indigo-50 dark:bg-indigo-950' : ''}`}>
+                          <div className={`w-10 h-10 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-blue-600 bg-blue-50 dark:bg-blue-950' : ''}`}>
                             <ChevronDown size={20} />
                           </div>
                         </div>
@@ -574,17 +574,17 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                                     setSelectedDb(dbItem);
                                     setSelectedTrack('general');
                                   }}
-                                  className="p-4 sm:p-5 rounded-2xl border border-zinc-200 dark:border-zinc-700/70 bg-white dark:bg-zinc-900 hover:border-indigo-500 dark:hover:border-indigo-500 text-left rtl:text-right transition-all group flex flex-col justify-between gap-3 shadow-2xs hover:shadow-md cursor-pointer"
+                                  className="p-4 sm:p-5 rounded-2xl border border-zinc-200 dark:border-zinc-700/70 bg-white dark:bg-zinc-900 hover:border-blue-500 dark:hover:border-blue-500 text-left rtl:text-right transition-all group flex flex-col justify-between gap-3 shadow-2xs hover:shadow-md cursor-pointer"
                                 >
                                   <div className="space-y-1.5 min-w-0">
                                     <div className="flex items-center justify-between gap-2">
                                       <div className="flex items-center gap-2.5 min-w-0">
-                                        <GraduationCap size={18} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                        <GraduationCap size={18} className="text-blue-600 dark:text-blue-400 shrink-0" />
                                         <h5 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white truncate">
                                           {dbItem.collegeNameAr || dbItem.collegeNameEn}
                                         </h5>
                                       </div>
-                                      <ArrowIcon size={16} className="text-zinc-400 group-hover:text-indigo-600 transition-transform group-hover:scale-110 shrink-0" />
+                                      <ArrowIcon size={16} className="text-zinc-400 group-hover:text-blue-600 transition-transform group-hover:scale-110 shrink-0" />
                                     </div>
                                     {dbItem.collegeNameEn && dbItem.collegeNameAr && dbItem.collegeNameEn !== dbItem.collegeNameAr && (
                                       <p className="text-xs text-zinc-400 font-bold truncate">
@@ -594,12 +594,12 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                                   </div>
 
                                   <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 text-[11px] text-zinc-500 dark:text-zinc-400 font-bold">
-                                    <span className="bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-lg">
+                                    <span className="bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2.5 py-1 rounded-lg">
                                       {dbItem.subjects?.length || 0} {isAr ? 'مادة دراسية' : 'subjects'}
                                     </span>
                                     {specs.length > 0 && (
-                                      <span className="bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 px-2.5 py-1 rounded-lg flex items-center gap-1 font-black">
-                                        <Sparkles size={12} className="text-purple-600 dark:text-purple-400 shrink-0" />
+                                      <span className="bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2.5 py-1 rounded-lg flex items-center gap-1 font-black">
+                                        <Sparkles size={12} className="text-blue-600 dark:text-blue-400 shrink-0" />
                                         <span>{specs.length} {isAr ? 'تخصصات مسجلة' : 'majors'}</span>
                                       </span>
                                     )}
@@ -635,7 +635,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                   setSelectedDb(null);
                   setSelectedTrack('general');
                 }}
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
               >
                 <ArrowIcon size={14} className="rotate-180" />
                 <span>
@@ -647,9 +647,9 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
 
               {/* In General College Mode: Informative box if specializations exist (non-restorable until milestone) */}
               {activeMode === 'college' && availableSpecs.length > 0 && (
-                <div className="p-4 sm:p-5 rounded-3xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 space-y-2.5">
-                  <div className="flex items-center gap-2 text-purple-700 dark:text-purple-300 font-black text-xs sm:text-sm">
-                    <Sparkles size={16} className="text-purple-600 dark:text-purple-400 shrink-0" />
+                <div className="p-4 sm:p-5 rounded-3xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/60 space-y-2.5">
+                  <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-black text-xs sm:text-sm">
+                    <Sparkles size={16} className="text-blue-600 dark:text-blue-400 shrink-0" />
                     <span>
                       {isAr 
                         ? `التخصصات المعتمدة المتوفرة في هذه الكلية (${availableSpecs.length} تخصص):` 
@@ -658,12 +658,12 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {availableSpecs.map(s => (
-                      <span key={s.id} className="px-2.5 py-1 rounded-xl bg-white dark:bg-zinc-900 border border-purple-200 dark:border-purple-800 text-xs font-bold text-purple-900 dark:text-purple-200 shadow-2xs">
+                      <span key={s.id} className="px-2.5 py-1 rounded-xl bg-white dark:bg-zinc-900 border border-blue-200 dark:border-blue-800 text-xs font-bold text-blue-900 dark:text-blue-200 shadow-2xs">
                         {s.specializationNameAr || s.collegeNameAr} (السنة {s.specializationStartYear || 2})
                       </span>
                     ))}
                   </div>
-                  <p className="text-[11px] text-purple-600 dark:text-purple-400/90 leading-relaxed font-medium">
+                  <p className="text-[11px] text-blue-600 dark:text-blue-400/90 leading-relaxed font-medium">
                     {isAr 
                       ? 'ملاحظة: هذا الاسترداد مخصص للخطة العامة للكلية. لا يمكن استرداد مواد التخصص الآن لأنك لم تكمل استرداد الكلية العامة أولاً ولم تصل بعد لسنة التخصص. ستتمكن من استرداد تخصصك لاحقاً من قسم "قاعدة بيانات التخصص الأكاديمي".' 
                       : 'Note: This restores the general college plan. Specialization restore unlocks after completing general restore and reaching the milestone year.'}
@@ -673,13 +673,13 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
 
               {/* In Specialization Mode: Selected Track Banner */}
               {activeMode === 'specialization' && activeSpec && (
-                <div className="p-4 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 flex items-center justify-between gap-3 shadow-2xs">
+                <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 flex items-center justify-between gap-3 shadow-2xs">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shrink-0 shadow-sm shadow-purple-500/20">
+                    <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shrink-0 shadow-sm shadow-blue-500/20">
                       <Sparkles size={18} />
                     </div>
                     <div>
-                      <span className="text-[10px] font-black uppercase tracking-wider text-purple-600 dark:text-purple-400 block">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 block">
                         {isAr ? 'التخصص الأكاديمي المختار' : 'Selected Major'}
                       </span>
                       <h4 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white">
@@ -687,34 +687,34 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                       </h4>
                     </div>
                   </div>
-                  <span className="text-xs font-bold text-purple-700 dark:text-purple-300 bg-white/80 dark:bg-zinc-900/80 px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-800">
+                  <span className="text-xs font-bold text-blue-700 dark:text-blue-300 bg-white/80 dark:bg-zinc-900/80 px-2.5 py-1 rounded-lg border border-blue-200 dark:border-blue-800">
                     {isAr ? `يبدأ سنة ${activeSpec.specializationStartYear || 2}` : `Starts Y${activeSpec.specializationStartYear || 2}`}
                   </span>
                 </div>
               )}
 
               {/* Summary Card */}
-              <div className="p-5 rounded-3xl bg-gradient-to-br from-indigo-50/80 to-blue-50/50 dark:from-indigo-950/40 dark:to-zinc-900 border border-indigo-200/80 dark:border-indigo-800/60 space-y-4">
+              <div className="p-5 rounded-3xl bg-gradient-to-br from-blue-50/80 to-blue-50/50 dark:from-blue-950/40 dark:to-zinc-900 border border-blue-200/80 dark:border-blue-800/60 space-y-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 mb-1">
+                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 mb-1">
                       {isAr ? 'قاعدة البيانات المعتمدة للاسترداد' : 'Selected Database'}
                     </span>
                     <h3 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white">
                       {selectedDb.universityNameAr} {selectedDb.universityNameEn ? `(${selectedDb.universityNameEn})` : ''}
                     </h3>
-                    <p className="text-xs sm:text-sm font-extrabold text-indigo-600 dark:text-indigo-400 mt-0.5">
+                    <p className="text-xs sm:text-sm font-extrabold text-blue-600 dark:text-blue-400 mt-0.5">
                       {previewData.title} {previewData.subtitle && previewData.subtitle !== previewData.title ? `- ${previewData.subtitle}` : ''}
                     </p>
                   </div>
-                  <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25 shrink-0">
+                  <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/25 shrink-0">
                     <Sparkles size={22} />
                   </div>
                 </div>
 
                 {previewData.isSpecialization && (
-                  <div className="p-3 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/40 flex items-start gap-2.5 text-xs text-purple-900 dark:text-purple-200 font-bold">
-                    <Sparkles size={16} className="text-purple-600 shrink-0 mt-0.5" />
+                  <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/40 flex items-start gap-2.5 text-xs text-blue-900 dark:text-blue-200 font-bold">
+                    <Sparkles size={16} className="text-blue-600 shrink-0 mt-0.5" />
                     <div>
                       {previewData.alreadyRestoredCollege ? (
                         <span>
@@ -748,27 +748,27 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                   </span>
                 </div>
 
-                <div className="grid grid-cols-4 gap-2 text-center pt-2 border-t border-indigo-100 dark:border-indigo-900/40">
-                  <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-indigo-100 dark:border-indigo-950">
-                    <span className="block text-base font-black text-indigo-600 dark:text-indigo-400">
+                <div className="grid grid-cols-4 gap-2 text-center pt-2 border-t border-blue-100 dark:border-blue-900/40">
+                  <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-blue-100 dark:border-blue-950">
+                    <span className="block text-base font-black text-blue-600 dark:text-blue-400">
                       {previewData.subjects.length}
                     </span>
                     <span className="text-[10px] font-bold text-zinc-500">{isAr ? 'مادة دراسية' : 'Subjects'}</span>
                   </div>
-                  <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-indigo-100 dark:border-indigo-950">
-                    <span className="block text-base font-black text-indigo-600 dark:text-indigo-400">
+                  <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-blue-100 dark:border-blue-950">
+                    <span className="block text-base font-black text-blue-600 dark:text-blue-400">
                       {previewData.totalYears}
                     </span>
                     <span className="text-[10px] font-bold text-zinc-500">{isAr ? 'سنوات' : 'Years'}</span>
                   </div>
-                  <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-indigo-100 dark:border-indigo-950">
-                    <span className="block text-base font-black text-indigo-600 dark:text-indigo-400">
+                  <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-blue-100 dark:border-blue-950">
+                    <span className="block text-base font-black text-blue-600 dark:text-blue-400">
                       {previewData.semestersPerYear}
                     </span>
                     <span className="text-[10px] font-bold text-zinc-500">{isAr ? 'فصول/سنة' : 'Terms/Yr'}</span>
                   </div>
-                  <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-indigo-100 dark:border-indigo-950">
-                    <span className="block text-base font-black text-indigo-600 dark:text-indigo-400">
+                  <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-2xl border border-blue-100 dark:border-blue-950">
+                    <span className="block text-base font-black text-blue-600 dark:text-blue-400">
                       {previewData.driveFiles.length}
                     </span>
                     <span className="text-[10px] font-bold text-zinc-500">{isAr ? 'ملفات درايف' : 'Files'}</span>
@@ -786,7 +786,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                   <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
                     {previewData.gradingScale.map((rule: any) => (
                       <div key={rule.id || rule.letter} className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 text-center">
-                        <span className="font-black text-sm text-indigo-600 dark:text-indigo-400 block">{rule.letter}</span>
+                        <span className="font-black text-sm text-blue-600 dark:text-blue-400 block">{rule.letter}</span>
                         <span className="text-[10px] text-zinc-400 block font-bold mt-0.5">
                           {Number(rule.points || 0).toFixed(2)} pts ({rule.minPercentage}%)
                         </span>
@@ -801,7 +801,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2">
-                      <BookOpen size={16} className="text-indigo-600" />
+                      <BookOpen size={16} className="text-blue-600" />
                       <span>{isAr ? 'قائمة المواد المعتمدة التي سيتم استيرادها:' : 'Accredited Subjects list:'}</span>
                     </h4>
                     <span className="text-xs font-bold text-zinc-400">
@@ -821,7 +821,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                           <div className="flex items-center gap-2 min-w-0">
                             {previewData.isSpecialization && (
                               isSpecSubj ? (
-                                <span className="px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/60 text-[9px] font-black text-purple-700 dark:text-purple-300 shrink-0">
+                                <span className="px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-950/60 text-[9px] font-black text-blue-700 dark:text-blue-300 shrink-0">
                                   {isAr ? 'تخصص' : 'Major'}
                                 </span>
                               ) : (
@@ -850,7 +850,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                     type="checkbox"
                     checked={importDrive}
                     onChange={(e) => setImportDrive(e.target.checked)}
-                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
                   />
                   <span className="text-xs sm:text-sm font-bold text-zinc-700 dark:text-zinc-200">
                     {isAr ? 'استيراد مجلدات وملفات الدرايف المرجعية لهذه الكلية' : 'Import reference Drive folders & files for this college'}
@@ -877,7 +877,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
             <button
               onClick={handleImport}
               disabled={importing}
-              className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-2xl transition-all text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25 cursor-pointer"
+              className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-2xl transition-all text-xs sm:text-sm font-black shadow-lg shadow-blue-500/25 cursor-pointer"
             >
               {importing ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
               <span>

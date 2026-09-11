@@ -107,7 +107,7 @@ export function Landing() {
   ];
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 font-sans selection:bg-indigo-500 selection:text-white transition-colors overflow-x-clip" dir={isAr ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 font-sans selection:bg-blue-500 selection:text-white transition-colors overflow-x-clip" dir={isAr ? 'rtl' : 'ltr'}>
       
       {/* --- TOP NAVBAR --- */}
       <header className="sticky top-0 z-50 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-md border-b border-zinc-200/80 dark:border-zinc-800/80 transition-all">
@@ -115,15 +115,15 @@ export function Landing() {
           
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 sm:gap-3 group shrink-0">
-            <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-600 to-indigo-500 text-white flex items-center justify-center font-black text-base sm:text-xl shadow-md sm:shadow-lg shadow-indigo-600/25 group-hover:scale-105 transition-transform">
+            <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-blue-600 via-blue-600 to-blue-500 text-white flex items-center justify-center font-black text-base sm:text-xl shadow-md sm:shadow-lg shadow-blue-600/25 group-hover:scale-105 transition-transform">
               U
             </div>
             <div>
               <div className="flex items-center gap-1 sm:gap-1.5">
                 <span className="text-lg sm:text-2xl font-black tracking-tight text-zinc-900 dark:text-white">
-                  Uni<span className="text-indigo-600 dark:text-indigo-400">Student</span>
+                  Uni<span className="text-blue-600 dark:text-blue-400">Student</span>
                 </span>
-                <span className="px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
                   OS
                 </span>
               </div>
@@ -135,16 +135,16 @@ export function Landing() {
 
           {/* Center Navigation Links (Desktop) */}
           <nav className="hidden lg:flex items-center gap-6 text-xs font-bold text-zinc-600 dark:text-zinc-300">
-            <a href="#features" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+            <a href="#features" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               {isAr ? 'المميزات الأكاديمية' : 'Academic Tools'}
             </a>
-            <a href="#productivity" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+            <a href="#productivity" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               {isAr ? 'أدوات الإنتاجية' : 'Productivity Suite'}
             </a>
-            <a href="#simulator" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+            <a href="#simulator" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               {isAr ? 'المحاكي التفاعلي' : 'Live Simulator'}
             </a>
-            <a href="#faq" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+            <a href="#faq" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               {isAr ? 'الأسئلة الشائعة' : 'FAQ'}
             </a>
           </nav>
@@ -174,7 +174,7 @@ export function Landing() {
             {/* Sign In Button (Desktop) */}
             <Link
               to="/auth"
-              className="hidden lg:inline-flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-bold text-zinc-700 dark:text-zinc-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-all"
+              className="hidden lg:inline-flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-bold text-zinc-700 dark:text-zinc-200 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-all"
             >
               <LogIn size={15} />
               <span>{isAr ? 'تسجيل الدخول' : 'Sign In'}</span>
@@ -183,7 +183,7 @@ export function Landing() {
             {/* Create Account CTA (Desktop) */}
             <Link
               to="/auth?mode=signup"
-              className="hidden lg:inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white text-xs font-bold shadow-lg shadow-indigo-600/25 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
+              className="hidden lg:inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-blue-600 via-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white text-xs font-bold shadow-lg shadow-blue-600/25 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
             >
               <UserPlus size={15} />
               <span>{isAr ? 'إنشاء حساب مجاناً' : 'Get Started Free'}</span>
@@ -239,7 +239,7 @@ export function Landing() {
               <Link
                 to="/auth?mode=signup"
                 onClick={() => setMobileMenuOpen(false)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white text-sm font-bold shadow-md shadow-indigo-600/25 active:scale-[0.98] transition-all"
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-blue-600 via-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white text-sm font-bold shadow-md shadow-blue-600/25 active:scale-[0.98] transition-all"
               >
                 <UserPlus size={16} />
                 <span>{isAr ? 'إنشاء حساب مجاناً' : 'Get Started Free'}</span>
@@ -262,13 +262,13 @@ export function Landing() {
       <section className="relative pt-8 pb-14 sm:pt-16 sm:pb-24 overflow-hidden">
         
         {/* Background Glowing Ambient Orbs */}
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] sm:w-[600px] md:w-[900px] h-[300px] sm:h-[400px] bg-gradient-to-tr from-indigo-500/15 via-blue-500/10 to-purple-500/10 blur-[90px] sm:blur-[130px] rounded-full pointer-events-none -z-10" />
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] sm:w-[600px] md:w-[900px] h-[300px] sm:h-[400px] bg-gradient-to-tr from-blue-500/15 via-blue-500/10 to-blue-500/10 blur-[90px] sm:blur-[130px] rounded-full pointer-events-none -z-10" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6 sm:space-y-8">
           
           {/* Pill Badge */}
-          <div className="inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 text-[11px] sm:text-xs md:text-sm font-black shadow-xs max-w-full text-center">
-            <Sparkles size={14} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+          <div className="inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-1.5 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200/80 dark:border-blue-800/80 text-blue-700 dark:text-blue-300 text-[11px] sm:text-xs md:text-sm font-black shadow-xs max-w-full text-center">
+            <Sparkles size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
             <span className="text-center leading-tight sm:leading-normal">
               {isAr ? 'المنصة الأكاديمية والإنتاجية الأولى لطلاب الجامعات • 100% مجاناً' : 'The #1 University OS • 100% Free Forever'}
             </span>
@@ -278,11 +278,11 @@ export function Landing() {
           <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-black tracking-tight max-w-4xl mx-auto leading-tight sm:leading-[1.2] text-zinc-900 dark:text-white px-1">
             {isAr ? (
               <>
-                تحكم في مستقبلك الأكاديمي، ضاعف إنتاجيتك، وحقق <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-400">أعلى معدل تراكمي</span> بسهولة.
+                منصتك الأكاديمية في مكان واحد — نظّم موادك وملفاتك واحسب <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-blue-600 to-blue-400">معدلك بدقة</span>.
               </>
             ) : (
               <>
-                Master Your Studies, Maximize Productivity & Achieve Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-400">Highest GPA</span>.
+                Your Academic Platform in One Place — Organize Courses & Files, and Calculate <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-blue-600 to-blue-400">Your GPA</span> Accurately.
               </>
             )}
           </h1>
@@ -298,7 +298,7 @@ export function Landing() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2 w-full max-w-md sm:max-w-none mx-auto">
             <Link
               to="/auth?mode=signup"
-              className="w-full sm:w-auto px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm sm:text-base shadow-lg sm:shadow-xl shadow-indigo-600/30 transition-all flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full sm:w-auto px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-sm sm:text-base shadow-lg sm:shadow-xl shadow-blue-600/30 transition-all flex items-center justify-center gap-2.5 hover:scale-[1.02] active:scale-[0.98]"
             >
               <span>{isAr ? 'ابدأ الآن مجاناً وبدون أي رسوم' : 'Start Free Workspace'}</span>
               <ArrowIcon size={18} />
@@ -308,7 +308,7 @@ export function Landing() {
               href="#simulator"
               className="w-full sm:w-auto px-5 sm:px-6 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-bold text-sm sm:text-base border border-zinc-200 dark:border-zinc-800 transition-all flex items-center justify-center gap-2 shadow-xs active:scale-[0.98]"
             >
-              <Calculator size={18} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <Calculator size={18} className="text-blue-600 dark:text-blue-400 shrink-0" />
               <span>{isAr ? 'تجربة حاسبة المعدل التفاعلية' : 'Try Live GPA Calculator'}</span>
             </a>
           </div>
@@ -320,7 +320,7 @@ export function Landing() {
               <span>{isAr ? 'مجاني تماماً 100%' : '100% Free Forever'}</span>
             </div>
             <div className="p-2 sm:p-0 rounded-xl bg-zinc-100/70 dark:bg-zinc-900/60 border border-zinc-200/50 dark:border-zinc-800/60 sm:bg-transparent sm:border-0 flex items-center justify-center sm:justify-start gap-1.5 text-center">
-              <ShieldCheck size={15} className="text-indigo-500 shrink-0" />
+              <ShieldCheck size={15} className="text-blue-500 shrink-0" />
               <span>{isAr ? 'خصوصية وأمان تام' : 'Private & Secure'}</span>
             </div>
             <div className="p-2 sm:p-0 rounded-xl bg-zinc-100/70 dark:bg-zinc-900/60 border border-zinc-200/50 dark:border-zinc-800/60 sm:bg-transparent sm:border-0 flex items-center justify-center sm:justify-start gap-1.5 text-center">
@@ -335,7 +335,7 @@ export function Landing() {
 
           {/* --- HERO LIVE APP PREVIEW MOCKUP --- */}
           <div className="pt-6 sm:pt-10 max-w-5xl mx-auto px-0 sm:px-2">
-            <div className="relative rounded-2xl sm:rounded-3xl p-2 sm:p-4 bg-gradient-to-b from-indigo-500/20 via-zinc-200/40 to-transparent dark:from-indigo-500/20 dark:via-zinc-800/40 dark:to-transparent border border-zinc-200/80 dark:border-zinc-800/80 shadow-xl sm:shadow-2xl backdrop-blur-xl">
+            <div className="relative rounded-2xl sm:rounded-3xl p-2 sm:p-4 bg-gradient-to-b from-blue-500/20 via-zinc-200/40 to-transparent dark:from-blue-500/20 dark:via-zinc-800/40 dark:to-transparent border border-zinc-200/80 dark:border-zinc-800/80 shadow-xl sm:shadow-2xl backdrop-blur-xl">
               
               <div className="bg-white dark:bg-zinc-900 rounded-xl sm:rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 shadow-inner">
                 
@@ -359,21 +359,21 @@ export function Landing() {
                 <div className="p-3.5 sm:p-6 grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-5 text-start">
                   
                   {/* Card 1: Academic Engine Dial */}
-                  <div className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-indigo-50/80 to-white dark:from-indigo-950/30 dark:to-zinc-900 border border-indigo-100 dark:border-indigo-900/40 space-y-2.5 sm:space-y-3">
+                  <div className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-blue-50/80 to-white dark:from-blue-950/30 dark:to-zinc-900 border border-blue-100 dark:border-blue-900/40 space-y-2.5 sm:space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-zinc-500">{isAr ? 'المعدل التراكمي الحالي' : 'Cumulative GPA'}</span>
-                      <div className="p-1.5 sm:p-2 rounded-xl bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400">
+                      <div className="p-1.5 sm:p-2 rounded-xl bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-400">
                         <TrendingUp size={15} />
                       </div>
                     </div>
                     <div>
-                      <div className="text-2xl sm:text-3xl font-black text-indigo-600 dark:text-indigo-400">3.82</div>
+                      <div className="text-2xl sm:text-3xl font-black text-blue-600 dark:text-blue-400">3.82</div>
                       <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-0.5 sm:mt-1">
                         +0.18 {isAr ? 'تحسن عن الفصل السابق' : 'increase this semester'}
                       </p>
                     </div>
                     <div className="w-full bg-zinc-200 dark:bg-zinc-800 h-2 rounded-full overflow-hidden">
-                      <div className="bg-indigo-600 h-full rounded-full" style={{ width: '92%' }}></div>
+                      <div className="bg-blue-600 h-full rounded-full" style={{ width: '92%' }}></div>
                     </div>
                   </div>
 
@@ -400,10 +400,10 @@ export function Landing() {
                   </div>
 
                   {/* Card 3: Productivity Kanban Preview */}
-                  <div className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-purple-50/80 to-white dark:from-purple-950/30 dark:to-zinc-900 border border-purple-100 dark:border-purple-900/40 space-y-2.5 sm:space-y-3">
+                  <div className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-blue-50/80 to-white dark:from-blue-950/30 dark:to-zinc-900 border border-blue-100 dark:border-blue-900/40 space-y-2.5 sm:space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-zinc-500">{isAr ? 'المهام والتكليفات اليومية' : 'Tasks & Deadlines'}</span>
-                      <div className="p-1.5 sm:p-2 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400">
+                      <div className="p-1.5 sm:p-2 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
                         <CheckSquare size={15} />
                       </div>
                     </div>
@@ -434,7 +434,7 @@ export function Landing() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10 sm:space-y-16">
           
           <div className="text-center max-w-3xl mx-auto space-y-2.5 sm:space-y-3">
-            <h2 className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+            <h2 className="text-xs font-black text-blue-600 dark:text-blue-400 uppercase tracking-wider">
               {isAr ? 'ترسانة الأدوات الأكاديمية والإنتاجية' : 'The Complete Academic Arsenal'}
             </h2>
             <h3 className="text-2xl sm:text-3xl md:text-4xl font-black text-zinc-900 dark:text-white leading-tight">
@@ -451,8 +451,8 @@ export function Landing() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-7">
             
             {/* Pillar 1 */}
-            <div className="bg-zinc-50 dark:bg-zinc-900 p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all space-y-3 sm:space-y-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+            <div className="bg-zinc-50 dark:bg-zinc-900 p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs hover:border-blue-300 dark:hover:border-blue-700/60 transition-all space-y-3 sm:space-y-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
                 <Calculator size={22} className="sm:w-6 sm:h-6" />
               </div>
               <h4 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-white">
@@ -466,7 +466,7 @@ export function Landing() {
             </div>
 
             {/* Pillar 2 */}
-            <div className="bg-zinc-50 dark:bg-zinc-900 p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all space-y-3 sm:space-y-4">
+            <div className="bg-zinc-50 dark:bg-zinc-900 p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs hover:border-blue-300 dark:hover:border-blue-700/60 transition-all space-y-3 sm:space-y-4">
               <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
                 <Target size={22} className="sm:w-6 sm:h-6" />
               </div>
@@ -481,7 +481,7 @@ export function Landing() {
             </div>
 
             {/* Pillar 3 */}
-            <div className="bg-zinc-50 dark:bg-zinc-900 p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all space-y-3 sm:space-y-4">
+            <div className="bg-zinc-50 dark:bg-zinc-900 p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs hover:border-blue-300 dark:hover:border-blue-700/60 transition-all space-y-3 sm:space-y-4">
               <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 flex items-center justify-center">
                 <AlertTriangle size={22} className="sm:w-6 sm:h-6" />
               </div>
@@ -496,7 +496,7 @@ export function Landing() {
             </div>
 
             {/* Pillar 4 */}
-            <div id="productivity" className="bg-zinc-50 dark:bg-zinc-900 p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all space-y-3 sm:space-y-4">
+            <div id="productivity" className="bg-zinc-50 dark:bg-zinc-900 p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs hover:border-blue-300 dark:hover:border-blue-700/60 transition-all space-y-3 sm:space-y-4">
               <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
                 <BookOpen size={22} className="sm:w-6 sm:h-6" />
               </div>
@@ -511,8 +511,8 @@ export function Landing() {
             </div>
 
             {/* Pillar 5 */}
-            <div className="bg-zinc-50 dark:bg-zinc-900 p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all space-y-3 sm:space-y-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+            <div className="bg-zinc-50 dark:bg-zinc-900 p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs hover:border-blue-300 dark:hover:border-blue-700/60 transition-all space-y-3 sm:space-y-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
                 <CheckSquare size={22} className="sm:w-6 sm:h-6" />
               </div>
               <h4 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-white">
@@ -526,7 +526,7 @@ export function Landing() {
             </div>
 
             {/* Pillar 6 */}
-            <div className="bg-zinc-50 dark:bg-zinc-900 p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all space-y-3 sm:space-y-4">
+            <div className="bg-zinc-50 dark:bg-zinc-900 p-5 sm:p-7 rounded-2xl sm:rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs hover:border-blue-300 dark:hover:border-blue-700/60 transition-all space-y-3 sm:space-y-4">
               <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
                 <HardDrive size={22} className="sm:w-6 sm:h-6" />
               </div>
@@ -548,7 +548,7 @@ export function Landing() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 sm:space-y-12">
           
           <div className="text-center max-w-2xl mx-auto space-y-2.5 sm:space-y-3">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-xs font-black">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-black">
               <Flame size={14} className="text-amber-500" />
               <span>{isAr ? 'جرّب بنفسك الآن مباشرة' : 'Interactive Live Demo'}</span>
             </div>
@@ -603,14 +603,14 @@ export function Landing() {
                         </div>
 
                         {/* Grade select */}
-                        <div className="flex-1 sm:flex-initial flex items-center justify-between sm:justify-start gap-1.5 bg-white dark:bg-zinc-800/90 px-2.5 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800/80">
+                        <div className="flex-1 sm:flex-initial flex items-center justify-between sm:justify-start gap-1.5 bg-white dark:bg-zinc-800/90 px-2.5 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800/80">
                           <span className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 font-bold shrink-0">
                             {isAr ? 'التقدير:' : 'Grade:'}
                           </span>
                           <select
                             value={sub.grade}
                             onChange={(e) => updateDemoGrade(sub.id, e.target.value)}
-                            className="bg-indigo-50 dark:bg-indigo-950/80 px-2 py-0.5 rounded-lg text-xs font-black text-indigo-700 dark:text-indigo-300 focus:outline-hidden cursor-pointer"
+                            className="bg-blue-50 dark:bg-blue-950/80 px-2 py-0.5 rounded-lg text-xs font-black text-blue-700 dark:text-blue-300 focus:outline-hidden cursor-pointer"
                           >
                             {gradeOptions.map(g => (
                               <option key={g.letter} value={g.letter}>{g.letter} ({g.points})</option>
@@ -624,15 +624,15 @@ export function Landing() {
               </div>
 
               {/* Result Dial Widget */}
-              <div className="bg-gradient-to-br from-indigo-600 via-indigo-600 to-indigo-700 text-white rounded-2xl sm:rounded-3xl p-5 sm:p-8 text-center space-y-3 sm:space-y-4 shadow-xl shadow-indigo-600/30 flex flex-col justify-center items-center">
+              <div className="bg-gradient-to-br from-blue-600 via-blue-600 to-blue-700 text-white rounded-2xl sm:rounded-3xl p-5 sm:p-8 text-center space-y-3 sm:space-y-4 shadow-xl shadow-blue-600/30 flex flex-col justify-center items-center">
                 <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center font-black">
                   <Award size={24} className="sm:w-7 sm:h-7" />
                 </div>
                 
                 <div>
-                  <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-indigo-200">{isAr ? 'المعدل المحسوب' : 'Calculated GPA'}</span>
+                  <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-blue-200">{isAr ? 'المعدل المحسوب' : 'Calculated GPA'}</span>
                   <div className="text-4xl sm:text-6xl font-black mt-0.5 sm:mt-1">{demoGpa}</div>
-                  <p className="text-xs font-bold text-indigo-100 mt-1 sm:mt-2">
+                  <p className="text-xs font-bold text-blue-100 mt-1 sm:mt-2">
                     {Number(demoGpa) >= 3.5 ? (isAr ? 'امتياز مع مرتبة الشرف' : 'Distinction Honors') : (Number(demoGpa) >= 3.0 ? (isAr ? 'جيد جداً' : 'Very Good') : (isAr ? 'جيد' : 'Good'))}
                   </p>
                 </div>
@@ -640,7 +640,7 @@ export function Landing() {
                 <div className="pt-2 w-full">
                   <Link
                     to="/auth?mode=signup"
-                    className="w-full py-3 px-4 rounded-xl bg-white text-indigo-700 hover:bg-indigo-50 font-black text-xs sm:text-sm transition-all flex items-center justify-center gap-2 shadow-md active:scale-[0.98]"
+                    className="w-full py-3 px-4 rounded-xl bg-white text-blue-700 hover:bg-blue-50 font-black text-xs sm:text-sm transition-all flex items-center justify-center gap-2 shadow-md active:scale-[0.98]"
                   >
                     <span>{isAr ? 'احفظ معدلك وسجل الآن' : 'Save Your GPA Now'}</span>
                     <ArrowIcon size={14} />
@@ -678,7 +678,7 @@ export function Landing() {
                     className="w-full p-3.5 sm:p-5 flex items-start justify-between text-start font-bold text-xs sm:text-base text-zinc-900 dark:text-white gap-3 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/40 transition-colors"
                   >
                     <span className="flex items-start gap-2 sm:gap-2.5 pt-0.5">
-                      <HelpCircle size={16} className="text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5 sm:w-[18px] sm:h-[18px]" />
+                      <HelpCircle size={16} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5 sm:w-[18px] sm:h-[18px]" />
                       <span className="leading-snug">{faq.q}</span>
                     </span>
                     <ChevronDown size={18} className={`text-zinc-400 shrink-0 mt-0.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
@@ -699,16 +699,16 @@ export function Landing() {
       {/* --- FINAL CALL TO ACTION BANNER --- */}
       <section className="py-10 sm:py-20 relative">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="rounded-2xl sm:rounded-3xl bg-gradient-to-r from-indigo-900 via-indigo-900 to-indigo-950 text-white p-6 sm:p-14 text-center space-y-5 sm:space-y-6 shadow-2xl relative overflow-hidden border border-indigo-800/50">
+          <div className="rounded-2xl sm:rounded-3xl bg-gradient-to-r from-blue-900 via-blue-900 to-blue-950 text-white p-6 sm:p-14 text-center space-y-5 sm:space-y-6 shadow-2xl relative overflow-hidden border border-blue-800/50">
             
-            <div className="absolute top-0 right-0 w-48 sm:w-64 h-48 sm:h-64 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute bottom-0 left-0 w-48 sm:w-64 h-48 sm:h-64 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute top-0 right-0 w-48 sm:w-64 h-48 sm:h-64 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-48 sm:w-64 h-48 sm:h-64 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
 
             <div className="relative z-10 space-y-3 sm:space-y-4 max-w-2xl mx-auto">
               <h3 className="text-xl sm:text-3xl md:text-4xl font-black tracking-tight leading-snug">
                 {isAr ? 'جاهز لتجربة أحدث وأقوى نظام جامعي مجاني؟' : 'Ready to Transform Your University Life?'}
               </h3>
-              <p className="text-xs sm:text-sm text-indigo-200 font-medium leading-relaxed">
+              <p className="text-xs sm:text-sm text-blue-200 font-medium leading-relaxed">
                 {isAr 
                   ? 'انضم الآن مجاناً وابدأ تنظيم موادك، حساب معدلك، وتتبع واجباتك في أقل من دقيقة واحدة.'
                   : 'Join thousands of university students mastering their degrees with UniStudent OS.'}
@@ -718,7 +718,7 @@ export function Landing() {
             <div className="relative z-10 pt-2 flex flex-col sm:flex-row items-center justify-center gap-3 w-full max-w-sm sm:max-w-none mx-auto">
               <Link
                 to="/auth?mode=signup"
-                className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl bg-white text-indigo-900 hover:bg-indigo-50 font-black text-xs sm:text-sm transition-all shadow-lg flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
+                className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl bg-white text-blue-900 hover:bg-blue-50 font-black text-xs sm:text-sm transition-all shadow-lg flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
               >
                 <span>{isAr ? 'إنشاء حساب جديد مجاناً' : 'Create Free Account'}</span>
                 <ArrowIcon size={16} />
@@ -726,7 +726,7 @@ export function Landing() {
 
               <Link
                 to="/auth"
-                className="w-full sm:w-auto px-6 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl bg-indigo-800/60 hover:bg-indigo-800 text-white font-bold text-xs sm:text-sm border border-indigo-700 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+                className="w-full sm:w-auto px-6 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl bg-blue-800/60 hover:bg-blue-800 text-white font-bold text-xs sm:text-sm border border-blue-700 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
               >
                 <LogIn size={16} />
                 <span>{isAr ? 'تسجيل الدخول' : 'Sign In'}</span>
@@ -740,7 +740,7 @@ export function Landing() {
       <footer className="py-8 sm:py-10 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-start">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shrink-0">U</div>
+            <div className="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0">U</div>
             <span className="font-bold text-zinc-800 dark:text-zinc-200">UniStudent OS</span>
             <span>• {isAr ? 'المنصة الأكاديمية المجانية 100%' : '100% Free Academic OS'}</span>
           </div>
