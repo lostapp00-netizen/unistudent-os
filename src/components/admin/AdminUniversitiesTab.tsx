@@ -47,7 +47,8 @@ import {
   Move,
   Award,
   Save,
-  EyeOff
+  EyeOff,
+  Pencil
 } from 'lucide-react';
 import { db, broadcastUniversityDatabaseUpdate } from '../../lib/db';
 import { supabase } from '../../lib/supabase';
@@ -297,14 +298,21 @@ export function AdminUniversitiesTab({
     type: 'folder' | 'file';
     url: string;
     parentId: string | null;
+    yearIndex: string;
+    semesterIndex: string;
   }>({
     name: '',
     type: 'folder',
     url: '',
-    parentId: null
+    parentId: null,
+    yearIndex: '1',
+    semesterIndex: '1'
   });
   const [driveFileToUpload, setDriveFileToUpload] = useState<File | null>(null);
   const [isUploadingDriveFile, setIsUploadingDriveFile] = useState(false);
+  // When set, the drive modal renders in EDIT mode: name / year / semester of
+  // an existing item (file or folder) — no upload, no type change.
+  const [editingDriveItem, setEditingDriveItem] = useState<DriveFile | null>(null);
 
   // Move Drive Item Modal State
   const [movingFile, setMovingFile] = useState<DriveFile | null>(null);
@@ -433,10 +441,13 @@ export function AdminUniversitiesTab({
       map[key].totalSubjects += (dbItem.subjects?.length || 0);
       map[key].totalDriveFiles += (dbItem.driveFiles?.length || 0);
 
-      // Enrolled students in this college
+      // Enrolled students in this college — explicit-ID linking ONLY.
+      // Students who merely typed the college name are never counted.
+      const childSpecIds = databases.filter(d => d.isSpecialization && d.parentDatabaseId === dbItem.id).map(d => d.id);
       const enrolled = studentsList.filter(
-        s => (s.university === dbItem.universityNameAr || s.university === dbItem.universityNameEn) &&
-             (s.college === dbItem.collegeNameAr || s.college === dbItem.collegeNameEn)
+        s => dbItem.isSpecialization
+          ? s.specializationDatabaseId === dbItem.id
+          : (s.universityDatabaseId === dbItem.id || childSpecIds.includes(s.specializationDatabaseId))
       ).length;
       map[key].totalStudents += enrolled;
 
@@ -764,7 +775,8 @@ export function AdminUniversitiesTab({
         selectedCollegeDb.collegeNameAr,
         undefined,
         selectedCollegeDb.sourceUserId,
-        studentsList
+        studentsList,
+        selectedCollegeDb.id
       );
       setSpecStudentsList(candidates);
     } catch (e) {
@@ -1238,7 +1250,62 @@ export function AdminUniversitiesTab({
     }
   };
 
-  // Save Drive Item (File / Folder with real Backblaze B2 upload)
+  // Opens the drive modal pre-filled with the parent folder's year/semester —
+  // anything created inside a folder inherits its academic phase by default.
+  const openDriveModalFor = (type: 'folder' | 'file') => {
+    setEditingDriveItem(null);
+    setDriveForm({
+      name: '',
+      type,
+      url: '',
+      parentId: currentDriveFolderId,
+      yearIndex: String(Number(currentFolderObject?.yearIndex) || 1),
+      semesterIndex: String(Number(currentFolderObject?.semesterIndex) || 1)
+    });
+    setIsDriveModalOpen(true);
+  };
+
+  const openDriveEditModal = (file: DriveFile) => {
+    setEditingDriveItem(file);
+    setDriveFileToUpload(null);
+    setDriveForm({
+      name: file.name,
+      type: file.type,
+      url: file.url || '',
+      parentId: file.parentId,
+      yearIndex: String(Number(file.yearIndex) || 1),
+      semesterIndex: String(Number(file.semesterIndex) || 1)
+    });
+    setIsDriveModalOpen(true);
+  };
+
+  const handleUpdateDriveItem = async () => {
+    if (!selectedCollegeDb || !editingDriveItem) return;
+    if (!driveForm.name.trim()) {
+      alert(isAr ? 'يرجى كتابة الاسم.' : 'Please enter a name.');
+      return;
+    }
+    try {
+      const updatedFiles = (selectedCollegeDb.driveFiles || []).map(f =>
+        f.id === editingDriveItem.id
+          ? {
+              ...f,
+              name: driveForm.name.trim(),
+              yearIndex: Number(driveForm.yearIndex) || 1,
+              semesterIndex: Number(driveForm.semesterIndex) || 1
+            }
+          : f
+      );
+      await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
+      setIsDriveModalOpen(false);
+      setEditingDriveItem(null);
+      setDriveForm({ name: '', type: 'folder', url: '', parentId: null, yearIndex: '1', semesterIndex: '1' });
+      await loadUniData();
+    } catch (e) {
+      console.error('Error updating drive item:', e);
+    }
+  };
+
   const handleSaveDriveItem = async () => {
     if (!selectedCollegeDb) return;
 
@@ -1256,12 +1323,14 @@ export function AdminUniversitiesTab({
           size: 0,
           parentId: currentDriveFolderId,
           createdAt: new Date().toISOString().split('T')[0],
-          url: ''
+          url: '',
+          yearIndex: Number(driveForm.yearIndex) || 1,
+          semesterIndex: Number(driveForm.semesterIndex) || 1
         };
         const updatedFiles = [...(selectedCollegeDb.driveFiles || []), newFolder];
         await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
         setIsDriveModalOpen(false);
-        setDriveForm({ name: '', type: 'folder', url: '', parentId: null });
+        setDriveForm({ name: '', type: 'folder', url: '', parentId: null, yearIndex: '1', semesterIndex: '1' });
         setDriveFileToUpload(null);
         await loadUniData();
       } catch (e) {
@@ -1312,13 +1381,15 @@ export function AdminUniversitiesTab({
         parentId: currentDriveFolderId,
         createdAt: new Date().toISOString().split('T')[0],
         url: publicUrl,
-        b2FileId: b2Path
+        b2FileId: b2Path,
+        yearIndex: Number(driveForm.yearIndex) || 1,
+        semesterIndex: Number(driveForm.semesterIndex) || 1
       };
 
       const updatedFiles = [...(selectedCollegeDb.driveFiles || []), newFile];
       await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
       setIsDriveModalOpen(false);
-      setDriveForm({ name: '', type: 'folder', url: '', parentId: null });
+      setDriveForm({ name: '', type: 'folder', url: '', parentId: null, yearIndex: '1', semesterIndex: '1' });
       setDriveFileToUpload(null);
       await loadUniData();
     } catch (e) {
@@ -1345,13 +1416,38 @@ export function AdminUniversitiesTab({
     }
   };
 
-  // Delete Drive Item (Trigger In-App Modal)
+  // Delete Drive Item (Trigger In-App Modal) — removes the whole subtree and
+  // hard-deletes the files' B2 objects (the admin database owns them).
   const handleConfirmDeleteDriveItem = async () => {
     if (!selectedCollegeDb || !driveItemToDelete) return;
     try {
-      const fileId = driveItemToDelete.id;
-      const updatedFiles = selectedCollegeDb.driveFiles.filter(f => f.id !== fileId && f.parentId !== fileId);
+      const allFiles = selectedCollegeDb.driveFiles || [];
+      const collectDescendants = (rootId: string): DriveFile[] => {
+        const out: DriveFile[] = [];
+        const walk = (pid: string) => {
+          allFiles.filter(f => f.parentId === pid).forEach(f => {
+            out.push(f);
+            if (f.type === 'folder') walk(f.id);
+          });
+        };
+        walk(rootId);
+        return out;
+      };
+      const doomed = [driveItemToDelete, ...collectDescendants(driveItemToDelete.id)];
+      const doomedIds = new Set(doomed.map(f => f.id));
+
+      const updatedFiles = allFiles.filter(f => !doomedIds.has(f.id));
       await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
+
+      // Server-side (Edge Function) hard delete with client-side fallback.
+      import('../../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
+        const b2Keys = doomed
+          .filter(f => f.type === 'file')
+          .map(f => f.b2FileId || f.url || '')
+          .filter(Boolean);
+        if (b2Keys.length > 0) deleteMultipleFromB2(b2Keys).catch(console.error);
+      }).catch(console.error);
+
       setDriveItemToDelete(null);
       await loadUniData();
     } catch (e) {
@@ -1642,6 +1738,19 @@ export function AdminUniversitiesTab({
     if (!selectedCollegeDb || !currentDriveFolderId) return null;
     return (selectedCollegeDb.driveFiles || []).find(f => f.id === currentDriveFolderId) || null;
   }, [selectedCollegeDb, currentDriveFolderId]);
+
+  // Students explicitly linked to this college (or one of its child
+  // specializations) — name-matching is never used.
+  const enrolledCollegeStudents = useMemo(() => {
+    if (!selectedCollegeDb) return [];
+    const childSpecIds = databases
+      .filter(d => d.isSpecialization && d.parentDatabaseId === selectedCollegeDb.id)
+      .map(d => d.id);
+    return studentsList.filter(st =>
+      st.universityDatabaseId === selectedCollegeDb.id ||
+      childSpecIds.includes(st.specializationDatabaseId)
+    );
+  }, [selectedCollegeDb, databases, studentsList]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-150">
@@ -2961,10 +3070,7 @@ export function AdminUniversitiesTab({
 
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => {
-                          setDriveForm({ name: '', type: 'folder', url: '', parentId: currentDriveFolderId });
-                          setIsDriveModalOpen(true);
-                        }}
+                        onClick={() => openDriveModalFor('folder')}
                         className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs cursor-pointer"
                       >
                         <FolderPlus size={15} />
@@ -2972,10 +3078,7 @@ export function AdminUniversitiesTab({
                       </button>
 
                       <button
-                        onClick={() => {
-                          setDriveForm({ name: '', type: 'file', url: '', parentId: currentDriveFolderId });
-                          setIsDriveModalOpen(true);
-                        }}
+                        onClick={() => openDriveModalFor('file')}
                         className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs cursor-pointer"
                       >
                         <Plus size={15} />
@@ -2995,21 +3098,24 @@ export function AdminUniversitiesTab({
                     ) : (
                       <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
                         {currentDriveFiles.map(file => (
-                          <li 
-                            key={file.id} 
-                            className="group flex items-center justify-between p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer"
+                          <li
+                            key={file.id}
+                            className="group p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer"
                             onClick={() => handlePreviewDriveFile(file)}
                           >
-                            <div className="flex items-center gap-3.5 min-w-0">
-                              <div className={`p-3 rounded-2xl ${
-                                file.type === 'folder' 
-                                  ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/40' 
+                            {/* Name block: wraps up to 3 lines — the card grows
+                                with the name, nothing hides behind the buttons
+                                (identical to the student drive layout). */}
+                            <div className="flex items-start gap-3.5">
+                              <div className={`p-3 rounded-2xl shrink-0 ${
+                                file.type === 'folder'
+                                  ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/40'
                                   : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700/60'
                               }`}>
                                 {file.type === 'folder' ? <Folder size={22} /> : <FileText size={22} />}
                               </div>
-                              <div className="min-w-0">
-                                <p className="font-bold text-sm text-zinc-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                              <div className="min-w-0 flex-1">
+                                <p className="font-bold text-sm text-zinc-900 dark:text-white whitespace-normal break-words line-clamp-3 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                                   {file.name}
                                 </p>
                                 <p className="text-xs text-zinc-400 mt-0.5">
@@ -3018,8 +3124,8 @@ export function AdminUniversitiesTab({
                               </div>
                             </div>
 
-                            {/* Actions */}
-                            <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            {/* Actions: 2x2 grid BELOW the name — full-width buttons */}
+                            <div className="grid grid-cols-2 gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
                               {/* Move Button */}
                               <button
                                 onClick={() => {
@@ -3029,7 +3135,7 @@ export function AdminUniversitiesTab({
                                 className="p-2 text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 dark:hover:text-blue-400 border border-zinc-200 dark:border-zinc-700/60 rounded-xl transition-all shadow-2xs cursor-pointer"
                                 title={isAr ? 'نقل إلى مجلد' : 'Move'}
                               >
-                                <Move size={15} />
+                                <Move size={15} className="mx-auto" />
                               </button>
 
                               {/* Preview in Browser */}
@@ -3039,7 +3145,7 @@ export function AdminUniversitiesTab({
                                   className="p-2 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-all rounded-xl shadow-2xs cursor-pointer"
                                   title={isAr ? 'معاينة في المتصفح' : 'Preview'}
                                 >
-                                  <Eye size={15} />
+                                  <Eye size={15} className="mx-auto" />
                                 </button>
                               )}
 
@@ -3051,9 +3157,18 @@ export function AdminUniversitiesTab({
                                   className="p-2 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 disabled:opacity-50 transition-all rounded-xl shadow-2xs cursor-pointer"
                                   title={isAr ? 'تنزيل الملف' : 'Download'}
                                 >
-                                  {downloadingFileId === file.id ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                                  {downloadingFileId === file.id ? <Loader2 size={15} className="animate-spin mx-auto" /> : <Download size={15} className="mx-auto" />}
                                 </button>
                               )}
+
+                              {/* Edit Button (name / year / semester) */}
+                              <button
+                                onClick={() => openDriveEditModal(file)}
+                                className="p-2 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-all rounded-xl shadow-2xs cursor-pointer"
+                                title={isAr ? 'تعديل الاسم أو السنة أو الفصل' : 'Edit name, year or semester'}
+                              >
+                                <Pencil size={15} className="mx-auto" />
+                              </button>
 
                               {/* Delete Button */}
                               <button
@@ -3061,7 +3176,7 @@ export function AdminUniversitiesTab({
                                 className="p-2 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-all rounded-xl shadow-2xs cursor-pointer"
                                 title={isAr ? 'حذف' : 'Delete'}
                               >
-                                <Trash2 size={15} />
+                                <Trash2 size={15} className="mx-auto" />
                               </button>
                             </div>
                           </li>
@@ -3080,10 +3195,7 @@ export function AdminUniversitiesTab({
                   </h4>
 
                   <div className="space-y-2">
-                    {studentsList.filter(
-                      s => (s.university === selectedCollegeDb.universityNameAr || s.university === selectedCollegeDb.universityNameEn) &&
-                           (s.college === selectedCollegeDb.collegeNameAr || s.college === selectedCollegeDb.collegeNameEn)
-                    ).map(st => (
+                    {enrolledCollegeStudents.map(st => (
                       <div key={st.id} className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/80 flex items-center justify-between">
                         <div>
                           <h5 className="font-black text-xs sm:text-sm text-zinc-900 dark:text-white">{st.name}</h5>
@@ -3095,10 +3207,7 @@ export function AdminUniversitiesTab({
                       </div>
                     ))}
 
-                    {studentsList.filter(
-                      s => (s.university === selectedCollegeDb.universityNameAr || s.university === selectedCollegeDb.universityNameEn) &&
-                           (s.college === selectedCollegeDb.collegeNameAr || s.college === selectedCollegeDb.collegeNameEn)
-                    ).length === 0 && (
+                    {enrolledCollegeStudents.length === 0 && (
                       <p className="text-xs text-zinc-400 py-6 text-center">
                         {isAr ? 'لم يقم أي طالب بالتسجيل أو الاسترداد من هذه الكلية حتى الآن.' : 'No students enrolled under this college yet.'}
                       </p>
@@ -4496,11 +4605,15 @@ export function AdminUniversitiesTab({
       {isDriveModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md p-6 sm:p-7 space-y-4 border border-zinc-200 dark:border-zinc-800 shadow-2xl">
-            <h3 className="font-black text-base text-zinc-900 dark:text-white">
-              {isAr ? 'إضافة ملف أو مجلد في درايف الكلية' : 'Add Drive Item'}
+            <h3 className="font-black text-base text-zinc-900 dark:text-white flex items-center gap-2">
+              {editingDriveItem ? <Pencil size={17} className="text-amber-500 shrink-0" /> : null}
+              {editingDriveItem
+                ? (isAr ? `تعديل: ${editingDriveItem.name}` : `Edit: ${editingDriveItem.name}`)
+                : (isAr ? 'إضافة ملف أو مجلد في درايف الكلية' : 'Add Drive Item')}
             </h3>
 
             <div className="space-y-3">
+              {!editingDriveItem && (
               <div>
                 <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
                   {isAr ? 'النوع' : 'Type'}
@@ -4532,8 +4645,9 @@ export function AdminUniversitiesTab({
                   </button>
                 </div>
               </div>
+              )}
 
-              {driveForm.type === 'file' ? (
+              {!editingDriveItem && (driveForm.type === 'file' ? (
                 <div className="space-y-3">
                   {/* File Upload Dropzone */}
                   <div>
@@ -4628,7 +4742,40 @@ export function AdminUniversitiesTab({
                     className="w-full px-4 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
-              )}
+              ))}
+
+              {/* Academic phase (year / semester) — defaults to the parent
+                  folder's phase, editable for every item */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                    {isAr ? 'السنة الدراسية' : 'Year'}
+                  </label>
+                  <select
+                    value={driveForm.yearIndex}
+                    onChange={(e) => setDriveForm({ ...driveForm, yearIndex: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {Array.from({ length: Number(selectedCollegeDb?.totalYears) || 4 }, (_, i) => i + 1).map(y => (
+                      <option key={y} value={y}>{isAr ? `السنة ${y}` : `Year ${y}`}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                    {isAr ? 'الفصل الدراسي' : 'Semester'}
+                  </label>
+                  <select
+                    value={driveForm.semesterIndex}
+                    onChange={(e) => setDriveForm({ ...driveForm, semesterIndex: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {Array.from({ length: Number(selectedCollegeDb?.semestersPerYear) || 2 }, (_, i) => i + 1).map(s => (
+                      <option key={s} value={s}>{isAr ? `الفصل ${s}` : `Semester ${s}`}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
 
             <div className="flex justify-end items-center gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
@@ -4636,6 +4783,7 @@ export function AdminUniversitiesTab({
                 type="button"
                 onClick={() => {
                   setIsDriveModalOpen(false);
+                  setEditingDriveItem(null);
                   setDriveFileToUpload(null);
                 }}
                 disabled={isUploadingDriveFile}
@@ -4643,19 +4791,31 @@ export function AdminUniversitiesTab({
               >
                 {isAr ? 'إلغاء' : 'Cancel'}
               </button>
-              <button
-                type="button"
-                onClick={handleSaveDriveItem}
-                disabled={isUploadingDriveFile || (driveForm.type === 'folder' && !driveForm.name.trim()) || (driveForm.type === 'file' && !driveFileToUpload)}
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-2 shadow-md shadow-indigo-500/20"
-              >
-                {isUploadingDriveFile ? <Loader2 size={14} className="animate-spin" /> : (driveForm.type === 'file' ? <Upload size={14} /> : <Plus size={14} />)}
-                <span>
-                  {isUploadingDriveFile 
-                    ? (isAr ? 'جاري الرفع إلى B2...' : 'Uploading...') 
-                    : (driveForm.type === 'file' ? (isAr ? 'رفع وحفظ الملف' : 'Upload File') : (isAr ? 'إنشاء المجلد' : 'Create Folder'))}
-                </span>
-              </button>
+              {editingDriveItem ? (
+                <button
+                  type="button"
+                  onClick={handleUpdateDriveItem}
+                  disabled={!driveForm.name.trim()}
+                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-2 shadow-md shadow-amber-500/20"
+                >
+                  <Pencil size={14} />
+                  <span>{isAr ? 'حفظ التعديلات' : 'Save Changes'}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSaveDriveItem}
+                  disabled={isUploadingDriveFile || (driveForm.type === 'folder' && !driveForm.name.trim()) || (driveForm.type === 'file' && !driveFileToUpload)}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-2 shadow-md shadow-indigo-500/20"
+                >
+                  {isUploadingDriveFile ? <Loader2 size={14} className="animate-spin" /> : (driveForm.type === 'file' ? <Upload size={14} /> : <Plus size={14} />)}
+                  <span>
+                    {isUploadingDriveFile
+                      ? (isAr ? 'جاري الرفع إلى B2...' : 'Uploading...')
+                      : (driveForm.type === 'file' ? (isAr ? 'رفع وحفظ الملف' : 'Upload File') : (isAr ? 'إنشاء المجلد' : 'Create Folder'))}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         </div>

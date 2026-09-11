@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, GraduationGradeRule, GradeRule, UniversityDatabase } from '../types';
+import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, GraduationGradeRule, UniversityDatabase } from '../types';
 import { db, flushPendingWrites } from '../lib/db';
 import { normalizeSubjectName } from '../lib/academicTranslation';
 
@@ -525,13 +525,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       // sync will never re-import them.
       if (target.universityTemplateId) {
         addDeletedTemplateFileId(userId, target.universityTemplateId);
+      } else {
+        // Only the student's OWN uploads own their B2 object. Template-derived
+        // clones share the source's B2 object, so it must never be deleted.
+        import('../lib/backblaze').then(({ deleteFromB2, extractB2KeyFromUrl }) => {
+          const key = target.b2FileId || extractB2KeyFromUrl(target.url);
+          if (key) {
+            deleteFromB2(key).catch(console.error);
+          }
+        }).catch(console.error);
       }
-      import('../lib/backblaze').then(({ deleteFromB2, extractB2KeyFromUrl }) => {
-        const key = target.b2FileId || extractB2KeyFromUrl(target.url);
-        if (key) {
-          deleteFromB2(key).catch(console.error);
-        }
-      }).catch(console.error);
 
       checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'delete_file', `حذف ملف من الدرايف: ${target.name}`, { id, name: target.name });
     }
@@ -1087,43 +1090,67 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   unlinkUniversityDatabase: async () => {
-    const { userId, settings } = get();
+    const { userId, settings, subjects, files } = get();
     if (!userId) return;
 
-    await db.clearAllSubjects(userId);
-    await db.clearAllDriveFiles(userId);
+    // Collect the template ids of every linked database (general + spec).
+    // Only items derived from those templates are removed — everything the
+    // student added personally (subjects, files, notes, tasks, schedule)
+    // survives the unlink.
+    const templateSubjectIds = new Set<string>();
+    const templateFileIds = new Set<string>();
+    const linkedDbIds = Array.from(new Set([
+      settings.universityDatabaseId,
+      settings.specializationDatabaseId
+    ].filter(Boolean) as string[]));
 
-    const defaultScale: GradeRule[] = [
-      { id: '1', letter: 'A+', nameAr: 'ممتاز مرتفع', nameEn: 'High Excellent', minPercentage: 90, maxPercentage: 100, maxOperator: '<=', points: 4.0 },
-      { id: '2', letter: 'A', nameAr: 'ممتاز', nameEn: 'Excellent', minPercentage: 85, maxPercentage: 89.99, maxOperator: '<=', points: 3.7 },
-      { id: '3', letter: 'B+', nameAr: 'جيد جداً مرتفع', nameEn: 'High Very Good', minPercentage: 80, maxPercentage: 84.99, maxOperator: '<=', points: 3.3 },
-      { id: '4', letter: 'B', nameAr: 'جيد جداً', nameEn: 'Very Good', minPercentage: 75, maxPercentage: 79.99, maxOperator: '<=', points: 3.0 },
-      { id: '5', letter: 'C+', nameAr: 'جيد مرتفع', nameEn: 'High Good', minPercentage: 70, maxPercentage: 74.99, maxOperator: '<=', points: 2.7 },
-      { id: '6', letter: 'C', nameAr: 'جيد', nameEn: 'Good', minPercentage: 65, maxPercentage: 69.99, maxOperator: '<=', points: 2.4 },
-      { id: '7', letter: 'D+', nameAr: 'مقبول مرتفع', nameEn: 'High Pass', minPercentage: 60, maxPercentage: 64.99, maxOperator: '<=', points: 2.2 },
-      { id: '8', letter: 'D', nameAr: 'مقبول', nameEn: 'Pass', minPercentage: 50, maxPercentage: 59.99, maxOperator: '<=', points: 2.0 },
-      { id: '9', letter: 'F', nameAr: 'راسب', nameEn: 'Fail', minPercentage: 0, maxPercentage: 49.99, maxOperator: '<', points: 0.0 }
-    ];
+    for (const dbId of linkedDbIds) {
+      try {
+        const udb = await db.getUniversityDatabase(dbId);
+        if (udb) {
+          (udb.subjects || []).forEach(s => { if (s.id) templateSubjectIds.add(s.id); });
+          (udb.driveFiles || []).forEach(f => { if (f.id) templateFileIds.add(f.id); });
+        }
+      } catch {}
+    }
 
+    const remainingSubjects = subjects.filter(s => {
+      const isTemplate = (s.universityTemplateId && templateSubjectIds.has(s.universityTemplateId)) || templateSubjectIds.has(s.id);
+      if (isTemplate) {
+        db.deleteSubject(userId, s.id).catch(() => {});
+        return false;
+      }
+      return true;
+    });
+
+    const remainingFiles = files.filter(f => {
+      const isTemplate = (f.universityTemplateId && templateFileIds.has(f.universityTemplateId)) || templateFileIds.has(f.id);
+      if (isTemplate) {
+        // Tombstone so a future re-link never re-imports what the student removed.
+        if (f.universityTemplateId) addDeletedTemplateFileId(userId, f.universityTemplateId);
+        // Never delete the B2 object — it belongs to the shared template.
+        db.deleteDriveFile(userId, f.id).catch(() => {});
+        return false;
+      }
+      return true;
+    });
+
+    // Names typed by the student stay untouched — only the database link is cleared.
     const updatedSettings: Partial<UserSettings> = {
       universityDatabaseId: undefined,
       specializationDatabaseId: undefined,
-      university: 'غير محدد',
-      college: 'غير محدد',
-      specialization: '',
-      deletedSubjectNames: [],
-      gradingScale: defaultScale
+      deletedSubjectNames: []
     };
 
     set(state => ({
-      subjects: [],
-      files: [],
+      subjects: remainingSubjects,
+      files: remainingFiles,
       settings: { ...state.settings, ...updatedSettings }
     }));
 
     try {
-      localStorage.removeItem(`unistudent_subjects_${userId}`);
-      localStorage.removeItem(`unistudent_files_${userId}`);
+      localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(remainingSubjects));
+      localStorage.setItem(`unistudent_files_${userId}`, JSON.stringify(remainingFiles));
     } catch {}
 
     await db.upsertSettings(userId, updatedSettings);

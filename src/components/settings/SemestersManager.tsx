@@ -80,7 +80,10 @@ export function SemestersManager({
 
   const currentSemester = semesters.find(s => s.isCurrent);
   const isBeyondFirstSemester = currentSemester && !(currentSemester.yearIndex === 1 && currentSemester.semesterIndex === 1);
-  const hasRegisteredCoursesInFirstTerm = subjects.some(s => s.yearIndex === 1 && s.semesterIndex === 1);
+  // Number() guards against string-typed year/semester values (e.g. restored
+  // database rows) that strict equality would miss — any subject in Year 1 /
+  // Term 1 hides the past-academic setup options.
+  const hasRegisteredCoursesInFirstTerm = subjects.some(s => Number(s.yearIndex) === 1 && Number(s.semesterIndex) === 1);
   const shouldShowPastAcademicSetup = isBeyondFirstSemester && !hasRegisteredCoursesInFirstTerm;
 
   return (

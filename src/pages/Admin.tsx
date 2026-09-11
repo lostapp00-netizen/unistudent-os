@@ -304,6 +304,7 @@ export function Admin() {
         specializationStartYear: Number(userSettingsRow.specialization_start_year || (userSettingsRow as any).specializationStartYear || 2),
         specializationStartSemester: Number(userSettingsRow.specialization_start_semester || (userSettingsRow as any).specializationStartSemester || 1),
         specializationDatabaseId: userSettingsRow.specialization_database_id || (userSettingsRow as any).specializationDatabaseId || '',
+        universityDatabaseId: userSettingsRow.university_database_id || (userSettingsRow as any).universityDatabaseId || '',
         enrollmentDate: userSettingsRow.enrollment_date || '',
         totalYears: userSettingsRow.total_years || 4,
         semestersPerYear: userSettingsRow.semesters_per_year || 2,

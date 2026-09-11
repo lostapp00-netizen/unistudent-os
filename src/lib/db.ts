@@ -1377,7 +1377,9 @@ export const db = {
       // Cascade cleanup for affected students:
       if (targetDb) {
         if (targetDb.isSpecialization) {
-          // Specialization Deleted: clean up specialization from all linked students
+          // Specialization Deleted: detach explicitly-linked students and remove
+          // only the specialization's template-derived items. Name matching is
+          // NEVER used — students who merely typed the spec name stay untouched.
           try {
             const { data: affectedSettings } = await supabase
               .from('settings')
@@ -1386,34 +1388,17 @@ export const db = {
 
             const affectedUserIds = (affectedSettings || []).map(s => s.user_id);
 
-            if (targetDb.collegeNameAr && targetDb.specializationNameAr) {
-              const { data: byName } = await supabase
-                .from('settings')
-                .select('user_id')
-                .eq('college', targetDb.collegeNameAr)
-                .eq('specialization', targetDb.specializationNameAr);
-              (byName || []).forEach(b => {
-                if (!affectedUserIds.includes(b.user_id)) affectedUserIds.push(b.user_id);
-              });
-            }
-
-            const specStartYr = Number(targetDb.specializationStartYear || 2);
-            const specStartSem = Number(targetDb.specializationStartSemester || 1);
             const templateSubjIds = new Set((targetDb.subjects || []).map(s => s.id));
             const templateFileIds = new Set((targetDb.driveFiles || []).map(f => f.id));
 
             for (const uId of affectedUserIds) {
               const { data: userSubjs } = await supabase
                 .from('subjects')
-                .select('id, year_index, semester_index, university_template_id')
+                .select('id, university_template_id')
                 .eq('user_id', uId);
 
               for (const s of (userSubjs || [])) {
-                const y = Number(s.year_index || 1);
-                const sm = Number(s.semester_index || 1);
-                const isSpecPhase = y > specStartYr || (y === specStartYr && sm >= specStartSem);
-                const isSpecTemplate = s.university_template_id && templateSubjIds.has(s.university_template_id);
-                if (isSpecPhase || isSpecTemplate) {
+                if (s.university_template_id && templateSubjIds.has(s.university_template_id)) {
                   await supabase.from('subjects').delete().eq('id', s.id);
                 }
               }
@@ -1446,7 +1431,11 @@ export const db = {
             parentCollegeId: targetDb.parentDatabaseId
           });
         } else {
-          // General College Deleted: clean up curriculum for all linked students (and child specializations)
+          // General College Deleted: detach explicitly-linked students (and
+          // students linked to its child specializations) and remove ONLY the
+          // template-derived curriculum/files imported from the deleted
+          // databases. The student's own data is never touched, and names are
+          // never reset — matching by name is not used at all.
           const childSpecs = current.filter(u => u.parentDatabaseId === targetDb.id);
           const allTargetIds = [targetDb.id, ...childSpecs.map(c => c.id)];
 
@@ -1458,22 +1447,48 @@ export const db = {
 
             const affectedUserIds = (affectedSettings || []).map(s => s.user_id);
 
-            if (targetDb.collegeNameAr) {
-              const { data: byName } = await supabase
+            // Also include students linked to any of the child specializations
+            try {
+              const { data: specLinked } = await supabase
                 .from('settings')
                 .select('user_id')
-                .eq('college', targetDb.collegeNameAr);
-              (byName || []).forEach(b => {
+                .in('specialization_database_id', allTargetIds);
+              (specLinked || []).forEach(b => {
                 if (!affectedUserIds.includes(b.user_id)) affectedUserIds.push(b.user_id);
               });
+            } catch {}
+
+            const templateSubjIds = new Set<string>();
+            const templateFileIds = new Set<string>();
+            for (const dbItem of [targetDb, ...childSpecs]) {
+              (dbItem.subjects || []).forEach(s => { if (s.id) templateSubjIds.add(s.id); });
+              (dbItem.driveFiles || []).forEach(f => { if (f.id) templateFileIds.add(f.id); });
             }
 
             for (const uId of affectedUserIds) {
-              await this.clearAllSubjects(uId);
-              await this.clearAllDriveFiles(uId);
+              const { data: userSubjs } = await supabase
+                .from('subjects')
+                .select('id, university_template_id')
+                .eq('user_id', uId);
+
+              for (const s of (userSubjs || [])) {
+                if (s.university_template_id && templateSubjIds.has(s.university_template_id)) {
+                  await supabase.from('subjects').delete().eq('id', s.id);
+                }
+              }
+
+              const { data: userFiles } = await supabase
+                .from('drive_files')
+                .select('id, university_template_id')
+                .eq('user_id', uId);
+
+              for (const f of (userFiles || [])) {
+                if (f.university_template_id && templateFileIds.has(f.university_template_id)) {
+                  await supabase.from('drive_files').delete().eq('id', f.id);
+                }
+              }
+
               await supabase.from('settings').update({
-                university: 'غير محدد',
-                college: 'غير محدد',
                 university_database_id: null,
                 specialization: null,
                 specialization_database_id: null
@@ -1520,7 +1535,8 @@ export const db = {
     collegeName: string, 
     specializationName?: string,
     sourceUserId?: string,
-    existingStudentsList?: any[]
+    existingStudentsList?: any[],
+    collegeDbId?: string
   ): Promise<Array<{
     userId: string;
     name: string;
@@ -1554,6 +1570,8 @@ export const db = {
             specialization: st.specialization,
             specializationStartYear: st.specializationStartYear || st.specialization_start_year,
             specializationStartSemester: st.specializationStartSemester || st.specialization_start_semester,
+            universityDatabaseId: st.universityDatabaseId || st.university_database_id || '',
+            specializationDatabaseId: st.specializationDatabaseId || st.specialization_database_id || '',
             subjects: st.subjects || st.raw?.subjects || []
           });
         }
@@ -1580,6 +1598,7 @@ export const db = {
               specializationStartYear: s.specialization_start_year || existing.specializationStartYear || specMeta?.specializationStartYear || 2,
               specializationStartSemester: s.specialization_start_semester || existing.specializationStartSemester || specMeta?.specializationStartSemester || 1,
               specializationDatabaseId: s.specialization_database_id || existing.specializationDatabaseId || specMeta?.specializationDatabaseId || '',
+              universityDatabaseId: s.university_database_id || existing.universityDatabaseId || '',
               subjects: (existing.subjects && existing.subjects.length > 0) ? existing.subjects : []
             });
           }
@@ -1613,7 +1632,14 @@ export const db = {
     for (const [uid, s] of settingsMap.entries()) {
       const isSourceUser = Boolean(sourceUserId && uid === sourceUserId);
       const studentCol = norm(s.college);
-      const isColMatch = isSourceUser || !targetCol || (studentCol && (studentCol === targetCol || studentCol.includes(targetCol) || targetCol.includes(studentCol)));
+      const studentUniDbId = String(s.universityDatabaseId || s.university_database_id || '');
+
+      // Explicit-ID linking ONLY when the database id is known: a student who
+      // merely typed the college name (no restore / no pull) must never appear
+      // as linked. Name matching remains only as a legacy fallback.
+      const isColMatch = isSourceUser || (collegeDbId
+        ? studentUniDbId === collegeDbId
+        : (!targetCol || (studentCol && (studentCol === targetCol || studentCol.includes(targetCol) || targetCol.includes(studentCol)))));
       if (!isColMatch) continue;
 
       const studentSpec = s.specialization || '';
@@ -1826,18 +1852,46 @@ export const db = {
       await this.deleteUniversityDatabase(item.id);
     }
 
+    // Detach explicitly-linked students and remove ONLY template-derived
+    // items imported from the deleted databases — never the student's own data.
     try {
+      const deletedIds = toDelete.map(d => d.id);
+      if (deletedIds.length === 0) return;
+
+      const templateSubjIds = new Set<string>();
+      const templateFileIds = new Set<string>();
+      for (const dbItem of toDelete) {
+        (dbItem.subjects || []).forEach(s => { if (s.id) templateSubjIds.add(s.id); });
+        (dbItem.driveFiles || []).forEach(f => { if (f.id) templateFileIds.add(f.id); });
+      }
+
       const { data: affectedSettings } = await supabase
         .from('settings')
         .select('user_id')
-        .eq('university', uniName.trim());
+        .or(`university_database_id.in.(${deletedIds.join(',')}),specialization_database_id.in.(${deletedIds.join(',')})`);
 
       for (const row of (affectedSettings || [])) {
-        await this.clearAllSubjects(row.user_id);
-        await this.clearAllDriveFiles(row.user_id);
+        const { data: userSubjs } = await supabase
+          .from('subjects')
+          .select('id, university_template_id')
+          .eq('user_id', row.user_id);
+        for (const s of (userSubjs || [])) {
+          if (s.university_template_id && templateSubjIds.has(s.university_template_id)) {
+            await supabase.from('subjects').delete().eq('id', s.id);
+          }
+        }
+
+        const { data: userFiles } = await supabase
+          .from('drive_files')
+          .select('id, university_template_id')
+          .eq('user_id', row.user_id);
+        for (const f of (userFiles || [])) {
+          if (f.university_template_id && templateFileIds.has(f.university_template_id)) {
+            await supabase.from('drive_files').delete().eq('id', f.id);
+          }
+        }
+
         await supabase.from('settings').update({
-          university: 'غير محدد',
-          college: 'غير محدد',
           university_database_id: null,
           specialization: null,
           specialization_database_id: null
@@ -2111,8 +2165,6 @@ export const db = {
 
       const isSpec = Boolean(udb.isSpecialization);
       const norm = (str?: string) => normalizeSubjectName(str);
-      const matchUni = (sUni?: string) => norm(sUni) && (norm(sUni) === norm(udb.universityNameAr) || norm(sUni) === norm(udb.universityNameEn) || (norm(udb.universityNameAr) && norm(sUni).includes(norm(udb.universityNameAr))));
-      const matchCollege = (sCol?: string) => norm(sCol) && (norm(sCol) === norm(udb.collegeNameAr) || norm(sCol) === norm(udb.collegeNameEn) || (norm(udb.collegeNameAr) && norm(sCol).includes(norm(udb.collegeNameAr))));
 
       // Phase filter: a subject may only be pushed through the DB that owns its phase.
       const pushStartYear = Number(udb.specializationStartYear || 2);
@@ -2127,18 +2179,13 @@ export const db = {
       // Find all students in Supabase settings or localStorage
       const studentUserIds: string[] = [];
       const checkStudentSubscription = (s: any) => {
+        // Explicit-ID linking ONLY — students who never restored/pulled the
+        // database (typed the name manually) must never receive its updates.
         if (isSpec) {
-          if (s.specialization_database_id === universityDbId || s.specializationDatabaseId === universityDbId) {
-            return true;
-          }
-          const specName = norm(udb.specializationNameAr) || norm(udb.specializationNameEn) || '';
-          if (matchUni(s.university) && (matchCollege(s.college) || (udb.parentDatabaseId && (s.university_database_id === udb.parentDatabaseId || s.universityDatabaseId === udb.parentDatabaseId)))) {
-            const spec = s.specialization || '';
-            if (specName && spec && (norm(spec) === specName)) {
-              return true;
-            }
-          }
-          return false;
+          return (
+            s.specialization_database_id === universityDbId ||
+            s.specializationDatabaseId === universityDbId
+          );
         } else {
           // General college DB: explicit ID link ONLY — no name-based matching.
           return (

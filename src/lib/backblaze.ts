@@ -52,17 +52,50 @@ export async function uploadFile(file: File, path: string): Promise<{ publicUrl:
 }
 
 /**
- * Permanently deletes a file (including all previous versions and delete markers) from Backblaze B2
- * @param path The path/filename of the file to delete
+ * Server-side hard delete via the `delete-b2-file` Supabase Edge Function.
+ * The browser cannot always reach B2 (CORS restrictions on DELETE), so the
+ * Edge Function — which runs with the B2 keys on the server — is the primary
+ * path. Returns true when the function confirmed deletion (or the object was
+ * already gone), false when the fallback client-side path should be used.
  */
-export async function deleteFromB2(path: string): Promise<void> {
-  if (!path) return;
+async function deleteB2ViaEdgeFunction(cleanKeys: string[]): Promise<boolean> {
+  const validKeys = cleanKeys.filter(Boolean);
+  if (validKeys.length === 0) return true;
+  try {
+    const { supabase } = await import('./supabase');
+    const { data, error } = await supabase.functions.invoke('delete-b2-file', {
+      body: { paths: validKeys }
+    });
+    if (error) throw error;
+    return Boolean((data as any)?.success);
+  } catch (err) {
+    console.warn('Edge Function B2 delete unavailable, falling back to client-side delete:', err);
+    return false;
+  }
+}
+
+/** Normalizes a raw path or URL into a clean B2 object key. */
+function normalizeB2Key(path: string): string {
   let cleanKey = path.trim();
   if (cleanKey.startsWith('/')) cleanKey = cleanKey.slice(1);
   if (cleanKey.startsWith('http://') || cleanKey.startsWith('https://')) {
     const extracted = extractB2KeyFromUrl(cleanKey);
     if (extracted) cleanKey = extracted;
   }
+  return cleanKey;
+}
+
+/**
+ * Permanently deletes a file (including all previous versions and delete markers) from Backblaze B2
+ * @param path The path/filename of the file to delete
+ */
+export async function deleteFromB2(path: string): Promise<void> {
+  if (!path) return;
+  const cleanKey = normalizeB2Key(path);
+  if (!cleanKey) return;
+
+  // Primary path: server-side hard delete (no CORS restrictions).
+  if (await deleteB2ViaEdgeFunction([cleanKey])) return;
 
   try {
     // List all versions and delete markers for this object to perform hard delete
@@ -115,7 +148,10 @@ export async function deleteFromB2(path: string): Promise<void> {
 export async function deleteMultipleFromB2(paths: (string | undefined)[]): Promise<void> {
   const validPaths = paths.filter((p): p is string => Boolean(p && p.trim().length > 0));
   if (validPaths.length === 0) return;
-  await Promise.allSettled(validPaths.map(p => deleteFromB2(p)));
+  const cleanKeys = Array.from(new Set(validPaths.map(normalizeB2Key).filter(Boolean)));
+  // Primary path: one server-side batch hard delete.
+  if (await deleteB2ViaEdgeFunction(cleanKeys)) return;
+  await Promise.allSettled(cleanKeys.map(p => deleteFromB2(p)));
 }
 
 /**

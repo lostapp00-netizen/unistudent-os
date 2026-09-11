@@ -24,7 +24,7 @@ import {
 import { useAppStore } from '../../store/useAppStore';
 import { DriveFile } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
-import { ConfirmModal, PromptModal } from '../ui/CustomModal';
+import { ConfirmModal } from '../ui/CustomModal';
 
 // Recursive Tree Node for Destination Folders
 function FolderTreeItem({
@@ -136,6 +136,9 @@ export function DriveTab() {
 
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  // Folder creation form: name + academic phase. Anything created inside a
+  // folder (subfolder or uploaded file) inherits the folder's phase by default.
+  const [folderForm, setFolderForm] = useState({ name: '', yearIndex: '1', semesterIndex: '1' });
   const [fileToDelete, setFileToDelete] = useState<DriveFile | null>(null);
   const [fileToMove, setFileToMove] = useState<DriveFile | null>(null);
   const [selectedDestinationFolderId, setSelectedDestinationFolderId] = useState<string | null>(null);
@@ -166,15 +169,27 @@ export function DriveTab() {
     return ids;
   };
 
-  const handleCreateFolder = (folderName: string) => {
-    if (!folderName.trim()) return;
+  // Opens the folder modal pre-filled with the parent folder's year/semester
+  const openFolderModal = () => {
+    setFolderForm({
+      name: '',
+      yearIndex: String(Number(currentFolder?.yearIndex) || currentSemesterInfo?.yearIndex || 1),
+      semesterIndex: String(Number(currentFolder?.semesterIndex) || currentSemesterInfo?.semesterIndex || 1)
+    });
+    setIsFolderModalOpen(true);
+  };
+
+  const handleCreateFolder = () => {
+    if (!folderForm.name.trim()) return;
     addFile({
       id: uuidv4(),
-      name: folderName.trim(),
+      name: folderForm.name.trim(),
       size: 0,
       type: 'folder',
       parentId: currentFolderId,
       createdAt: new Date().toISOString().split('T')[0],
+      yearIndex: Number(folderForm.yearIndex) || 1,
+      semesterIndex: Number(folderForm.semesterIndex) || 1
     });
     setIsFolderModalOpen(false);
   };
@@ -196,10 +211,11 @@ export function DriveTab() {
   const openUploadModal = () => {
     setUploadFileSelected(null);
     setEditingFile(null);
+    // Default phase: the parent folder's — falling back to the current semester
     setUploadForm({
       name: '',
-      yearIndex: String(currentSemesterInfo?.yearIndex || 1),
-      semesterIndex: String(currentSemesterInfo?.semesterIndex || 1)
+      yearIndex: String(Number(currentFolder?.yearIndex) || currentSemesterInfo?.yearIndex || 1),
+      semesterIndex: String(Number(currentFolder?.semesterIndex) || currentSemesterInfo?.semesterIndex || 1)
     });
     setIsUploadModalOpen(true);
   };
@@ -299,8 +315,10 @@ export function DriveTab() {
     if (file.type === 'folder') {
       const descendantIds = getAllDescendantIds(file.id, files);
       const allTargetIds = [file.id, ...descendantIds];
-      const descendantFiles = files.filter(f => allTargetIds.includes(f.id) && f.type === 'file');
-      
+      // Only the student's OWN uploads own their B2 object — template-derived
+      // clones share the source's object and must never be deleted from B2.
+      const descendantFiles = files.filter(f => allTargetIds.includes(f.id) && f.type === 'file' && !f.universityTemplateId);
+
       try {
         const { deleteMultipleFromB2, extractB2KeyFromUrl } = await import('../../lib/backblaze');
         const b2Keys = descendantFiles.map(f => f.b2FileId || extractB2KeyFromUrl(f.url)).filter(Boolean);
@@ -313,13 +331,15 @@ export function DriveTab() {
 
       allTargetIds.forEach(id => deleteFile(id));
     } else {
-      const b2Key = file.b2FileId || (file.url ? (await import('../../lib/backblaze')).extractB2KeyFromUrl(file.url) : null);
-      if (b2Key) {
-        try {
-          const { deleteFromB2 } = await import('../../lib/backblaze');
-          await deleteFromB2(b2Key);
-        } catch (err) {
-          console.error('Error deleting single file from B2:', err);
+      if (!file.universityTemplateId) {
+        const b2Key = file.b2FileId || (file.url ? (await import('../../lib/backblaze')).extractB2KeyFromUrl(file.url) : null);
+        if (b2Key) {
+          try {
+            const { deleteFromB2 } = await import('../../lib/backblaze');
+            await deleteFromB2(b2Key);
+          } catch (err) {
+            console.error('Error deleting single file from B2:', err);
+          }
         }
       }
       deleteFile(file.id);
@@ -329,7 +349,19 @@ export function DriveTab() {
 
   const handleConfirmMove = () => {
     if (!fileToMove) return;
-    updateFile(fileToMove.id, { parentId: selectedDestinationFolderId });
+    // Moving an item into a folder makes it inherit that folder's academic
+    // phase (year / semester) — matching "anything placed inside a folder
+    // takes the folder's phase". Moving to root keeps the current values.
+    const destination = selectedDestinationFolderId ? files.find(f => f.id === selectedDestinationFolderId) : null;
+    updateFile(fileToMove.id, {
+      parentId: selectedDestinationFolderId,
+      ...(destination
+        ? {
+            yearIndex: Number(destination.yearIndex) || Number(fileToMove.yearIndex) || 1,
+            semesterIndex: Number(destination.semesterIndex) || Number(fileToMove.semesterIndex) || 1
+          }
+        : {})
+    });
     setFileToMove(null);
     setSelectedDestinationFolderId(null);
   };
@@ -449,7 +481,7 @@ export function DriveTab() {
         {/* Action Buttons */}
         <div className="flex items-center gap-2.5 w-full sm:w-auto">
           <button
-            onClick={() => setIsFolderModalOpen(true)}
+            onClick={openFolderModal}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-xs cursor-pointer"
           >
             <FolderPlus size={16} className="text-blue-600 dark:text-blue-400" />
@@ -538,16 +570,14 @@ export function DriveTab() {
                     </button>
                   )}
 
-                  {/* Edit Button (name / year / semester) */}
-                  {file.type === 'file' && (
-                    <button
-                      onClick={() => openEditModal(file)}
-                      className="p-2 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-all rounded-xl shadow-2xs cursor-pointer"
-                      title={isAr ? 'تعديل الاسم أو السنة أو الفصل' : 'Edit name, year or semester'}
-                    >
-                      <Pencil size={15} className="mx-auto" />
-                    </button>
-                  )}
+                  {/* Edit Button (name / year / semester) — files and folders */}
+                  <button
+                    onClick={() => openEditModal(file)}
+                    className="p-2 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-all rounded-xl shadow-2xs cursor-pointer"
+                    title={isAr ? 'تعديل الاسم أو السنة أو الفصل' : 'Edit name, year or semester'}
+                  >
+                    <Pencil size={15} className="mx-auto" />
+                  </button>
 
                   {/* Delete Button */}
                   <button
@@ -675,7 +705,9 @@ export function DriveTab() {
                 {editingFile ? <Pencil className="w-5 h-5 text-amber-500 shrink-0" /> : <Upload className="w-5 h-5 text-blue-600 dark:text-blue-400" />}
                 <h3 className="font-bold text-base text-zinc-900 dark:text-white truncate">
                   {editingFile
-                    ? (isAr ? 'تعديل الملف: ' : 'Edit File: ')
+                    ? (editingFile.type === 'folder'
+                        ? (isAr ? 'تعديل المجلد: ' : 'Edit Folder: ')
+                        : (isAr ? 'تعديل الملف: ' : 'Edit File: '))
                     : (isAr ? 'رفع ملف جديد' : 'Upload New File')}
                   {editingFile && <span className="text-amber-500">{editingFile.name}</span>}
                 </h3>
@@ -690,15 +722,15 @@ export function DriveTab() {
 
             <div className="space-y-3.5">
               {editingFile ? (
-                /* EDIT MODE: the file is already uploaded — no picker. */
+                /* EDIT MODE: the item is already uploaded — no picker. */
                 <div>
                   <label className="block text-xs font-bold text-zinc-500 mb-1.5">
-                    {isAr ? 'الملف المرفوع' : 'Uploaded file'}
+                    {editingFile.type === 'folder' ? (isAr ? 'المجلد الحالي' : 'Current folder') : (isAr ? 'الملف المرفوع' : 'Uploaded file')}
                   </label>
                   <div className="flex items-center gap-2.5 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-2.5">
-                    <FileText size={16} className="text-blue-500 shrink-0" />
+                    {editingFile.type === 'folder' ? <Folder size={16} className="text-blue-500 shrink-0" /> : <FileText size={16} className="text-blue-500 shrink-0" />}
                     <span className="text-xs font-bold text-zinc-700 dark:text-zinc-200 truncate">
-                      {editingFile.name} • {formatSize(editingFile.size)}
+                      {editingFile.name}{editingFile.type === 'file' && ` • ${formatSize(editingFile.size)}`}
                     </span>
                   </div>
                 </div>
@@ -818,16 +850,96 @@ export function DriveTab() {
         </div>
       )}
 
-      {/* Create Folder Modal */}
-      <PromptModal
-        isOpen={isFolderModalOpen}
-        title={isAr ? 'إنشاء مجلد جديد' : 'Create New Folder'}
-        placeholder={isAr ? 'اسم المجلد...' : 'Folder name...'}
-        confirmText={isAr ? 'إنشاء' : 'Create'}
-        cancelText={isAr ? 'إلغاء' : 'Cancel'}
-        onConfirm={handleCreateFolder}
-        onCancel={() => setIsFolderModalOpen(false)}
-      />
+      {/* Create Folder Modal: name + academic phase (children inherit it) */}
+      {isFolderModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-md w-full shadow-2xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2 min-w-0">
+                <FolderPlus className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0" />
+                <h3 className="font-bold text-base text-zinc-900 dark:text-white truncate">
+                  {isAr ? 'إنشاء مجلد جديد' : 'Create New Folder'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsFolderModalOpen(false)}
+                className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 mb-1.5">
+                  {isAr ? 'اسم المجلد' : 'Folder name'}
+                </label>
+                <input
+                  type="text"
+                  value={folderForm.name}
+                  onChange={(e) => setFolderForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder={isAr ? 'اسم المجلد...' : 'Folder name...'}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 mb-1.5">
+                    {isAr ? 'السنة الدراسية' : 'Year'}
+                  </label>
+                  <select
+                    value={folderForm.yearIndex}
+                    onChange={(e) => setFolderForm(prev => ({ ...prev, yearIndex: e.target.value }))}
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
+                  >
+                    {Array.from({ length: totalYears }, (_, i) => i + 1).map(y => (
+                      <option key={y} value={y}>{isAr ? `السنة ${y}` : `Year ${y}`}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 mb-1.5">
+                    {isAr ? 'الفصل الدراسي' : 'Semester'}
+                  </label>
+                  <select
+                    value={folderForm.semesterIndex}
+                    onChange={(e) => setFolderForm(prev => ({ ...prev, semesterIndex: e.target.value }))}
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
+                  >
+                    {Array.from({ length: semestersPerYear }, (_, i) => i + 1).map(s => (
+                      <option key={s} value={s}>{isAr ? `الفصل ${s}` : `Semester ${s}`}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-zinc-400">
+                {isAr
+                  ? 'أي ملف أو مجلد فرعي يُنشأ أو يُرفع داخل هذا المجلد سيأخذ نفس السنة والفصل تلقائيًا (ويمكن تعديلها لاحقًا).'
+                  : 'Files or subfolders added inside this folder inherit its year & semester automatically (editable later).'}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                onClick={() => setIsFolderModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer"
+              >
+                {isAr ? 'إلغاء' : 'Cancel'}
+              </button>
+              <button
+                onClick={handleCreateFolder}
+                disabled={!folderForm.name.trim()}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white transition-all shadow-md shadow-blue-500/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <FolderPlus size={14} />
+                <span>{isAr ? 'إنشاء' : 'Create'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       <ConfirmModal
