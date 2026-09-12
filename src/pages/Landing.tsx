@@ -278,7 +278,7 @@ export function Landing() {
           <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-black tracking-tight max-w-4xl mx-auto leading-tight sm:leading-[1.2] text-zinc-900 dark:text-white px-1">
             {isAr ? (
               <>
-                منصتك الأكاديمية في مكان واحد — نظّم موادك وملفاتك واحسب <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-blue-600 to-blue-400">معدلك بدقة</span>.
+                منصاتك الأكاديمية في مكان واحد — نظّم موادك وملفاتك واحسب <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-blue-600 to-blue-400">معدلك بدقة</span>.
               </>
             ) : (
               <>
