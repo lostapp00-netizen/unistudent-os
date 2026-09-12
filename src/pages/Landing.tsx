@@ -278,11 +278,11 @@ export function Landing() {
           <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-black tracking-tight max-w-4xl mx-auto leading-tight sm:leading-[1.2] text-zinc-900 dark:text-white px-1">
             {isAr ? (
               <>
-                منصاتك الأكاديمية في مكان واحد — نظّم موادك وملفاتك واحسب <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-blue-600 to-blue-400">معدلك بدقة</span>.
+                منصاتك الأكاديمية في مكان واحد — نظّم موادك وملفاتك، اصنع <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-blue-600 to-blue-400">ملاحظاتك ومهامك</span>، واحسب <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-blue-600 to-blue-400">معدلك بدقة</span>.
               </>
             ) : (
               <>
-                Your Academic Platform in One Place — Organize Courses & Files, and Calculate <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-blue-600 to-blue-400">Your GPA</span> Accurately.
+                Your Academic Platforms in One Place — Organize Courses & Files, Craft <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-blue-600 to-blue-400">Your Notes & Tasks</span>, and Calculate <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-blue-600 to-blue-400">Your GPA</span> Accurately.
               </>
             )}
           </h1>
