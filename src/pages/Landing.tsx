@@ -108,7 +108,7 @@ export function Landing() {
 
   return (
     <div
-      className="min-h-screen bg-zinc-50 dark:bg-zinc-950 bg-[linear-gradient(to_right,rgba(24,24,27,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(24,24,27,0.045)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:44px_44px] text-zinc-900 dark:text-zinc-50 font-sans selection:bg-blue-500 selection:text-white transition-colors overflow-x-clip"
+      className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 font-sans selection:bg-blue-500 selection:text-white transition-colors overflow-x-clip"
       dir={isAr ? 'rtl' : 'ltr'}
     >
       
@@ -263,7 +263,18 @@ export function Landing() {
 
       {/* --- HERO SECTION --- */}
       <section className="relative pt-8 pb-14 sm:pt-16 sm:pb-24 overflow-hidden">
-        
+
+        {/* Professional blueprint grid — emanates behind the headline and dissolves
+            outward via a radial mask. Two layers: fine 28px lines (texture) +
+            wider 140px lines (depth), like Vercel/Linear hero treatments. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 -z-10 [mask-image:radial-gradient(ellipse_85%_70%_at_50%_8%,black_30%,transparent_100%)] [background-image:linear-gradient(to_right,rgba(24,24,27,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(24,24,27,0.055)_1px,transparent_1px),linear-gradient(to_right,rgba(24,24,27,0.09)_1px,transparent_1px),linear-gradient(to_bottom,rgba(24,24,27,0.09)_1px,transparent_1px)] dark:[background-image:linear-gradient(to_right,rgba(255,255,255,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.045)_1px,transparent_1px),linear-gradient(to_right,rgba(255,255,255,0.075)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.075)_1px,transparent_1px)] [background-size:28px_28px,28px_28px,140px_140px,140px_140px]"
+        />
+
+        {/* Top-center spotlight for the "emission" feel */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[560px] sm:w-[900px] h-[200px] sm:h-[320px] bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.10),transparent_65%)] dark:bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.14),transparent_65%)] blur-2xl pointer-events-none -z-10" />
+
         {/* Background Glowing Ambient Orbs */}
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] sm:w-[600px] md:w-[900px] h-[300px] sm:h-[400px] bg-gradient-to-tr from-blue-500/15 via-blue-500/10 to-blue-500/10 blur-[90px] sm:blur-[130px] rounded-full pointer-events-none -z-10" />
 
@@ -701,6 +712,13 @@ export function Landing() {
 
       {/* --- FINAL CALL TO ACTION BANNER --- */}
       <section className="py-10 sm:py-20 relative">
+
+        {/* Calmer echo of the hero grid — closes the page with the same identity */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 -z-10 [mask-image:radial-gradient(ellipse_60%_85%_at_50%_50%,black_25%,transparent_100%)] [background-image:linear-gradient(to_right,rgba(24,24,27,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(24,24,27,0.04)_1px,transparent_1px)] dark:[background-image:linear-gradient(to_right,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.035)_1px,transparent_1px)] [background-size:28px_28px]"
+        />
+
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="rounded-2xl sm:rounded-3xl bg-gradient-to-r from-blue-900 via-blue-900 to-blue-950 text-white p-6 sm:p-14 text-center space-y-5 sm:space-y-6 shadow-2xl relative overflow-hidden border border-blue-800/50">
             
