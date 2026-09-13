@@ -108,12 +108,12 @@ export function Landing() {
 
   return (
     <div
-      className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 font-sans selection:bg-blue-500 selection:text-white transition-colors overflow-x-clip"
+      className="min-h-screen bg-[#F9F5EE] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 font-sans selection:bg-blue-500 selection:text-white transition-colors overflow-x-clip"
       dir={isAr ? 'rtl' : 'ltr'}
     >
       
       {/* --- TOP NAVBAR --- */}
-      <header className="sticky top-0 z-50 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-md border-b border-zinc-200/80 dark:border-zinc-800/80 transition-all">
+      <header className="sticky top-0 z-50 bg-[#FBF8F2]/90 dark:bg-zinc-950/90 backdrop-blur-md border-b border-[#E7DFD2]/80 dark:border-zinc-800/80 transition-all">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-2">
           
           {/* Logo */}
@@ -205,7 +205,7 @@ export function Landing() {
 
         {/* Mobile Dropdown Navigation */}
         {mobileMenuOpen && (
-          <div className="lg:hidden border-t border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md px-4 py-4 space-y-4 shadow-2xl">
+          <div className="lg:hidden border-t border-[#E7DFD2] dark:border-zinc-800 bg-[#FBF8F2]/95 dark:bg-zinc-950/95 backdrop-blur-md px-4 py-4 space-y-4 shadow-2xl">
             <nav className="flex flex-col gap-1 text-sm font-bold text-zinc-700 dark:text-zinc-200">
               <a 
                 href="#features" 
@@ -264,19 +264,16 @@ export function Landing() {
       {/* --- HERO SECTION --- */}
       <section className="relative pt-8 pb-14 sm:pt-16 sm:pb-24 overflow-hidden">
 
-        {/* Professional blueprint grid — emanates behind the headline and dissolves
-            outward via a radial mask. Two layers: fine 28px lines (texture) +
-            wider 140px lines (depth), like Vercel/Linear hero treatments. */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 -z-10 [mask-image:radial-gradient(ellipse_85%_70%_at_50%_8%,black_30%,transparent_100%)] [background-image:linear-gradient(to_right,rgba(24,24,27,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(24,24,27,0.055)_1px,transparent_1px),linear-gradient(to_right,rgba(24,24,27,0.09)_1px,transparent_1px),linear-gradient(to_bottom,rgba(24,24,27,0.09)_1px,transparent_1px)] dark:[background-image:linear-gradient(to_right,rgba(255,255,255,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.045)_1px,transparent_1px),linear-gradient(to_right,rgba(255,255,255,0.075)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.075)_1px,transparent_1px)] [background-size:28px_28px,28px_28px,140px_140px,140px_140px]"
-        />
+        {/* Warm decorative layer — soft brown shapes on cream, no grid */}
+        <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[680px] sm:w-[1000px] h-[380px] sm:h-[480px] rounded-full bg-[#C9A87F]/25 dark:bg-[#C9A87F]/10 blur-[110px] sm:blur-[140px] pointer-events-none -z-10" />
+        <div className="absolute top-1/3 -right-40 w-[420px] sm:w-[620px] h-[420px] sm:h-[560px] rounded-full bg-[#A9835B]/15 dark:bg-[#A9835B]/8 blur-[120px] sm:blur-[150px] pointer-events-none -z-10" />
+        <div className="absolute top-1/2 -left-40 w-[360px] sm:w-[520px] h-[360px] sm:h-[500px] rounded-full bg-[#D8BC97]/20 dark:bg-[#D8BC97]/8 blur-[110px] sm:blur-[140px] pointer-events-none -z-10" />
 
-        {/* Top-center spotlight for the "emission" feel */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[560px] sm:w-[900px] h-[200px] sm:h-[320px] bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.10),transparent_65%)] dark:bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.14),transparent_65%)] blur-2xl pointer-events-none -z-10" />
-
-        {/* Background Glowing Ambient Orbs */}
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] sm:w-[600px] md:w-[900px] h-[300px] sm:h-[400px] bg-gradient-to-tr from-blue-500/15 via-blue-500/10 to-blue-500/10 blur-[90px] sm:blur-[130px] rounded-full pointer-events-none -z-10" />
+        {/* Broad soft wave — an elegant brown band and stroke under the hero */}
+        <svg className="absolute bottom-0 left-0 w-full h-[90px] sm:h-[130px] pointer-events-none -z-10 dark:opacity-60" viewBox="0 0 1440 140" fill="none" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0,84 C260,128 520,40 780,76 C1040,112 1240,58 1440,92 L1440,140 L0,140 Z" fill="#C9A87F" fillOpacity="0.10" />
+          <path d="M0,70 C240,112 480,26 720,58 C960,92 1200,42 1440,72" stroke="#A9835B" strokeOpacity="0.20" strokeWidth="3" strokeLinecap="round" />
+        </svg>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6 sm:space-y-8">
           
@@ -713,11 +710,8 @@ export function Landing() {
       {/* --- FINAL CALL TO ACTION BANNER --- */}
       <section className="py-10 sm:py-20 relative">
 
-        {/* Calmer echo of the hero grid — closes the page with the same identity */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 -z-10 [mask-image:radial-gradient(ellipse_60%_85%_at_50%_50%,black_25%,transparent_100%)] [background-image:linear-gradient(to_right,rgba(24,24,27,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(24,24,27,0.04)_1px,transparent_1px)] dark:[background-image:linear-gradient(to_right,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.035)_1px,transparent_1px)] [background-size:28px_28px]"
-        />
+        {/* Calm warm blob behind the closing banner */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[560px] sm:w-[820px] h-[300px] sm:h-[420px] rounded-full bg-[#C9A87F]/14 dark:bg-[#C9A87F]/8 blur-[110px] sm:blur-[140px] pointer-events-none -z-10" />
 
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="rounded-2xl sm:rounded-3xl bg-gradient-to-r from-blue-900 via-blue-900 to-blue-950 text-white p-6 sm:p-14 text-center space-y-5 sm:space-y-6 shadow-2xl relative overflow-hidden border border-blue-800/50">
@@ -758,7 +752,7 @@ export function Landing() {
       </section>
 
       {/* --- FOOTER --- */}
-      <footer className="py-8 sm:py-10 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400">
+      <footer className="py-8 sm:py-10 bg-[#FBF8F2] dark:bg-zinc-950 border-t border-[#E7DFD2] dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-start">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0">U</div>
