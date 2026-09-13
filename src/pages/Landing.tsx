@@ -108,12 +108,55 @@ export function Landing() {
 
   return (
     <div
-      className="min-h-screen bg-[#F9F5EE] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 font-sans selection:bg-blue-500 selection:text-white transition-colors overflow-x-clip"
+      className="relative min-h-screen bg-[#F4F5F7] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 font-sans selection:bg-blue-500 selection:text-white transition-colors overflow-x-clip"
       dir={isAr ? 'rtl' : 'ltr'}
     >
+
+      {/* --- FLOWING WAVY RIBBON BACKGROUND —
+          two wavy edge lines with a soft gray fill between them, flowing
+          down the length of the page (behind all content). --- */}
+      <div className="absolute inset-0 -z-10 pointer-events-none overflow-hidden" aria-hidden="true">
+        <svg className="w-full h-full" viewBox="0 0 1440 3000" preserveAspectRatio="none" fill="none">
+          {/* Band A — behind the hero */}
+          <path
+            d="M -60,470 C 240,380 480,600 720,540 C 960,480 1200,620 1500,520 L 1500,690 C 1200,790 960,650 720,710 C 480,770 240,550 -60,640 Z"
+            className="fill-[#E3E6EB]/55 dark:fill-white/[0.04]"
+          />
+          <path
+            d="M -60,470 C 240,380 480,600 720,540 C 960,480 1200,620 1500,520"
+            className="stroke-[#C7CDD6]/70 dark:stroke-white/10"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+          <path
+            d="M -60,640 C 240,550 480,770 720,710 C 960,650 1200,790 1500,690"
+            className="stroke-[#C7CDD6]/70 dark:stroke-white/10"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+
+          {/* Band B — flowing behind the lower sections / closing CTA */}
+          <path
+            d="M -60,2400 C 240,2310 480,2530 720,2470 C 960,2410 1200,2550 1500,2450 L 1500,2615 C 1200,2715 960,2575 720,2635 C 480,2695 240,2475 -60,2565 Z"
+            className="fill-[#E3E6EB]/55 dark:fill-white/[0.04]"
+          />
+          <path
+            d="M -60,2400 C 240,2310 480,2530 720,2470 C 960,2410 1200,2550 1500,2450"
+            className="stroke-[#C7CDD6]/70 dark:stroke-white/10"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+          <path
+            d="M -60,2565 C 240,2475 480,2695 720,2635 C 960,2575 1200,2715 1500,2615"
+            className="stroke-[#C7CDD6]/70 dark:stroke-white/10"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
+      </div>
       
       {/* --- TOP NAVBAR --- */}
-      <header className="sticky top-0 z-50 bg-[#FBF8F2]/90 dark:bg-zinc-950/90 backdrop-blur-md border-b border-[#E7DFD2]/80 dark:border-zinc-800/80 transition-all">
+      <header className="sticky top-0 z-50 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-md border-b border-zinc-200/80 dark:border-zinc-800/80 transition-all">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-2">
           
           {/* Logo */}
@@ -205,7 +248,7 @@ export function Landing() {
 
         {/* Mobile Dropdown Navigation */}
         {mobileMenuOpen && (
-          <div className="lg:hidden border-t border-[#E7DFD2] dark:border-zinc-800 bg-[#FBF8F2]/95 dark:bg-zinc-950/95 backdrop-blur-md px-4 py-4 space-y-4 shadow-2xl">
+          <div className="lg:hidden border-t border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md px-4 py-4 space-y-4 shadow-2xl">
             <nav className="flex flex-col gap-1 text-sm font-bold text-zinc-700 dark:text-zinc-200">
               <a 
                 href="#features" 
@@ -264,16 +307,8 @@ export function Landing() {
       {/* --- HERO SECTION --- */}
       <section className="relative pt-8 pb-14 sm:pt-16 sm:pb-24 overflow-hidden">
 
-        {/* Warm decorative layer — soft brown shapes on cream, no grid */}
-        <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[680px] sm:w-[1000px] h-[380px] sm:h-[480px] rounded-full bg-[#C9A87F]/25 dark:bg-[#C9A87F]/10 blur-[110px] sm:blur-[140px] pointer-events-none -z-10" />
-        <div className="absolute top-1/3 -right-40 w-[420px] sm:w-[620px] h-[420px] sm:h-[560px] rounded-full bg-[#A9835B]/15 dark:bg-[#A9835B]/8 blur-[120px] sm:blur-[150px] pointer-events-none -z-10" />
-        <div className="absolute top-1/2 -left-40 w-[360px] sm:w-[520px] h-[360px] sm:h-[500px] rounded-full bg-[#D8BC97]/20 dark:bg-[#D8BC97]/8 blur-[110px] sm:blur-[140px] pointer-events-none -z-10" />
-
-        {/* Broad soft wave — an elegant brown band and stroke under the hero */}
-        <svg className="absolute bottom-0 left-0 w-full h-[90px] sm:h-[130px] pointer-events-none -z-10 dark:opacity-60" viewBox="0 0 1440 140" fill="none" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M0,84 C260,128 520,40 780,76 C1040,112 1240,58 1440,92 L1440,140 L0,140 Z" fill="#C9A87F" fillOpacity="0.10" />
-          <path d="M0,70 C240,112 480,26 720,58 C960,92 1200,42 1440,72" stroke="#A9835B" strokeOpacity="0.20" strokeWidth="3" strokeLinecap="round" />
-        </svg>
+        {/* Clean background — the page-level wavy ribbon (root layer) provides
+            the visual texture; no blobs, no grid here. */}
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6 sm:space-y-8">
           
@@ -710,9 +745,6 @@ export function Landing() {
       {/* --- FINAL CALL TO ACTION BANNER --- */}
       <section className="py-10 sm:py-20 relative">
 
-        {/* Calm warm blob behind the closing banner */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[560px] sm:w-[820px] h-[300px] sm:h-[420px] rounded-full bg-[#C9A87F]/14 dark:bg-[#C9A87F]/8 blur-[110px] sm:blur-[140px] pointer-events-none -z-10" />
-
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="rounded-2xl sm:rounded-3xl bg-gradient-to-r from-blue-900 via-blue-900 to-blue-950 text-white p-6 sm:p-14 text-center space-y-5 sm:space-y-6 shadow-2xl relative overflow-hidden border border-blue-800/50">
             
@@ -752,7 +784,7 @@ export function Landing() {
       </section>
 
       {/* --- FOOTER --- */}
-      <footer className="py-8 sm:py-10 bg-[#FBF8F2] dark:bg-zinc-950 border-t border-[#E7DFD2] dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400">
+      <footer className="py-8 sm:py-10 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-start">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0">U</div>
