@@ -2,6 +2,48 @@ import { supabase } from './supabase';
 import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, DatabaseBackup, EmailBackupConfig, UniversityDatabase, UniversityPendingUpdate, GradeRule, GradeDistributionItem } from '../types';
 import { normalizeSubjectName } from './academicTranslation';
 
+// Default grading scale a student falls back to after an automatic
+// un-restore (template deletion) — mirrors the store's fresh-state scale.
+const DEFAULT_GRADING_SCALE = [
+  { id: '1', letter: 'A+', nameAr: 'امتياز مرتفع', nameEn: 'High Distinction', minPercentage: 97, maxPercentage: 100, points: 4.0 },
+  { id: '2', letter: 'A', nameAr: 'امتياز', nameEn: 'Distinction', minPercentage: 93, maxPercentage: 96, points: 3.7 }
+];
+
+/**
+ * After a template wipe, derive the student's academic frame from their
+ * REMAINING personal subjects only: totalYears = max year, semestersPerYear =
+ * max semester, and one semester descriptor per covered (year, semester) pair.
+ * No remaining subjects ⇒ pristine defaults (4/2, no semesters).
+ */
+function derivePersonalAcademicFrame(remaining: any[]): {
+  totalYears: number;
+  semestersPerYear: number;
+  semesters: any[];
+} {
+  if (!remaining || remaining.length === 0) {
+    return { totalYears: 4, semestersPerYear: 2, semesters: [] };
+  }
+  let maxYear = 1;
+  let maxSem = 1;
+  const pairs = new Set<string>();
+  for (const s of remaining) {
+    const y = Math.max(1, Number(s.year_index ?? s.yearIndex ?? 1));
+    const sem = Math.max(1, Number(s.semester_index ?? s.semesterIndex ?? 1));
+    if (y > maxYear) maxYear = y;
+    if (sem > maxSem) maxSem = sem;
+    pairs.add(`${y}-${sem}`);
+  }
+  const semesters = Array.from(pairs)
+    .map(pair => {
+      const [y, sem] = pair.split('-').map(Number);
+      return { id: `${y}-${sem}`, yearIndex: y, semesterIndex: sem, startDate: '', endDate: '', isCurrent: false };
+    })
+    .sort((a, b) => (a.yearIndex - b.yearIndex) || (a.semesterIndex - b.semesterIndex));
+  // Mark the latest covered semester as current
+  if (semesters.length > 0) semesters[semesters.length - 1].isCurrent = true;
+  return { totalYears: maxYear, semestersPerYear: maxSem, semesters };
+}
+
 export async function broadcastUniversityDatabaseUpdate(payload: any): Promise<void> {
   let ephemeralChannel: any = null;
   try {
@@ -1504,10 +1546,31 @@ export const db = {
                 }
               }
 
+              // Reset the academic frame written at import time: grading scale
+              // back to default, milestone and year/semester totals re-derived
+              // from the student's REMAINING personal subjects only. The typed
+              // university/college names stay untouched.
+              let remainingForFrame: any[] = [];
+              try {
+                const { data: remSubjs } = await supabase
+                  .from('subjects')
+                  .select('year_index, semester_index')
+                  .eq('user_id', uId);
+                remainingForFrame = remSubjs || [];
+              } catch {}
+
+              const frame = derivePersonalAcademicFrame(remainingForFrame);
+
               await supabase.from('settings').update({
                 university_database_id: null,
                 specialization: null,
-                specialization_database_id: null
+                specialization_database_id: null,
+                grading_scale: DEFAULT_GRADING_SCALE,
+                specialization_start_year: null,
+                specialization_start_semester: null,
+                total_years: frame.totalYears,
+                semesters_per_year: frame.semestersPerYear,
+                semesters: frame.semesters
               }).eq('user_id', uId);
             }
           } catch (colErr) {
@@ -1710,6 +1773,148 @@ export const db = {
       if (!a.matchesSpecPreference && b.matchesSpecPreference) return 1;
       return b.subjectsCount - a.subjectsCount;
     });
+  },
+
+  /**
+   * COHORT PULL (stage 3) candidates: students enrolled in the given college at
+   * the given university (profile university + college must BOTH match). Each
+   * candidate carries their subjects/files/settings for the admin to pull from,
+   * plus their declared specialization so it shows in the picker.
+   */
+  async getStudentsForCohortPull(
+    universityName: string,
+    collegeName: string,
+    existingStudentsList?: any[]
+  ): Promise<Array<{
+    userId: string;
+    name: string;
+    email: string;
+    university: string;
+    college: string;
+    specialization?: string;
+    subjectsCount: number;
+    subjects: Subject[];
+    filesCount: number;
+    files: DriveFile[];
+    gradingScale?: any[];
+    totalYears?: number;
+    semestersPerYear?: number;
+  }>> {
+    const norm = (str?: string) => normalizeSubjectName(str);
+    const targetUni = norm(universityName);
+    const targetCol = norm(collegeName);
+
+    const settingsMap = new Map<string, any>();
+
+    // Seed from existingStudentsList if passed
+    if (existingStudentsList && Array.isArray(existingStudentsList)) {
+      for (const st of existingStudentsList) {
+        const uid = st.id || st.userId;
+        if (uid) {
+          settingsMap.set(uid, {
+            user_id: uid,
+            name: st.name,
+            email: st.email,
+            university: st.university,
+            college: st.college,
+            specialization: st.specialization,
+            subjects: st.subjects || st.raw?.subjects || [],
+            gradingScale: st.gradingScale || st.raw?.settings?.grading_scale || [],
+            totalYears: st.totalYears,
+            semestersPerYear: st.semestersPerYear
+          });
+        }
+      }
+    }
+
+    try {
+      const { data: dbSettings } = await supabase.from('settings').select('*');
+      if (dbSettings) {
+        dbSettings.forEach(s => {
+          if (s.user_id) {
+            const existing = settingsMap.get(s.user_id) || {};
+            settingsMap.set(s.user_id, {
+              ...existing,
+              ...s,
+              name: s.name || existing.name || '',
+              email: s.email || existing.email || '',
+              university: s.university || existing.university || '',
+              college: s.college || existing.college || '',
+              specialization: s.specialization || existing.specialization || '',
+              subjects: (existing.subjects && existing.subjects.length > 0) ? existing.subjects : []
+            });
+          }
+        });
+      }
+    } catch {}
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('unistudent_settings_')) {
+        const uid = key.replace('unistudent_settings_', '');
+        try {
+          const st = JSON.parse(localStorage.getItem(key) || '{}');
+          if (st) {
+            const existing = settingsMap.get(uid) || {};
+            settingsMap.set(uid, {
+              ...existing,
+              ...st,
+              user_id: uid,
+              university: st.university || existing.university || '',
+              college: st.college || existing.college || '',
+              specialization: st.specialization || existing.specialization || ''
+            });
+          }
+        } catch {}
+      }
+    }
+
+    const matchingStudents: any[] = [];
+    for (const [uid, s] of settingsMap.entries()) {
+      const studentUni = norm(s.university);
+      const studentCol = norm(s.college);
+
+      const uniMatch = !targetUni || (studentUni && (studentUni === targetUni || studentUni.includes(targetUni) || targetUni.includes(studentUni)));
+      const colMatch = !targetCol || (studentCol && (studentCol === targetCol || studentCol.includes(targetCol) || targetCol.includes(studentCol)));
+      if (!uniMatch || !colMatch) continue;
+
+      let studentSubjects: Subject[] = Array.isArray(s.subjects) && s.subjects.length > 0 ? s.subjects : [];
+      if (studentSubjects.length === 0) {
+        try {
+          studentSubjects = await this.getSubjects(uid);
+        } catch {}
+      }
+
+      let studentFiles: DriveFile[] = [];
+      try {
+        studentFiles = await this.getDriveFiles(uid);
+      } catch {}
+
+      // Strip internal meta rows from the student's grading scale
+      const rawScale = Array.isArray(s.grading_scale) ? s.grading_scale : (Array.isArray(s.gradingScale) ? s.gradingScale : []);
+      const studentGrading = (rawScale || []).filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))));
+
+      const savedEmail = localStorage.getItem(`unistudent_user_email_${uid}`) || '';
+      const email = s.email || savedEmail || '';
+
+      matchingStudents.push({
+        userId: uid,
+        name: s.name || 'طالب',
+        email,
+        university: s.university || '',
+        college: s.college || '',
+        specialization: s.specialization || '',
+        subjectsCount: (studentSubjects || []).length,
+        subjects: studentSubjects || [],
+        filesCount: (studentFiles || []).length,
+        files: studentFiles || [],
+        gradingScale: studentGrading,
+        totalYears: s.totalYears || s.total_years,
+        semestersPerYear: s.semestersPerYear || s.semesters_per_year
+      });
+    }
+
+    return matchingStudents.sort((a, b) => b.subjectsCount - a.subjectsCount);
   },
 
   async createSpecializationDatabase(params: {

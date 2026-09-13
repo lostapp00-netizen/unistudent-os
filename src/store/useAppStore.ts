@@ -752,15 +752,23 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (!parentDb && udb.parentDatabaseId) {
           parentDb = await db.getUniversityDatabase(udb.parentDatabaseId);
         }
-        // 3. Fallback: match general college database by university and college name
+        // 3. Fallback: match general college database by university and college name.
+        // STRUCTURE ANCHOR rows (no cohort metadata AND no subjects) are excluded:
+        // they are admin-only holders and must never become a student's parent DB.
         if (!parentDb) {
           const allDbs = await db.getUniversityDatabases();
           const norm = (str?: string) => normalizeSubjectName(str);
           const normUni = norm(udb.universityNameAr);
-          parentDb = allDbs.find(d => 
-            !d.isSpecialization && 
+          const isAnchor = (d: UniversityDatabase) => !d.cohortName && (d.subjects || []).length === 0;
+          const exactParent = allDbs.find(d =>
+            !d.isSpecialization &&
+            d.id === udb.parentDatabaseId
+          ) || null;
+          parentDb = exactParent || allDbs.find(d =>
+            !d.isSpecialization &&
+            !isAnchor(d) &&
             norm(d.universityNameAr) === normUni &&
-            (d.id === udb.parentDatabaseId || (norm(d.collegeNameAr) && norm(udb.collegeNameAr).includes(norm(d.collegeNameAr))))
+            (norm(d.collegeNameAr) && norm(udb.collegeNameAr).includes(norm(d.collegeNameAr)))
           ) || null;
         }
         if (parentDb) {
@@ -1114,11 +1122,44 @@ export const useAppStore = create<AppState>((set, get) => ({
       return true;
     });
 
-    // Names typed by the student stay untouched — only the database link is cleared.
+    // Names typed by the student stay untouched — only the database link is
+    // cleared. The academic frame written at import time (grading scale,
+    // milestone, year/semester totals and semester descriptors) is reset and
+    // re-derived from the student's REMAINING personal subjects only.
+    let maxYear = 0;
+    let maxSem = 0;
+    const coveredPairs = new Set<string>();
+    for (const s of remainingSubjects) {
+      const y = Math.max(1, Number(s.yearIndex || 1));
+      const sem = Math.max(1, Number(s.semesterIndex || 1));
+      if (y > maxYear) maxYear = y;
+      if (sem > maxSem) maxSem = sem;
+      coveredPairs.add(`${y}-${sem}`);
+    }
+    const existingSemestersList = settings.semesters || [];
+    const personalSemesters = Array.from(coveredPairs)
+      .map(pair => {
+        const [y, sem] = pair.split('-').map(Number);
+        const existing = existingSemestersList.find(sm => sm.yearIndex === y && sm.semesterIndex === sem);
+        if (existing) return existing;
+        return { id: uuidv4(), yearIndex: y, semesterIndex: sem, startDate: '', endDate: '', isCurrent: false };
+      })
+      .sort((a, b) => (a.yearIndex - b.yearIndex) || (a.semesterIndex - b.semesterIndex));
+    if (personalSemesters.length > 0) personalSemesters[personalSemesters.length - 1].isCurrent = true;
+
     const updatedSettings: Partial<UserSettings> = {
       universityDatabaseId: undefined,
       specializationDatabaseId: undefined,
-      deletedSubjectNames: []
+      deletedSubjectNames: [],
+      gradingScale: [
+        { id: '1', letter: 'A+', nameAr: 'امتياز مرتفع', nameEn: 'High Distinction', minPercentage: 97, maxPercentage: 100, points: 4.0 },
+        { id: '2', letter: 'A', nameAr: 'امتياز', nameEn: 'Distinction', minPercentage: 93, maxPercentage: 96, points: 3.7 }
+      ],
+      specializationStartYear: undefined,
+      specializationStartSemester: undefined,
+      totalYears: maxYear > 0 ? maxYear : 4,
+      semestersPerYear: maxSem > 0 ? maxSem : 2,
+      semesters: personalSemesters
     };
 
     set(state => ({

@@ -107,7 +107,10 @@ export function Landing() {
   ];
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 font-sans selection:bg-blue-500 selection:text-white transition-colors overflow-x-clip" dir={isAr ? 'rtl' : 'ltr'}>
+    <div
+      className="min-h-screen bg-zinc-50 dark:bg-zinc-950 bg-[linear-gradient(to_right,rgba(24,24,27,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(24,24,27,0.045)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:44px_44px] text-zinc-900 dark:text-zinc-50 font-sans selection:bg-blue-500 selection:text-white transition-colors overflow-x-clip"
+      dir={isAr ? 'rtl' : 'ltr'}
+    >
       
       {/* --- TOP NAVBAR --- */}
       <header className="sticky top-0 z-50 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-md border-b border-zinc-200/80 dark:border-zinc-800/80 transition-all">
@@ -430,7 +433,7 @@ export function Landing() {
       </section>
 
       {/* --- ALL FEATURES COMPREHENSIVE BREAKDOWN --- */}
-      <section id="features" className="py-12 sm:py-20 bg-white dark:bg-zinc-900/50 border-y border-zinc-200 dark:border-zinc-800/80">
+      <section id="features" className="py-12 sm:py-20 bg-transparent dark:bg-zinc-900/50 border-y border-zinc-200 dark:border-zinc-800/80">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10 sm:space-y-16">
           
           <div className="text-center max-w-3xl mx-auto space-y-2.5 sm:space-y-3">
@@ -653,7 +656,7 @@ export function Landing() {
       </section>
 
       {/* --- FAQ SECTION --- */}
-      <section id="faq" className="py-12 sm:py-20 bg-white dark:bg-zinc-900/50 border-t border-zinc-200 dark:border-zinc-800">
+      <section id="faq" className="py-12 sm:py-20 bg-transparent dark:bg-zinc-900/50 border-t border-zinc-200 dark:border-zinc-800">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 sm:space-y-12">
           
           <div className="text-center space-y-2.5 sm:space-y-3">

@@ -151,6 +151,11 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
     for (const group of Object.values(groupedUniversities)) {
       const map: Record<string, { key: string; nameAr: string; nameEn: string; cohorts: UniversityDatabase[] }> = {};
       for (const dbItem of group.databases) {
+        // Skip STRUCTURE ANCHOR rows: a pulled college structure (no cohort
+        // metadata AND no subjects) is admin-only and must never reach students.
+        // Safety: rows WITH subjects but no cohort metadata (legacy data before
+        // any migration) stay visible.
+        if (!dbItem.cohortName && (dbItem.subjects || []).length === 0) continue;
         const gk = collegeGroupKey(dbItem.universityNameAr, dbItem.universityNameEn, dbItem.collegeNameAr, dbItem.collegeNameEn);
         if (!map[gk]) {
           map[gk] = {
