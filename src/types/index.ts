@@ -222,6 +222,13 @@ export type UniversityDatabase = {
   universityNameEn: string;
   collegeNameAr: string;
   collegeNameEn: string;
+  // Cohort (الدفعة الدراسية) metadata — set on general college rows only.
+  // A cohort IS a full independent university_databases row; specialization
+  // rows inherit their cohort from their parent via parentDatabaseId.
+  cohortName?: string;          // e.g. 'دفعة 2026 - 2027'
+  academicYearStart?: number;   // e.g. 2026
+  academicYearEnd?: number;     // e.g. 2027
+  cohortNotes?: string;
   sourceUserId: string;
   sourceUserEmail?: string;
   sourceUserName?: string;

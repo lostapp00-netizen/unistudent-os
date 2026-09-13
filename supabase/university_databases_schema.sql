@@ -105,3 +105,12 @@ ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT true;
 ALTER TABLE public.university_databases 
 ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT true;
 
+-- 7. أعمدة الدفعات الدراسية (Cohorts): كل كلية بتدعم أكتر من دفعة، وكل دفعة
+--    = صف مستقل في university_databases (قاعدة بيانات كاملة مستقلة).
+--    صفوف التخصصات بترث الدفعة من صف الأب (parent_database_id).
+ALTER TABLE public.university_databases
+ADD COLUMN IF NOT EXISTS cohort_name TEXT,
+ADD COLUMN IF NOT EXISTS academic_year_start INTEGER,
+ADD COLUMN IF NOT EXISTS academic_year_end INTEGER,
+ADD COLUMN IF NOT EXISTS cohort_notes TEXT DEFAULT '';
+

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../store/useAppStore';
 import { db } from '../../lib/db';
 import { UniversityDatabase } from '../../types';
+import { collegeGroupKey, cohortLabel, foundationSubjectsCount } from '../../lib/utils';
 import { 
   Building2, 
   GraduationCap, 
@@ -47,6 +48,8 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
   
   // Accordion expanded university key
   const [expandedUniKey, setExpandedUniKey] = useState<string | null>(null);
+  // Selected college (group of cohorts) between college list and cohort list
+  const [selectedCollegeGroupKey, setSelectedCollegeGroupKey] = useState<string | null>(null);
   const [selectedDb, setSelectedDb] = useState<UniversityDatabase | null>(null);
   const [selectedTrack, setSelectedTrack] = useState<string>('general');
   const [importDrive, setImportDrive] = useState(true);
@@ -59,6 +62,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
       setLoading(true);
       setSuccessMessage(null);
       setExpandedUniKey(null);
+      setSelectedCollegeGroupKey(null);
       setSelectedDb(null);
       setSelectedTrack('general');
       db.getUniversityDatabases()
@@ -127,6 +131,69 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
     }, {} as Record<string, { key: string; nameAr: string; nameEn: string; databases: UniversityDatabase[] }>);
   }, [databases, regMap, isOpen]);
 
+  // ---------------------------------------------------------------------------
+  // COHORTS: colleges grouped across their cohort databases (visible rows only
+  // — groupedUniversities already filtered hidden ones). A college card now
+  // opens a mandatory cohort list; data linking stays explicit-ID.
+  // ---------------------------------------------------------------------------
+  const collegeGroupsPerUniversity = useMemo(() => {
+    const out: Record<string, Array<{
+      key: string;
+      nameAr: string;
+      nameEn: string;
+      cohorts: UniversityDatabase[];
+      totalSubjects: number;
+      totalSpecs: number;
+      totalFiles: number;
+      latestCohort?: UniversityDatabase;
+    }>> = {};
+
+    for (const group of Object.values(groupedUniversities)) {
+      const map: Record<string, { key: string; nameAr: string; nameEn: string; cohorts: UniversityDatabase[] }> = {};
+      for (const dbItem of group.databases) {
+        const gk = collegeGroupKey(dbItem.universityNameAr, dbItem.universityNameEn, dbItem.collegeNameAr, dbItem.collegeNameEn);
+        if (!map[gk]) {
+          map[gk] = {
+            key: gk,
+            nameAr: dbItem.collegeNameAr || dbItem.collegeNameEn || gk,
+            nameEn: dbItem.collegeNameEn || dbItem.collegeNameAr || '',
+            cohorts: []
+          };
+        }
+        map[gk].cohorts.push(dbItem);
+      }
+
+      out[group.key] = Object.values(map).map(g => {
+        const cohorts = [...g.cohorts].sort((a, b) => {
+          const ay = Number(a.academicYearStart || 0) - Number(b.academicYearStart || 0);
+          if (ay !== 0) return ay;
+          return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+        });
+        const cohortIds = cohorts.map(c => c.id);
+        const specCount = databases.filter(d => d.isSpecialization && cohortIds.includes(d.parentDatabaseId || '')).length;
+        return {
+          ...g,
+          cohorts,
+          totalSubjects: cohorts.reduce((sum, c) => sum + (c.subjects?.length || 0), 0),
+          totalSpecs: specCount,
+          totalFiles: cohorts.reduce((sum, c) => sum + (c.driveFiles?.length || 0), 0),
+          latestCohort: cohorts[cohorts.length - 1]
+        };
+      });
+    }
+    return out;
+  }, [groupedUniversities, databases]);
+
+  // The active college group currently opened by the student (cohort list step)
+  const selectedCollegeGroup = useMemo(() => {
+    if (!selectedCollegeGroupKey) return null;
+    for (const groups of Object.values(collegeGroupsPerUniversity)) {
+      const found = groups.find(g => g.key === selectedCollegeGroupKey);
+      if (found) return found;
+    }
+    return null;
+  }, [collegeGroupsPerUniversity, selectedCollegeGroupKey]);
+
   // Filter universities by search
   const filteredUniversities = useMemo(() => {
     if (!isOpen) return [];
@@ -157,16 +224,49 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
     ) || null;
   }, [databases, settings.universityDatabaseId, settings.university, settings.college]);
 
+  // Specializations available for the student's restored college. Primary
+  // source: explicit parentDatabaseId links (cohort-exact by construction).
+  // Legacy name-based fallback is cohort-scoped: specs from OTHER cohorts
+  // (different academic year / cohort name) must never leak in.
   const restoredCollegeSpecs = useMemo(() => {
     if (!restoredCollegeDb) return [];
     const fromMap = specializationsMap.get(restoredCollegeDb.id) || [];
     if (fromMap.length > 0) return fromMap;
+
     const norm = (s?: string) => (s || '').trim().toLowerCase();
-    return databases.filter(d => 
-      d.isSpecialization && 
-      (d.parentDatabaseId === restoredCollegeDb.id || 
-       (norm(d.collegeNameAr) === norm(restoredCollegeDb.collegeNameAr) && norm(d.universityNameAr) === norm(restoredCollegeDb.universityNameAr)))
-    );
+    const sameCollegeNames =
+      (d: UniversityDatabase) =>
+        norm(d.collegeNameAr) === norm(restoredCollegeDb.collegeNameAr) &&
+        norm(d.universityNameAr) === norm(restoredCollegeDb.universityNameAr);
+
+    const hasCohortInfo = (d: UniversityDatabase) =>
+      Boolean(d.cohortName || d.academicYearStart);
+
+    const sameCohort = (d: UniversityDatabase) => {
+      if (d.parentDatabaseId === restoredCollegeDb.id) return true;
+      if (!sameCollegeNames(d)) return false;
+
+      const cohortSelf = hasCohortInfo(restoredCollegeDb);
+      const cohortSpec = hasCohortInfo(d);
+
+      // Legacy world (no cohort concept anywhere): one database per college,
+      // so a name match can only be the same cohort.
+      if (!cohortSelf && !cohortSpec) return true;
+
+      // Mixed state (one row migrated, one stale): cannot prove same cohort.
+      if (cohortSelf !== cohortSpec) return false;
+
+      const yrA = Number(d.academicYearStart || 0);
+      const yrB = Number(restoredCollegeDb.academicYearStart || 0);
+      if (yrA && yrB) {
+        return yrA === yrB && Number(d.academicYearEnd || 0) === Number(restoredCollegeDb.academicYearEnd || 0);
+      }
+      const nameA = (d.cohortName || '').trim();
+      const nameB = (restoredCollegeDb.cohortName || '').trim();
+      return Boolean(nameA && nameB && nameA === nameB);
+    };
+
+    return databases.filter(d => d.isSpecialization && sameCohort(d));
   }, [databases, restoredCollegeDb, specializationsMap]);
 
   // Student current standing
@@ -282,10 +382,11 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
       const specText = activeSpec 
         ? (isAr ? ` (تخصص: ${activeSpec.specializationNameAr || activeSpec.collegeNameAr})` : ` (Major: ${activeSpec.specializationNameEn || activeSpec.specializationNameAr})`)
         : '';
+      const cohortText = selectedDb.cohortName ? ` — ${selectedDb.cohortName}` : '';
       setSuccessMessage(
         isAr 
-          ? `تم استرداد قاعدة البيانات بنجاح من ${uniName} - ${colName}${specText}!` 
-          : `Database successfully restored from ${uniName} - ${colName}${specText}!`
+          ? `تم استرداد قاعدة البيانات بنجاح من ${uniName} - ${colName}${specText}${cohortText}!` 
+          : `Database successfully restored from ${uniName} - ${colName}${specText}${cohortText}!`
       );
       setTimeout(() => {
         if (onSuccess) onSuccess();
@@ -392,6 +493,12 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                       <h4 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white">
                         {restoredCollegeDb.collegeNameAr} - {restoredCollegeDb.universityNameAr}
                       </h4>
+                      {restoredCollegeDb.cohortName && (
+                        <span className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/70 dark:border-blue-800/60 text-[10px] font-black">
+                          <Layers size={10} />
+                          <span>{cohortLabel(restoredCollegeDb, isAr)}</span>
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -500,6 +607,93 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                 </div>
               </div>
             )
+          ) : !selectedDb && selectedCollegeGroup ? (
+            /* COHORT MODE - MANDATORY COHORT SELECTION (no pre-selection) */
+            <div className="space-y-5 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <button
+                  onClick={() => setSelectedCollegeGroupKey(null)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                >
+                  <ArrowIcon size={14} className="rotate-180" />
+                  <span>{isAr ? 'الرجوع لاختيار كلية أو جامعة أخرى' : 'Back to college selection'}</span>
+                </button>
+                <span className="text-xs font-bold text-zinc-400">
+                  {selectedCollegeGroup.cohorts.length} {isAr ? 'دفعات متاحة' : 'Cohorts available'}
+                </span>
+              </div>
+
+              {/* College & Cohort Context Banner */}
+              <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-blue-50 to-blue-50/60 dark:from-blue-950/30 dark:to-blue-950/20 border border-blue-200/80 dark:border-blue-800/60 flex items-center gap-3.5 shadow-2xs">
+                <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
+                  <GraduationCap size={24} />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 block">
+                    {isAr ? 'الكلية المختارة' : 'Selected College'}
+                  </span>
+                  <h4 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white truncate">
+                    {selectedCollegeGroup.nameAr}
+                  </h4>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-bold">
+                    {isAr
+                      ? 'اختر دفعتك الدراسية لعرض تفاصيل قاعدة بياناتها واستردادها — كل دفعة قاعدة بيانات مستقلة تماماً.'
+                      : 'Select your academic cohort to view and restore its database — every cohort is a fully independent database.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Cohort Cards — explicit selection required */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 max-h-[52vh] overflow-y-auto pr-1">
+                {selectedCollegeGroup.cohorts.map((cohortDb) => {
+                  const specsCount = (specializationsMap.get(cohortDb.id) || []).length;
+                  return (
+                    <div
+                      key={cohortDb.id}
+                      onClick={() => {
+                        setSelectedDb(cohortDb);
+                        setSelectedTrack('general');
+                      }}
+                      className="p-4 sm:p-5 rounded-2xl border border-zinc-200 dark:border-zinc-700/70 bg-white dark:bg-zinc-900 hover:border-blue-500 dark:hover:border-blue-500 text-left rtl:text-right transition-all group flex flex-col justify-between gap-3 shadow-2xs hover:shadow-md cursor-pointer"
+                    >
+                      <div className="space-y-1.5 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                              <Layers size={17} />
+                            </div>
+                            <h5 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white truncate">
+                              {cohortDb.cohortName || (isAr ? 'الدفعة الحالية' : 'Current Cohort')}
+                            </h5>
+                          </div>
+                          <ArrowIcon size={16} className="text-zinc-400 group-hover:text-blue-600 transition-transform group-hover:scale-110 shrink-0" />
+                        </div>
+                        {cohortDb.academicYearStart && cohortDb.academicYearEnd ? (
+                          <p className="text-[11px] text-zinc-400 font-bold">
+                            {isAr ? `سنة دراسية ${cohortDb.academicYearStart} - ${cohortDb.academicYearEnd}` : `Academic year ${cohortDb.academicYearStart} - ${cohortDb.academicYearEnd}`}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 text-[11px] text-zinc-500 dark:text-zinc-400 font-bold">
+                        <span className="bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2.5 py-1 rounded-lg">
+                          {foundationSubjectsCount(cohortDb)} {isAr ? 'مادة عامة' : 'general subjects'}
+                        </span>
+                        {specsCount > 0 && (
+                          <span className="bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2.5 py-1 rounded-lg flex items-center gap-1 font-black">
+                            <Sparkles size={12} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                            <span>{specsCount} {isAr ? 'تخصصات' : 'majors'}</span>
+                          </span>
+                        )}
+                        <span className="bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-lg">
+                          {cohortDb.driveFiles?.length || 0} {isAr ? 'ملفات درايف' : 'files'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           ) : !selectedDb ? (
             /* COLLEGE MODE - HIERARCHICAL ACCORDION SELECTOR */
             <div className="space-y-4">
@@ -540,7 +734,7 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                                 {group.nameAr || group.nameEn}
                               </h4>
                               <span className="text-xs font-black text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950 px-3 py-1 rounded-full border border-blue-200/80 dark:border-blue-800/80 shrink-0">
-                                {group.databases.length} {isAr ? 'كليات متاحة' : 'Colleges'}
+                                {(collegeGroupsPerUniversity[group.key] || []).length} {isAr ? 'كليات متاحة' : 'Colleges'}
                               </span>
                             </div>
                             {group.nameEn && group.nameEn !== group.nameAr && (
@@ -565,13 +759,13 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                       {isExpanded && (
                         <div className="p-4 sm:p-5 bg-zinc-50/70 dark:bg-zinc-800/30 border-t border-zinc-100 dark:border-zinc-800/80 space-y-3 animate-in fade-in duration-150">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                            {group.databases.map((dbItem) => {
-                              const specs = specializationsMap.get(dbItem.id) || [];
+                            {(collegeGroupsPerUniversity[group.key] || []).map((collegeGroup) => {
                               return (
                                 <div
-                                  key={dbItem.id}
+                                  key={collegeGroup.key}
                                   onClick={() => {
-                                    setSelectedDb(dbItem);
+                                    setSelectedCollegeGroupKey(collegeGroup.key);
+                                    setSelectedDb(null);
                                     setSelectedTrack('general');
                                   }}
                                   className="p-4 sm:p-5 rounded-2xl border border-zinc-200 dark:border-zinc-700/70 bg-white dark:bg-zinc-900 hover:border-blue-500 dark:hover:border-blue-500 text-left rtl:text-right transition-all group flex flex-col justify-between gap-3 shadow-2xs hover:shadow-md cursor-pointer"
@@ -581,33 +775,34 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                                       <div className="flex items-center gap-2.5 min-w-0">
                                         <GraduationCap size={18} className="text-blue-600 dark:text-blue-400 shrink-0" />
                                         <h5 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white truncate">
-                                          {dbItem.collegeNameAr || dbItem.collegeNameEn}
+                                          {collegeGroup.nameAr}
                                         </h5>
                                       </div>
                                       <ArrowIcon size={16} className="text-zinc-400 group-hover:text-blue-600 transition-transform group-hover:scale-110 shrink-0" />
                                     </div>
-                                    {dbItem.collegeNameEn && dbItem.collegeNameAr && dbItem.collegeNameEn !== dbItem.collegeNameAr && (
+                                    {collegeGroup.nameEn && collegeGroup.nameAr && collegeGroup.nameEn !== collegeGroup.nameAr && (
                                       <p className="text-xs text-zinc-400 font-bold truncate">
-                                        {dbItem.collegeNameEn}
+                                        {collegeGroup.nameEn}
                                       </p>
                                     )}
                                   </div>
 
                                   <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 text-[11px] text-zinc-500 dark:text-zinc-400 font-bold">
                                     <span className="bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2.5 py-1 rounded-lg">
-                                      {dbItem.subjects?.length || 0} {isAr ? 'مادة دراسية' : 'subjects'}
+                                      {collegeGroup.totalSubjects} {isAr ? 'مادة دراسية' : 'subjects'}
                                     </span>
-                                    {specs.length > 0 && (
+                                    {collegeGroup.totalSpecs > 0 && (
                                       <span className="bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2.5 py-1 rounded-lg flex items-center gap-1 font-black">
                                         <Sparkles size={12} className="text-blue-600 dark:text-blue-400 shrink-0" />
-                                        <span>{specs.length} {isAr ? 'تخصصات مسجلة' : 'majors'}</span>
+                                        <span>{collegeGroup.totalSpecs} {isAr ? 'تخصصات مسجلة' : 'majors'}</span>
                                       </span>
                                     )}
-                                    <span className="bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60 px-2.5 py-1 rounded-lg font-bold">
-                                      {isAr ? `عدد السنين المتاحة: ${dbItem.availableYears && dbItem.availableYears.length > 0 ? dbItem.availableYears.length : 1} من ${dbItem.totalYears || 4} (يتم التحديث سنوياً)` : `Available: ${dbItem.availableYears && dbItem.availableYears.length > 0 ? dbItem.availableYears.length : 1} of ${dbItem.totalYears || 4} yrs (Updated annually)`}
-                                    </span>
                                     <span className="bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-lg">
-                                      {dbItem.driveFiles?.length || 0} {isAr ? 'ملفات درايف' : 'files'}
+                                      {collegeGroup.totalFiles} {isAr ? 'ملفات درايف' : 'files'}
+                                    </span>
+                                    <span className="bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                                      <Layers size={12} className="shrink-0" />
+                                      <span>{collegeGroup.cohorts.length} {isAr ? 'دفعات دراسية' : 'cohorts'}</span>
                                     </span>
                                   </div>
                                 </div>
@@ -640,8 +835,12 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                 <ArrowIcon size={14} className="rotate-180" />
                 <span>
                   {isAr 
-                    ? (activeMode === 'specialization' ? 'الرجوع لاختيار تخصص آخر' : 'الرجوع لاختيار كلية أو جامعة أخرى') 
-                    : (activeMode === 'specialization' ? 'Back to select another major' : 'Back to select another college')}
+                    ? (activeMode === 'specialization' 
+                        ? 'الرجوع لاختيار تخصص آخر' 
+                        : (selectedCollegeGroupKey ? 'الرجوع لاختيار دفعة أخرى' : 'الرجوع لاختيار كلية أو جامعة أخرى')) 
+                    : (activeMode === 'specialization' 
+                        ? 'Back to select another major' 
+                        : (selectedCollegeGroupKey ? 'Back to select another cohort' : 'Back to select another college'))}
                 </span>
               </button>
 
@@ -706,6 +905,12 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                     <p className="text-xs sm:text-sm font-extrabold text-blue-600 dark:text-blue-400 mt-0.5">
                       {previewData.title} {previewData.subtitle && previewData.subtitle !== previewData.title ? `- ${previewData.subtitle}` : ''}
                     </p>
+                    {selectedDb.cohortName && (
+                      <span className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/70 dark:border-blue-800/60 text-[10px] font-black">
+                        <Layers size={10} />
+                        <span>{cohortLabel(selectedDb, isAr)}</span>
+                      </span>
+                    )}
                   </div>
                   <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/25 shrink-0">
                     <Sparkles size={22} />

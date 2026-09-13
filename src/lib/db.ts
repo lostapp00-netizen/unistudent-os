@@ -1201,6 +1201,10 @@ export const db = {
         university_name_en: dbData.universityNameEn,
         college_name_ar: dbData.collegeNameAr,
         college_name_en: dbData.collegeNameEn,
+        cohort_name: dbData.cohortName || null,
+        academic_year_start: dbData.academicYearStart ?? null,
+        academic_year_end: dbData.academicYearEnd ?? null,
+        cohort_notes: dbData.cohortNotes || '',
         source_user_id: dbData.sourceUserId,
         source_user_email: dbData.sourceUserEmail || '',
         source_user_name: dbData.sourceUserName || '',
@@ -1236,6 +1240,10 @@ export const db = {
           delete payload.specialization_start_year;
           delete payload.specialization_start_semester;
           delete payload.available_years;
+          delete payload.cohort_name;
+          delete payload.academic_year_start;
+          delete payload.academic_year_end;
+          delete payload.cohort_notes;
           const { error: retryErr } = await supabase.from('university_databases').upsert(payload);
           if (retryErr) console.warn('Supabase createUniversityDatabase fallback error:', retryErr);
         } else {
@@ -1303,6 +1311,10 @@ export const db = {
         university_name_en: full.universityNameEn || existing.universityNameEn || null,
         college_name_ar: full.collegeNameAr || existing.collegeNameAr || '',
         college_name_en: full.collegeNameEn || existing.collegeNameEn || null,
+        cohort_name: full.cohortName !== undefined ? (full.cohortName || null) : (existing.cohortName || null),
+        academic_year_start: full.academicYearStart !== undefined ? full.academicYearStart : (existing.academicYearStart ?? null),
+        academic_year_end: full.academicYearEnd !== undefined ? full.academicYearEnd : (existing.academicYearEnd ?? null),
+        cohort_notes: full.cohortNotes !== undefined ? (full.cohortNotes || '') : (existing.cohortNotes || ''),
         source_user_id: full.sourceUserId || existing.sourceUserId || null,
         source_user_name: full.sourceUserName || existing.sourceUserName || '',
         source_user_email: full.sourceUserEmail || existing.sourceUserEmail || '',
@@ -1339,6 +1351,10 @@ export const db = {
         delete payload.specialization_start_year;
         delete payload.specialization_start_semester;
         delete payload.available_years;
+        delete payload.cohort_name;
+        delete payload.academic_year_start;
+        delete payload.academic_year_end;
+        delete payload.cohort_notes;
         updateRes = await supabase
           .from('university_databases')
           .update(payload)
@@ -3344,6 +3360,10 @@ function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
     universityNameEn: row.university_name_en || '',
     collegeNameAr: row.college_name_ar || '',
     collegeNameEn: row.college_name_en || '',
+    cohortName: row.cohort_name || undefined,
+    academicYearStart: row.academic_year_start !== undefined && row.academic_year_start !== null ? Number(row.academic_year_start) : undefined,
+    academicYearEnd: row.academic_year_end !== undefined && row.academic_year_end !== null ? Number(row.academic_year_end) : undefined,
+    cohortNotes: row.cohort_notes || '',
     sourceUserId: row.source_user_id,
     sourceUserEmail: row.source_user_email || '',
     sourceUserName: row.source_user_name || '',

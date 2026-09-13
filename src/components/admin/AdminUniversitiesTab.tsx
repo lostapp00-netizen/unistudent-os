@@ -55,6 +55,7 @@ import { supabase } from '../../lib/supabase';
 import { UniversityDatabase, UniversityPendingUpdate, Subject, DriveFile, GradeDistributionItem, GradeRule } from '../../types';
 import { ConfirmModal } from '../ui/CustomModal';
 import { autoTranslateUniversity, autoTranslateCollege, normalizeSubjectName } from '../../lib/academicTranslation';
+import { collegeGroupKey, cohortLabel, autoCohortName, currentAcademicYearRange, foundationSubjectsCount } from '../../lib/utils';
 import { previewFile, downloadFile, uploadFile } from '../../lib/backblaze';
 
 interface AdminUniversitiesTabProps {
@@ -85,9 +86,11 @@ export function AdminUniversitiesTab({
   useEffect(() => {
     const handleResetView = () => {
       setSelectedUniversityKey(null);
+      setSelectedCollegeKey(null);
       setSelectedCollegeId(null);
       try {
         sessionStorage.removeItem('unistudent_admin_selected_uni_key');
+        sessionStorage.removeItem('unistudent_admin_selected_college_key');
         sessionStorage.removeItem('unistudent_admin_selected_college_id');
       } catch {}
     };
@@ -136,6 +139,16 @@ export function AdminUniversitiesTab({
     }
   });
 
+  // Cohorts layer navigation: the selected college (group of cohorts) between
+  // the university overview (LEVEL 2) and the cohort studio (LEVEL 3).
+  const [selectedCollegeKey, setSelectedCollegeKey] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem('unistudent_admin_selected_college_key') || null;
+    } catch {
+      return null;
+    }
+  });
+
   useEffect(() => {
     try {
       if (selectedUniversityKey) {
@@ -155,6 +168,16 @@ export function AdminUniversitiesTab({
       }
     } catch {}
   }, [selectedCollegeId]);
+
+  useEffect(() => {
+    try {
+      if (selectedCollegeKey) {
+        sessionStorage.setItem('unistudent_admin_selected_college_key', selectedCollegeKey);
+      } else {
+        sessionStorage.removeItem('unistudent_admin_selected_college_key');
+      }
+    } catch {}
+  }, [selectedCollegeKey]);
 
   // Active College Object
   const selectedCollegeDb = useMemo(() => {
@@ -353,6 +376,30 @@ export function AdminUniversitiesTab({
   const [showAllStudentsForCollege, setShowAllStudentsForCollege] = useState(false);
   const [creatingCollege, setCreatingCollege] = useState(false);
 
+  // --- Cohorts (الدفعات الدراسية) Modal State ---
+  const [isCreateCohortModalOpen, setIsCreateCohortModalOpen] = useState(false);
+  const [createCohortForm, setCreateCohortForm] = useState<{
+    cohortName: string;
+    academicYearStart: number | '';
+    academicYearEnd: number | '';
+    cohortNotes: string;
+  }>(() => {
+    const range = currentAcademicYearRange();
+    return { cohortName: autoCohortName(range.start, range.end), academicYearStart: range.start, academicYearEnd: range.end, cohortNotes: '' };
+  });
+  const [creatingCohort, setCreatingCohort] = useState(false);
+  const [isEditCohortModalOpen, setIsEditCohortModalOpen] = useState(false);
+  const [editingCohort, setEditingCohort] = useState<UniversityDatabase | null>(null);
+  const [editCohortForm, setEditCohortForm] = useState<{
+    cohortName: string;
+    academicYearStart: number | '';
+    academicYearEnd: number | '';
+    cohortNotes: string;
+  }>({ cohortName: '', academicYearStart: '', academicYearEnd: '', cohortNotes: '' });
+  const [savingCohortMeta, setSavingCohortMeta] = useState(false);
+  const [collegeGroupToDelete, setCollegeGroupToDelete] = useState<{ key: string; nameAr: string; cohortsCount: number; cohortIds: string[] } | null>(null);
+  const [deletingCollegeGroup, setDeletingCollegeGroup] = useState(false);
+
   // Load Data
   const loadUniData = async () => {
     try {
@@ -390,6 +437,7 @@ export function AdminUniversitiesTab({
       nameEn: string;
       isVisible: boolean;
       colleges: UniversityDatabase[];
+      collegeGroupsCount: number;
       totalStudents: number;
       totalSubjects: number;
       totalDriveFiles: number;
@@ -407,6 +455,7 @@ export function AdminUniversitiesTab({
           nameEn: r.nameEn || key,
           isVisible: r.isVisible !== false,
           colleges: [],
+          collegeGroupsCount: 0,
           totalStudents: 0,
           totalSubjects: 0,
           totalDriveFiles: 0,
@@ -429,6 +478,7 @@ export function AdminUniversitiesTab({
           nameEn: dbItem.universityNameEn || key,
           isVisible: dbItem.isVisible !== false,
           colleges: [],
+          collegeGroupsCount: 0,
           totalStudents: 0,
           totalSubjects: 0,
           totalDriveFiles: 0,
@@ -458,6 +508,14 @@ export function AdminUniversitiesTab({
       map[key].pendingUpdatesCount += colUpdates;
     });
 
+    // 3. Count distinct colleges (each college = a group of cohort databases)
+    Object.values(map).forEach(u => {
+      const groupKeys = new Set(
+        u.colleges.map(c => collegeGroupKey(c.universityNameAr, c.universityNameEn, c.collegeNameAr, c.collegeNameEn))
+      );
+      u.collegeGroupsCount = groupKeys.size;
+    });
+
     return Object.values(map);
   }, [databases, studentsList, pendingUpdates]);
 
@@ -472,12 +530,95 @@ export function AdminUniversitiesTab({
       nameEn: selectedUniversityKey,
       isVisible: true,
       colleges: [],
+      collegeGroupsCount: 0,
       totalStudents: 0,
       totalSubjects: 0,
       totalDriveFiles: 0,
       pendingUpdatesCount: 0
     };
   }, [groupedUniversities, selectedUniversityKey]);
+
+  // ---------------------------------------------------------------------------
+  // COHORTS: colleges grouped across their cohort databases. A college is now
+  // a group of independent university_databases rows (one row per cohort/دفعة).
+  // Display-grouping uses normalized names; data linking stays explicit-ID.
+  // ---------------------------------------------------------------------------
+  const collegeGroups = useMemo(() => {
+    if (!currentUniversityGroup) return [];
+    const map: Record<string, {
+      key: string;
+      nameAr: string;
+      nameEn: string;
+      cohortDbs: UniversityDatabase[];
+      cohortsCount: number;
+      totalSubjects: number;
+      totalFoundationSubjects: number;
+      totalDriveFiles: number;
+      totalStudents: number;
+      totalSpecs: number;
+      pendingUpdatesCount: number;
+      allVisible: boolean;
+      firstCohort?: UniversityDatabase;
+      latestCohort?: UniversityDatabase;
+    }> = {};
+
+    for (const dbItem of currentUniversityGroup.colleges) {
+      const key = collegeGroupKey(dbItem.universityNameAr, dbItem.universityNameEn, dbItem.collegeNameAr, dbItem.collegeNameEn);
+      if (!map[key]) {
+        map[key] = {
+          key,
+          nameAr: dbItem.collegeNameAr || dbItem.collegeNameEn || key,
+          nameEn: dbItem.collegeNameEn || dbItem.collegeNameAr || '',
+          cohortDbs: [],
+          cohortsCount: 0,
+          totalSubjects: 0,
+          totalFoundationSubjects: 0,
+          totalDriveFiles: 0,
+          totalStudents: 0,
+          totalSpecs: 0,
+          pendingUpdatesCount: 0,
+          allVisible: true
+        };
+      }
+      map[key].cohortDbs.push(dbItem);
+    }
+
+    return Object.values(map).map(group => {
+      // Sort cohorts by academic year then creation date (oldest first)
+      const cohortDbs = [...group.cohortDbs].sort((a, b) => {
+        const ay = (Number(a.academicYearStart || 0) - Number(b.academicYearStart || 0));
+        if (ay !== 0) return ay;
+        return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+      });
+
+      const cohortIds = cohortDbs.map(c => c.id);
+      const specDbs = databases.filter(d => d.isSpecialization && cohortIds.includes(d.parentDatabaseId || ''));
+      const specIds = specDbs.map(s => s.id);
+
+      return {
+        ...group,
+        cohortDbs,
+        cohortsCount: cohortDbs.length,
+        totalSubjects: cohortDbs.reduce((sum, c) => sum + (c.subjects?.length || 0), 0),
+        totalFoundationSubjects: cohortDbs.reduce((sum, c) => sum + foundationSubjectsCount(c), 0),
+        totalDriveFiles: cohortDbs.reduce((sum, c) => sum + (c.driveFiles?.length || 0), 0),
+        totalStudents: studentsList.filter(
+          s => cohortIds.includes(s.universityDatabaseId) || specIds.includes(s.specializationDatabaseId)
+        ).length,
+        totalSpecs: specDbs.length,
+        pendingUpdatesCount: pendingUpdates.filter(p => cohortIds.includes(p.universityDatabaseId) && p.status === 'pending').length,
+        allVisible: cohortDbs.every(c => c.isVisible !== false),
+        firstCohort: cohortDbs[0],
+        latestCohort: cohortDbs[cohortDbs.length - 1]
+      };
+    }).sort((a, b) => a.nameAr.localeCompare(b.nameAr, 'ar'));
+  }, [currentUniversityGroup, databases, studentsList, pendingUpdates]);
+
+  // Active College Group (the college whose cohorts table is open — LEVEL 2.5)
+  const selectedCollegeGroup = useMemo(() => {
+    if (!selectedCollegeKey) return null;
+    return collegeGroups.find(g => g.key === selectedCollegeKey) || null;
+  }, [collegeGroups, selectedCollegeKey]);
 
   // Filtered Universities for Search
   const filteredUniversities = useMemo(() => {
@@ -489,6 +630,7 @@ export function AdminUniversitiesTab({
       u.colleges.some(c => 
         c.collegeNameAr.toLowerCase().includes(q) ||
         c.collegeNameEn.toLowerCase().includes(q) ||
+        (c.cohortName || '').toLowerCase().includes(q) ||
         c.sourceUserName?.toLowerCase().includes(q) ||
         c.sourceUserEmail?.toLowerCase().includes(q)
       )
@@ -718,6 +860,11 @@ export function AdminUniversitiesTab({
         universityNameEn: currentUniversityGroup.nameEn,
         collegeNameAr: createCollegeForm.collegeNameAr.trim() || createCollegeForm.collegeNameEn.trim(),
         collegeNameEn: createCollegeForm.collegeNameEn.trim() || createCollegeForm.collegeNameAr.trim(),
+        // First cohort metadata is created automatically for the new college
+        cohortName: autoCohortName(),
+        academicYearStart: currentAcademicYearRange().start,
+        academicYearEnd: currentAcademicYearRange().end,
+        cohortNotes: '',
         sourceUserId: source ? source.id : createCollegeForm.sourceUserId,
         sourceUserEmail: source?.email || '',
         sourceUserName: source?.name || '',
@@ -751,6 +898,141 @@ export function AdminUniversitiesTab({
       console.error('Error creating college:', e);
     } finally {
       setCreatingCollege(false);
+    }
+  };
+
+  // --- Cohorts (الدفعات الدراسية) Handlers ---
+  const openCreateCohortModal = () => {
+    const range = currentAcademicYearRange();
+    setCreateCohortForm({
+      cohortName: autoCohortName(range.start, range.end),
+      academicYearStart: range.start,
+      academicYearEnd: range.end,
+      cohortNotes: ''
+    });
+    setIsCreateCohortModalOpen(true);
+  };
+
+  const handleCreateCohort = async () => {
+    if (!selectedCollegeGroup) return;
+    const nameAr = createCohortForm.cohortName.trim();
+    const yearStart = Number(createCohortForm.academicYearStart || 0);
+    const yearEnd = Number(createCohortForm.academicYearEnd || 0);
+    if (!nameAr) {
+      alert(isAr ? 'يرجى إدخال اسم الدفعة.' : 'Please enter the cohort name.');
+      return;
+    }
+    if (!yearStart || !yearEnd || yearEnd < yearStart) {
+      alert(isAr ? 'يرجى إدخال سنة دراسية صحيحة (من - إلى).' : 'Please enter a valid academic year range.');
+      return;
+    }
+
+    try {
+      setCreatingCohort(true);
+      // Structural defaults (years / semesters / spec milestone / available years /
+      // grading scale) inherit from the latest existing cohort of the same college
+      // — each cohort can still be adjusted independently from its own studio.
+      const base = selectedCollegeGroup.latestCohort || selectedCollegeGroup.firstCohort;
+      const anchor = base || selectedCollegeGroup.cohortDbs[0];
+      const newDb: UniversityDatabase = {
+        id: uuidv4(),
+        universityNameAr: anchor?.universityNameAr || currentUniversityGroup?.nameAr || '',
+        universityNameEn: anchor?.universityNameEn || currentUniversityGroup?.nameEn || '',
+        collegeNameAr: anchor?.collegeNameAr || selectedCollegeGroup.nameAr,
+        collegeNameEn: anchor?.collegeNameEn || selectedCollegeGroup.nameEn,
+        cohortName: nameAr,
+        academicYearStart: yearStart,
+        academicYearEnd: yearEnd,
+        cohortNotes: createCohortForm.cohortNotes.trim(),
+        sourceUserId: '',
+        sourceUserEmail: '',
+        sourceUserName: '',
+        totalYears: base?.totalYears || 4,
+        semestersPerYear: base?.semestersPerYear || 2,
+        specializationStartYear: base?.specializationStartYear || 2,
+        specializationStartSemester: base?.specializationStartSemester || 1,
+        availableYears: (base?.availableYears && base.availableYears.length > 0) ? [...base.availableYears] : [1],
+        subjects: [],
+        driveFiles: [],
+        gradingScale: base?.gradingScale ? [...base.gradingScale] : [],
+        isVisible: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      await db.createUniversityDatabase(newDb);
+
+      setIsCreateCohortModalOpen(false);
+      await loadUniData();
+    } catch (e) {
+      console.error('Error creating cohort:', e);
+    } finally {
+      setCreatingCohort(false);
+    }
+  };
+
+  const handleSaveCohortMeta = async () => {
+    if (!editingCohort) return;
+    const nameAr = editCohortForm.cohortName.trim();
+    const yearStart = Number(editCohortForm.academicYearStart || 0);
+    const yearEnd = Number(editCohortForm.academicYearEnd || 0);
+    if (!nameAr) {
+      alert(isAr ? 'يرجى إدخال اسم الدفعة.' : 'Please enter the cohort name.');
+      return;
+    }
+    if (!yearStart || !yearEnd || yearEnd < yearStart) {
+      alert(isAr ? 'يرجى إدخال سنة دراسية صحيحة (من - إلى).' : 'Please enter a valid academic year range.');
+      return;
+    }
+    try {
+      setSavingCohortMeta(true);
+      await db.updateUniversityDatabase(editingCohort.id, {
+        cohortName: nameAr,
+        academicYearStart: yearStart,
+        academicYearEnd: yearEnd,
+        cohortNotes: editCohortForm.cohortNotes.trim()
+      });
+      setIsEditCohortModalOpen(false);
+      setEditingCohort(null);
+      await loadUniData();
+    } catch (e) {
+      console.error('Error saving cohort meta:', e);
+    } finally {
+      setSavingCohortMeta(false);
+    }
+  };
+
+  // Bulk visibility for all cohorts of one college
+  const handleToggleCollegeGroupVisibility = async (cohortIds: string[], newVisibility: boolean) => {
+    try {
+      for (const id of cohortIds) {
+        await db.toggleCollegeDatabaseVisibility(id, newVisibility);
+      }
+      setDatabases(prev => prev.map(d => cohortIds.includes(d.id) ? { ...d, isVisible: newVisibility } : d));
+      await loadUniData();
+    } catch (e) {
+      console.error('Error toggling college cohorts visibility:', e);
+    }
+  };
+
+  // Delete ALL cohorts of one college (removes the whole college)
+  const handleConfirmDeleteCollegeGroup = async () => {
+    if (!collegeGroupToDelete) return;
+    try {
+      setDeletingCollegeGroup(true);
+      for (const id of collegeGroupToDelete.cohortIds) {
+        await db.deleteUniversityDatabase(id);
+      }
+      if (selectedCollegeKey === collegeGroupToDelete.key) {
+        setSelectedCollegeKey(null);
+      }
+      setCollegeGroupToDelete(null);
+      await loadUniData();
+      await onRefreshAllData();
+    } catch (e) {
+      console.error('Error deleting college cohorts:', e);
+    } finally {
+      setDeletingCollegeGroup(false);
     }
   };
 
@@ -1924,6 +2206,19 @@ export function AdminUniversitiesTab({
                                 {group.collegeDb ? `${group.collegeDb.universityNameAr} • ${group.collegeDb.collegeNameAr}` : group.collegeId}
                               </span>
                             )}
+                            {(() => {
+                              if (!group.collegeDb) return null;
+                              const cohortDb = group.collegeDb.cohortName
+                                ? group.collegeDb
+                                : databases.find(d => d.id === group.collegeDb?.parentDatabaseId);
+                              if (!cohortDb?.cohortName) return null;
+                              return (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200 inline-flex items-center gap-1">
+                                  <Layers size={10} />
+                                  <span>{cohortDb.cohortName}</span>
+                                </span>
+                              );
+                            })()}
                             <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300">
                               {group.updates.length} {isAr ? 'تعديل' : 'updates'}
                             </span>
@@ -2174,7 +2469,7 @@ export function AdminUniversitiesTab({
 
                           <td className="py-4 px-6 text-center font-bold">
                             <span className="px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-black">
-                              {group.colleges.length} {isAr ? 'كليات' : 'Colleges'}
+                              {group.collegeGroupsCount} {isAr ? 'كليات' : 'Colleges'}
                             </span>
                           </td>
 
@@ -2236,7 +2531,7 @@ export function AdminUniversitiesTab({
                                     key: group.key,
                                     nameAr: group.nameAr,
                                     nameEn: group.nameEn || group.nameAr,
-                                    collegeCount: group.colleges.length
+                                    collegeCount: group.collegeGroupsCount
                                   });
                                 }}
                                 className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/60 rounded-xl transition-colors cursor-pointer border border-rose-200 dark:border-rose-900/40"
@@ -2264,14 +2559,17 @@ export function AdminUniversitiesTab({
           )}
 
           {/* LEVEL 2: UNIVERSITY OVERVIEW & COLLEGES TABLE */}
-          {selectedUniversityKey && !selectedCollegeId && currentUniversityGroup && (
+          {selectedUniversityKey && !selectedCollegeId && !selectedCollegeKey && currentUniversityGroup && (
             <div className="space-y-6 animate-in fade-in">
               
               {/* Breadcrumbs Bar */}
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white dark:bg-zinc-900 p-4 sm:p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setSelectedUniversityKey(null)}
+                    onClick={() => {
+                      setSelectedCollegeKey(null);
+                      setSelectedUniversityKey(null);
+                    }}
                     className="inline-flex items-center gap-2 text-xs sm:text-sm font-black text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
                   >
                     <BackIcon size={16} />
@@ -2332,7 +2630,7 @@ export function AdminUniversitiesTab({
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
                 <div className="bg-white dark:bg-zinc-900 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xs">
                   <span className="text-xs font-bold text-zinc-400 block">{isAr ? 'إجمالي الكليات' : 'Colleges'}</span>
-                  <span className="text-2xl font-black text-zinc-900 dark:text-white mt-1 block">{currentUniversityGroup.colleges.length}</span>
+                  <span className="text-2xl font-black text-zinc-900 dark:text-white mt-1 block">{collegeGroups.length}</span>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xs">
                   <span className="text-xs font-bold text-zinc-400 block">{isAr ? 'الطلاب المسجلين' : 'Students'}</span>
@@ -2356,7 +2654,7 @@ export function AdminUniversitiesTab({
                     <span>{isAr ? `كليات ${currentUniversityGroup.nameAr}` : `Colleges of ${currentUniversityGroup.nameEn}`}</span>
                   </h3>
                   <span className="text-xs font-bold text-zinc-400">
-                    {currentUniversityGroup.colleges.length} {isAr ? 'كلية' : 'Colleges'}
+                    {collegeGroups.length} {isAr ? 'كلية' : 'Colleges'}
                   </span>
                 </div>
 
@@ -2365,20 +2663,17 @@ export function AdminUniversitiesTab({
                     <thead className="bg-zinc-50 dark:bg-zinc-800/60 text-zinc-500 uppercase text-[11px] font-black border-b border-zinc-200 dark:border-zinc-800">
                       <tr>
                         <th className="py-4 px-6">{isAr ? 'اسم الكلية' : 'College Name'}</th>
-                        <th className="py-4 px-6 text-center">{isAr ? 'السنوات الدراسية' : 'Study Years'}</th>
-                        <th className="py-4 px-6 text-center">{isAr ? 'فصول السنة (الترمات)' : 'Semesters/Year'}</th>
+                        <th className="py-4 px-6 text-center">{isAr ? 'الدفعات الدراسية' : 'Cohorts'}</th>
                         <th className="py-4 px-6 text-center">{isAr ? 'المواد المسجلة' : 'Subjects'}</th>
                         <th className="py-4 px-6 text-center">{isAr ? 'ملفات الدرايف' : 'Drive Files'}</th>
-                        <th className="py-4 px-6 text-center">{isAr ? 'الطالب المصدر' : 'Source Student'}</th>
+                        <th className="py-4 px-6 text-center">{isAr ? 'الطلاب المسجلين' : 'Students'}</th>
                         <th className="py-4 px-6 text-center">{isAr ? 'الإجراءات' : 'Actions'}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                      {currentUniversityGroup.colleges.map((collegeDb) => {
-                        const colUpdates = pendingUpdates.filter(p => p.universityDatabaseId === collegeDb.id && p.status === 'pending').length;
-
+                      {collegeGroups.map((collegeGroup) => {
                         return (
-                          <tr key={collegeDb.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors">
+                          <tr key={collegeGroup.key} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors">
                             <td className="py-4 px-6">
                               <div className="flex items-center gap-3">
                                 <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-600 flex items-center justify-center font-bold shrink-0">
@@ -2386,90 +2681,81 @@ export function AdminUniversitiesTab({
                                 </div>
                                 <div>
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <p className="font-black text-sm text-zinc-900 dark:text-white">{collegeDb.collegeNameAr}</p>
-                                    {colUpdates > 0 && (
+                                    <p className="font-black text-sm text-zinc-900 dark:text-white">{collegeGroup.nameAr}</p>
+                                    {collegeGroup.pendingUpdatesCount > 0 && (
                                       <span className="px-2 py-0.2 rounded-full text-[10px] font-black bg-amber-500 text-white animate-pulse">
-                                        {colUpdates} {isAr ? 'تحديث' : 'updates'}
+                                        {collegeGroup.pendingUpdatesCount} {isAr ? 'تحديث' : 'updates'}
                                       </span>
                                     )}
-                                    {(() => {
-                                      const specsCount = databases.filter(d => d.isSpecialization && d.parentDatabaseId === collegeDb.id).length;
-                                      if (specsCount === 0) return null;
-                                      return (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/40">
-                                          <Sparkles size={10} />
-                                          <span>{specsCount} {isAr ? 'تخصص' : 'specs'}</span>
-                                        </span>
-                                      );
-                                    })()}
+                                    {collegeGroup.totalSpecs > 0 && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/40">
+                                        <Sparkles size={10} />
+                                        <span>{collegeGroup.totalSpecs} {isAr ? 'تخصص' : 'specs'}</span>
+                                      </span>
+                                    )}
                                   </div>
-                                  {collegeDb.collegeNameEn && collegeDb.collegeNameEn !== collegeDb.collegeNameAr && (
-                                    <p className="text-[11px] text-zinc-400 font-medium">{collegeDb.collegeNameEn}</p>
+                                  {collegeGroup.nameEn && collegeGroup.nameEn !== collegeGroup.nameAr && (
+                                    <p className="text-[11px] text-zinc-400 font-medium">{collegeGroup.nameEn}</p>
                                   )}
                                 </div>
                               </div>
                             </td>
 
                             <td className="py-4 px-6 text-center font-bold">
-                              <span className="px-3 py-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs">
-                                {collegeDb.totalYears || 4} {isAr ? 'سنوات' : 'Years'}
-                              </span>
-                            </td>
-
-                            <td className="py-4 px-6 text-center font-bold">
-                              <span className="px-3 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs">
-                                {collegeDb.semestersPerYear || 2} {isAr ? 'ترم / سنة' : 'Semesters/Yr'}
+                              <span className="px-3 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-black">
+                                {collegeGroup.cohortsCount} {isAr ? 'دفعات' : 'Cohorts'}
                               </span>
                             </td>
 
                             <td className="py-4 px-6 text-center font-bold text-zinc-700 dark:text-zinc-300">
-                              {collegeDb.subjects?.length || 0} {isAr ? 'مادة' : 'Subjects'}
+                              {collegeGroup.totalSubjects} {isAr ? 'مادة' : 'Subjects'}
                             </td>
 
                             <td className="py-4 px-6 text-center font-bold text-zinc-700 dark:text-zinc-300">
-                              {collegeDb.driveFiles?.length || 0} {isAr ? 'ملف' : 'Files'}
+                              {collegeGroup.totalDriveFiles} {isAr ? 'ملف' : 'Files'}
                             </td>
 
-                            <td className="py-4 px-6 text-center text-xs text-zinc-500">
-                              <span className="font-bold block text-zinc-800 dark:text-zinc-200">{collegeDb.sourceUserName || 'طالب مسجل'}</span>
-                              <span className="text-[10px] text-zinc-400">{collegeDb.sourceUserEmail}</span>
+                            <td className="py-4 px-6 text-center font-bold text-zinc-700 dark:text-zinc-300">
+                              {collegeGroup.totalStudents} {isAr ? 'طالب' : 'Students'}
                             </td>
 
                             <td className="py-4 px-6 text-center">
                               <div className="flex items-center justify-center gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => handleToggleCollegeVisibility(collegeDb.id, !(collegeDb.isVisible !== false))}
+                                  onClick={() => handleToggleCollegeGroupVisibility(collegeGroup.cohortDbs.map(c => c.id), !collegeGroup.allVisible)}
                                   className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                                    collegeDb.isVisible !== false
+                                    collegeGroup.allVisible
                                       ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100'
                                       : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200'
                                   }`}
                                   title={
-                                    collegeDb.isVisible !== false 
-                                      ? (isAr ? 'الكلية مرئية للطلاب (اضغط للإخفاء)' : 'Visible to students (Click to hide)')
-                                      : (isAr ? 'الكلية مخفية عن الطلاب (اضغط للإظهار)' : 'Hidden from students (Click to show)')
+                                    collegeGroup.allVisible
+                                      ? (isAr ? 'كل دفعات الكلية مرئية للطلاب (اضغط للإخفاء)' : 'All cohorts visible (Click to hide)')
+                                      : (isAr ? 'يوجد دفعات مخفية (اضغط للإظهار)' : 'Some cohorts hidden (Click to show)')
                                   }
                                 >
-                                  {collegeDb.isVisible !== false ? <Eye size={14} /> : <EyeOff size={14} />}
-                                  <span>{collegeDb.isVisible !== false ? (isAr ? 'مرئي' : 'Visible') : (isAr ? 'مخفي' : 'Hidden')}</span>
+                                  {collegeGroup.allVisible ? <Eye size={14} /> : <EyeOff size={14} />}
+                                  <span>{collegeGroup.allVisible ? (isAr ? 'مرئي' : 'Visible') : (isAr ? 'مخفي' : 'Hidden')}</span>
                                 </button>
                                 <button
                                   onClick={() => {
-                                    setSelectedCollegeId(collegeDb.id);
-                                    setSelectedYearIndex(1);
-                                    setSelectedSemesterIndex(1);
-                                    setActiveStudioTab('subjects');
+                                    setSelectedCollegeKey(collegeGroup.key);
                                   }}
                                   className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
                                 >
-                                  <span>{isAr ? 'إدارة الكلية' : 'Manage'}</span>
+                                  <span>{isAr ? 'إدارة الدفعات' : 'Manage Cohorts'}</span>
                                   <ArrowIcon size={13} />
                                 </button>
                                 <button
-                                  onClick={() => setDbToDelete(collegeDb)}
+                                  onClick={() => setCollegeGroupToDelete({
+                                    key: collegeGroup.key,
+                                    nameAr: collegeGroup.nameAr,
+                                    cohortsCount: collegeGroup.cohortsCount,
+                                    cohortIds: collegeGroup.cohortDbs.map(c => c.id)
+                                  })}
                                   className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950 rounded-xl transition-colors cursor-pointer"
-                                  title={isAr ? 'حذف هذه الكلية' : 'Delete College'}
+                                  title={isAr ? 'حذف هذه الكلية وجميع دفعاتها' : 'Delete College & All Its Cohorts'}
                                 >
                                   <Trash2 size={15} />
                                 </button>
@@ -2479,9 +2765,9 @@ export function AdminUniversitiesTab({
                         );
                       })}
 
-                      {currentUniversityGroup.colleges.length === 0 && (
+                      {collegeGroups.length === 0 && (
                         <tr>
-                          <td colSpan={7} className="py-12 text-center text-zinc-400">
+                          <td colSpan={6} className="py-12 text-center text-zinc-400">
                             <GraduationCap size={44} className="mx-auto opacity-20 mb-2 text-blue-500" />
                             <p className="font-bold text-sm text-zinc-700 dark:text-zinc-300">
                               {isAr ? 'لا توجد كليات مسجلة لهذه الجامعة حالياً.' : 'No colleges registered for this university currently.'}
@@ -2519,6 +2805,245 @@ export function AdminUniversitiesTab({
             </div>
           )}
 
+          {/* LEVEL 2.5: COLLEGE COHORTS TABLE (دفعات الكلية) */}
+          {selectedUniversityKey && selectedCollegeKey && !selectedCollegeId && selectedCollegeGroup && (
+            <div className="space-y-6 animate-in fade-in">
+
+              {/* Breadcrumbs Bar */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white dark:bg-zinc-900 p-4 sm:p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => {
+                      setSelectedCollegeKey(null);
+                    }}
+                    className="inline-flex items-center gap-2 text-xs sm:text-sm font-black text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                  >
+                    <BackIcon size={16} />
+                    <span>{isAr ? 'العودة لكليات الجامعة' : 'Back to Colleges'}</span>
+                  </button>
+
+                  <span className="text-zinc-400">/</span>
+
+                  <span className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white">
+                    {currentUniversityGroup?.nameAr}
+                  </span>
+
+                  <span className="text-zinc-400">/</span>
+
+                  <span className="text-xs sm:text-sm font-black text-blue-600 dark:text-blue-400">
+                    {selectedCollegeGroup.nameAr} ({isAr ? 'دفعات' : 'Cohorts'})
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={openCreateCohortModal}
+                    className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 text-white px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-black shadow-md shadow-blue-500/25 transition-all cursor-pointer shrink-0"
+                  >
+                    <Plus size={16} />
+                    <span>{isAr ? 'إضافة دفعة للكلية' : 'Add Cohort to College'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Summary Stats Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+                <div className="bg-white dark:bg-zinc-900 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xs">
+                  <span className="text-xs font-bold text-zinc-400 block">{isAr ? 'عدد الدفعات' : 'Cohorts'}</span>
+                  <span className="text-2xl font-black text-zinc-900 dark:text-white mt-1 block">{selectedCollegeGroup.cohortsCount}</span>
+                </div>
+                <div className="bg-white dark:bg-zinc-900 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xs">
+                  <span className="text-xs font-bold text-zinc-400 block">{isAr ? 'الطلاب المسجلون' : 'Students'}</span>
+                  <span className="text-2xl font-black text-zinc-900 dark:text-white mt-1 block">{selectedCollegeGroup.totalStudents}</span>
+                </div>
+                <div className="bg-white dark:bg-zinc-900 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xs">
+                  <span className="text-xs font-bold text-zinc-400 block">{isAr ? 'المواد العامة' : 'General Subjects'}</span>
+                  <span className="text-2xl font-black text-zinc-900 dark:text-white mt-1 block">{selectedCollegeGroup.totalFoundationSubjects}</span>
+                </div>
+                <div className="bg-white dark:bg-zinc-900 p-5 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xs">
+                  <span className="text-xs font-bold text-zinc-400 block">{isAr ? 'التخصصات' : 'Specializations'}</span>
+                  <span className="text-2xl font-black text-zinc-900 dark:text-white mt-1 block">{selectedCollegeGroup.totalSpecs}</span>
+                </div>
+              </div>
+
+              {/* Cohorts Table (كل دفعة = قاعدة بيانات كاملة مستقلة) */}
+              <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs overflow-hidden">
+                <div className="p-5 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                  <h3 className="font-black text-sm sm:text-base text-zinc-900 dark:text-white flex items-center gap-2">
+                    <Layers size={18} className="text-blue-600" />
+                    <span>{isAr ? `دفعات ${selectedCollegeGroup.nameAr}` : `Cohorts of ${selectedCollegeGroup.nameEn}`}</span>
+                  </h3>
+                  <span className="text-xs font-bold text-zinc-400">
+                    {selectedCollegeGroup.cohortsCount} {isAr ? 'دفعة' : 'Cohorts'}
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs sm:text-sm text-left rtl:text-right whitespace-nowrap">
+                    <thead className="bg-zinc-50 dark:bg-zinc-800/60 text-zinc-500 uppercase text-[11px] font-black border-b border-zinc-200 dark:border-zinc-800">
+                      <tr>
+                        <th className="py-4 px-6">{isAr ? 'اسم الدفعة' : 'Cohort Name'}</th>
+                        <th className="py-4 px-6 text-center">{isAr ? 'السنة الدراسية' : 'Academic Year'}</th>
+                        <th className="py-4 px-6">{isAr ? 'التفاصيل' : 'Details'}</th>
+                        <th className="py-4 px-6 text-center">{isAr ? 'ملخص الدفعة' : 'Summary'}</th>
+                        <th className="py-4 px-6 text-center">{isAr ? 'الظهور' : 'Visibility'}</th>
+                        <th className="py-4 px-6 text-center">{isAr ? 'الإجراءات' : 'Actions'}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                      {selectedCollegeGroup.cohortDbs.map((cohortDb) => {
+                        const cohortStudentIds = databases
+                          .filter(d => d.isSpecialization && d.parentDatabaseId === cohortDb.id)
+                          .map(d => d.id);
+                        const cohortStudents = studentsList.filter(
+                          s => s.universityDatabaseId === cohortDb.id || cohortStudentIds.includes(s.specializationDatabaseId)
+                        ).length;
+
+                        return (
+                          <tr key={cohortDb.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors">
+                            <td className="py-4 px-6">
+                              <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-600 flex items-center justify-center font-bold shrink-0">
+                                  <Layers size={17} />
+                                </div>
+                                <div>
+                                  <p className="font-black text-sm text-zinc-900 dark:text-white">
+                                    {cohortDb.cohortName || (isAr ? 'الدفعة الحالية' : 'Current Cohort')}
+                                  </p>
+                                  {cohortDb.sourceUserName && (
+                                    <p className="text-[11px] text-zinc-400 font-medium">
+                                      {isAr ? 'طالب مصدر' : 'Source'}: {cohortDb.sourceUserName}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="py-4 px-6 text-center font-bold">
+                              <span className="px-3 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-black">
+                                {cohortDb.academicYearStart && cohortDb.academicYearEnd
+                                  ? `${cohortDb.academicYearStart} - ${cohortDb.academicYearEnd}`
+                                  : (isAr ? 'غير محددة' : 'N/A')}
+                              </span>
+                            </td>
+
+                            <td className="py-4 px-6 max-w-[220px]">
+                              {cohortDb.cohortNotes ? (
+                                <p className="text-xs text-zinc-600 dark:text-zinc-300 font-medium truncate" title={cohortDb.cohortNotes}>
+                                  {cohortDb.cohortNotes}
+                                </p>
+                              ) : (
+                                <span className="text-xs text-zinc-400">—</span>
+                              )}
+                            </td>
+
+                            <td className="py-4 px-6">
+                              <div className="flex flex-wrap items-center justify-center gap-1.5">
+                                <span className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[11px] font-bold">
+                                  {isAr ? `${foundationSubjectsCount(cohortDb)} مادة عامة` : `${foundationSubjectsCount(cohortDb)} general`}
+                                </span>
+                                <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[11px] font-bold">
+                                  {databases.filter(d => d.isSpecialization && d.parentDatabaseId === cohortDb.id).length} {isAr ? 'تخصصات' : 'specs'}
+                                </span>
+                                <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[11px] font-bold">
+                                  {cohortDb.driveFiles?.length || 0} {isAr ? 'ملف' : 'files'}
+                                </span>
+                                <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold">
+                                  {cohortStudents} {isAr ? 'طالب' : 'students'}
+                                </span>
+                              </div>
+                            </td>
+
+                            <td className="py-4 px-6 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleCollegeVisibility(cohortDb.id, !(cohortDb.isVisible !== false))}
+                                className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                                  cohortDb.isVisible !== false
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100'
+                                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200'
+                                }`}
+                                title={
+                                  cohortDb.isVisible !== false
+                                    ? (isAr ? 'الدفعة مرئية للطلاب (اضغط للإخفاء)' : 'Visible to students (Click to hide)')
+                                    : (isAr ? 'الدفعة مخفية عن الطلاب (اضغط للإظهار)' : 'Hidden from students (Click to show)')
+                                }
+                              >
+                                {cohortDb.isVisible !== false ? <Eye size={14} /> : <EyeOff size={14} />}
+                                <span>{cohortDb.isVisible !== false ? (isAr ? 'مرئي' : 'Visible') : (isAr ? 'مخفي' : 'Hidden')}</span>
+                              </button>
+                            </td>
+
+                            <td className="py-4 px-6 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setSelectedCollegeId(cohortDb.id);
+                                    setSelectedYearIndex(1);
+                                    setSelectedSemesterIndex(1);
+                                    setActiveStudioTab('subjects');
+                                  }}
+                                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <span>{isAr ? 'دخول الدفعة' : 'Open Cohort'}</span>
+                                  <ArrowIcon size={13} />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setEditingCohort(cohortDb);
+                                    setEditCohortForm({
+                                      cohortName: cohortDb.cohortName || '',
+                                      academicYearStart: cohortDb.academicYearStart || '',
+                                      academicYearEnd: cohortDb.academicYearEnd || '',
+                                      cohortNotes: cohortDb.cohortNotes || ''
+                                    });
+                                    setIsEditCohortModalOpen(true);
+                                  }}
+                                  className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/60 rounded-xl transition-colors cursor-pointer border border-blue-200 dark:border-blue-800/60"
+                                  title={isAr ? 'تعديل بيانات الدفعة' : 'Edit Cohort'}
+                                >
+                                  <Edit2 size={15} />
+                                </button>
+                                <button
+                                  onClick={() => setDbToDelete(cohortDb)}
+                                  className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950 rounded-xl transition-colors cursor-pointer"
+                                  title={isAr ? 'حذف هذه الدفعة' : 'Delete Cohort'}
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {selectedCollegeGroup.cohortDbs.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-zinc-400">
+                            <Layers size={44} className="mx-auto opacity-20 mb-2 text-blue-500" />
+                            <p className="font-bold text-sm text-zinc-700 dark:text-zinc-300">
+                              {isAr ? 'لا توجد دفعات مضافة لهذه الكلية بعد.' : 'No cohorts added for this college yet.'}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={openCreateCohortModal}
+                              className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-sm"
+                            >
+                              <Plus size={15} />
+                              <span>{isAr ? 'إضافة أول دفعة للكلية الآن' : 'Add First Cohort Now'}</span>
+                            </button>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+          )}
+
           {/* LEVEL 3: COLLEGE ACADEMIC STUDIO */}
           {selectedCollegeDb && (
             <div className="space-y-6 animate-in fade-in">
@@ -2529,7 +3054,7 @@ export function AdminUniversitiesTab({
                   <button
                     onClick={() => setSelectedCollegeId(null)}
                     className="p-2.5 rounded-2xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-200 transition-colors cursor-pointer"
-                    title={isAr ? 'العودة لكليات الجامعة' : 'Back'}
+                    title={isAr ? 'العودة لدفعات الكلية' : 'Back to Cohorts'}
                   >
                     <BackIcon size={18} />
                   </button>
@@ -2537,9 +3062,17 @@ export function AdminUniversitiesTab({
                     <span className="text-[11px] font-bold text-zinc-400 block">
                       {selectedCollegeDb.universityNameAr} ({selectedCollegeDb.universityNameEn})
                     </span>
-                    <h3 className="text-lg sm:text-xl font-black text-zinc-900 dark:text-white">
-                      {selectedCollegeDb.collegeNameAr} {selectedCollegeDb.collegeNameEn ? `• ${selectedCollegeDb.collegeNameEn}` : ''}
-                    </h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-lg sm:text-xl font-black text-zinc-900 dark:text-white">
+                        {selectedCollegeDb.collegeNameAr} {selectedCollegeDb.collegeNameEn ? `• ${selectedCollegeDb.collegeNameEn}` : ''}
+                      </h3>
+                      {!selectedCollegeDb.isSpecialization && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50 text-[11px] font-black">
+                          <Layers size={12} />
+                          <span>{cohortLabel(selectedCollegeDb, isAr)}</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -5257,6 +5790,272 @@ export function AdminUniversitiesTab({
         onConfirm={handleConfirmDeleteDriveItem}
         onCancel={() => setDriveItemToDelete(null)}
       />
+
+      {/* --- CONFIRM DELETE WHOLE COLLEGE (ALL COHORTS) MODAL --- */}
+      <ConfirmModal
+        isOpen={!!collegeGroupToDelete}
+        title={isAr ? 'حذف الكلية وجميع دفعاتها' : 'Delete College & All Cohorts'}
+        message={isAr
+          ? `هل أنت متأكد تماماً من حذف كلية (${collegeGroupToDelete?.nameAr}) بأكملها؟ سيتم حذف جميع دفعاتها (${collegeGroupToDelete?.cohortsCount} دفعة) وقواعد بياناتها وتخصصاتها نهائياً. لا يمكن التراجع عن هذه الخطوة.`
+          : `Are you absolutely sure you want to delete the entire (${collegeGroupToDelete?.nameAr}) college? All of its ${collegeGroupToDelete?.cohortsCount} cohort databases and specializations will be permanently deleted. This action cannot be undone.`}
+        confirmText={isAr ? 'نعم، احذف الكلية بكل دفعاتها' : 'Yes, Delete Everything'}
+        cancelText={isAr ? 'تراجع' : 'Cancel'}
+        variant="danger"
+        onConfirm={handleConfirmDeleteCollegeGroup}
+        onCancel={() => setCollegeGroupToDelete(null)}
+      />
+
+      {/* --- CREATE COHORT (الدفعة الدراسية) MODAL --- */}
+      {isCreateCohortModalOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-lg rounded-[2rem] shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden animate-in zoom-in-95">
+            <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-600/30">
+                  <Layers size={20} />
+                </div>
+                <div>
+                  <h3 className="font-black text-lg text-zinc-900 dark:text-white">
+                    {isAr ? 'إضافة دفعة دراسية' : 'Add Academic Cohort'}
+                  </h3>
+                  <p className="text-xs text-zinc-400 font-bold">
+                    {isAr
+                      ? `كلية ${selectedCollegeGroup?.nameAr || ''} — كل دفعة قاعدة بيانات كاملة مستقلة`
+                      : `${selectedCollegeGroup?.nameEn || ''} — each cohort is a fully independent database`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCreateCohortModalOpen(false)}
+                className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl text-zinc-400 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+              <div>
+                <label className="block text-xs font-black text-zinc-500 dark:text-zinc-400 mb-2">
+                  {isAr ? 'اسم الدفعة' : 'Cohort Name'} <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={createCohortForm.cohortName}
+                  onChange={(e) => setCreateCohortForm({ ...createCohortForm, cohortName: e.target.value })}
+                  placeholder={isAr ? 'مثال: دفعة 2026 - 2027' : 'e.g. Cohort 2026 - 2027'}
+                  className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-bold text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-zinc-500 dark:text-zinc-400 mb-2">
+                  {isAr ? 'السنة الدراسية' : 'Academic Year'} <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-zinc-400 shrink-0">{isAr ? 'من' : 'From'}</span>
+                  <input
+                    type="number"
+                    min={1990}
+                    max={2100}
+                    value={createCohortForm.academicYearStart}
+                    onChange={(e) => {
+                      const v = e.target.value ? parseInt(e.target.value) : '';
+                      setCreateCohortForm(prev => {
+                        const end = v && (prev.academicYearEnd === '' || Number(prev.academicYearEnd) < Number(v))
+                          ? Number(v) + 1
+                          : prev.academicYearEnd;
+                        return { ...prev, academicYearStart: v, academicYearEnd: end, cohortName: v ? autoCohortName(Number(v), Number(end || (Number(v) + 1))) : prev.cohortName };
+                      });
+                    }}
+                    className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-bold text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 text-center"
+                  />
+                  <span className="text-xs font-bold text-zinc-400 shrink-0">{isAr ? 'إلى' : 'To'}</span>
+                  <input
+                    type="number"
+                    min={1990}
+                    max={2100}
+                    value={createCohortForm.academicYearEnd}
+                    onChange={(e) => {
+                      const v = e.target.value ? parseInt(e.target.value) : '';
+                      setCreateCohortForm(prev => ({ ...prev, academicYearEnd: v, cohortName: v && prev.academicYearStart ? autoCohortName(Number(prev.academicYearStart), Number(v)) : prev.cohortName }));
+                    }}
+                    className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-bold text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 text-center"
+                  />
+                </div>
+                <p className="text-[11px] text-zinc-400 font-medium mt-2">
+                  {isAr
+                    ? 'يتم اقتراح اسم الدفعة تلقائياً حسب السنة الدراسية، ويمكنك تعديله بحرية.'
+                    : 'The cohort name is auto-suggested from the academic year and can be edited freely.'}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-zinc-500 dark:text-zinc-400 mb-2">
+                  {isAr ? 'ملاحظات (اختياري)' : 'Notes (Optional)'}
+                </label>
+                <textarea
+                  value={createCohortForm.cohortNotes}
+                  onChange={(e) => setCreateCohortForm({ ...createCohortForm, cohortNotes: e.target.value })}
+                  placeholder={isAr ? 'أي تفاصيل أو ملاحظات تخص هذه الدفعة...' : 'Any details or notes about this cohort...'}
+                  rows={3}
+                  className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-medium text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 resize-none"
+                />
+              </div>
+
+              <div className="p-3.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 rounded-2xl flex items-start gap-2.5">
+                <Info size={16} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-blue-700 dark:text-blue-300 font-bold leading-relaxed">
+                  {isAr
+                    ? `سيتم توريث الهيكل الافتراضي (${selectedCollegeGroup?.latestCohort?.totalYears || 4} سنوات، ${selectedCollegeGroup?.latestCohort?.semestersPerYear || 2} فصول، بداية التخصص سنة ${selectedCollegeGroup?.latestCohort?.specializationStartYear || 2}) من آخر دفعة، ويمكنك تعديله لاحقاً من داخل الدفعة. المواد والتخصصات وملفات الدرايف تبدأ فاضية تماماً.`
+                    : `Defaults (${selectedCollegeGroup?.latestCohort?.totalYears || 4} years, ${selectedCollegeGroup?.latestCohort?.semestersPerYear || 2} semesters, spec start year ${selectedCollegeGroup?.latestCohort?.specializationStartYear || 2}) inherit from the latest cohort and can be adjusted later inside the cohort. Subjects, specializations and drive start empty.`}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-5 border-t border-zinc-100 dark:border-zinc-800 flex items-center gap-3 justify-end bg-zinc-50/50 dark:bg-zinc-900">
+              <button
+                type="button"
+                onClick={() => setIsCreateCohortModalOpen(false)}
+                className="px-4 py-2.5 text-sm font-black text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
+              >
+                {isAr ? 'إلغاء' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateCohort}
+                disabled={creatingCohort}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-xl text-sm font-black shadow-sm transition-all cursor-pointer flex items-center gap-2"
+              >
+                {creatingCohort && <Loader2 size={15} className="animate-spin" />}
+                <span>{isAr ? 'إنشاء الدفعة' : 'Create Cohort'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- EDIT COHORT (الدفعة الدراسية) MODAL --- */}
+      {isEditCohortModalOpen && editingCohort && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-lg rounded-[2rem] shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden animate-in zoom-in-95">
+            <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-600/30">
+                  <Pencil size={18} />
+                </div>
+                <div>
+                  <h3 className="font-black text-lg text-zinc-900 dark:text-white">
+                    {isAr ? 'تعديل بيانات الدفعة' : 'Edit Cohort'}
+                  </h3>
+                  <p className="text-xs text-zinc-400 font-bold">
+                    {isAr ? 'اسم الدفعة / السنة الدراسية / الملاحظات' : 'Cohort name / academic year / notes'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsEditCohortModalOpen(false);
+                  setEditingCohort(null);
+                }}
+                className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl text-zinc-400 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+              <div>
+                <label className="block text-xs font-black text-zinc-500 dark:text-zinc-400 mb-2">
+                  {isAr ? 'اسم الدفعة' : 'Cohort Name'} <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editCohortForm.cohortName}
+                  onChange={(e) => setEditCohortForm({ ...editCohortForm, cohortName: e.target.value })}
+                  placeholder={isAr ? 'مثال: دفعة 2026 - 2027' : 'e.g. Cohort 2026 - 2027'}
+                  className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-bold text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-zinc-500 dark:text-zinc-400 mb-2">
+                  {isAr ? 'السنة الدراسية' : 'Academic Year'} <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-zinc-400 shrink-0">{isAr ? 'من' : 'From'}</span>
+                  <input
+                    type="number"
+                    min={1990}
+                    max={2100}
+                    value={editCohortForm.academicYearStart}
+                    onChange={(e) => {
+                      const v = e.target.value ? parseInt(e.target.value) : '';
+                      setEditCohortForm(prev => ({ ...prev, academicYearStart: v }));
+                    }}
+                    className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-bold text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 text-center"
+                  />
+                  <span className="text-xs font-bold text-zinc-400 shrink-0">{isAr ? 'إلى' : 'To'}</span>
+                  <input
+                    type="number"
+                    min={1990}
+                    max={2100}
+                    value={editCohortForm.academicYearEnd}
+                    onChange={(e) => {
+                      const v = e.target.value ? parseInt(e.target.value) : '';
+                      setEditCohortForm(prev => ({ ...prev, academicYearEnd: v }));
+                    }}
+                    className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-bold text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 text-center"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-zinc-500 dark:text-zinc-400 mb-2">
+                  {isAr ? 'ملاحظات (اختياري)' : 'Notes (Optional)'}
+                </label>
+                <textarea
+                  value={editCohortForm.cohortNotes}
+                  onChange={(e) => setEditCohortForm({ ...editCohortForm, cohortNotes: e.target.value })}
+                  placeholder={isAr ? 'أي تفاصيل أو ملاحظات تخص هذه الدفعة...' : 'Any details or notes about this cohort...'}
+                  rows={3}
+                  className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-medium text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 resize-none"
+                />
+              </div>
+
+              <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900/50 rounded-2xl flex items-start gap-2.5">
+                <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-amber-700 dark:text-amber-300 font-bold leading-relaxed">
+                  {isAr
+                    ? 'تغيير اسم الدفعة أو السنة الدراسية لا يحذف أي بيانات — المواد والتخصصات والطلاب المرتبطون بهذه الدفعة يبقون كما هم.'
+                    : 'Changing the cohort name or academic year deletes no data — subjects, specializations and linked students remain untouched.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-5 border-t border-zinc-100 dark:border-zinc-800 flex items-center gap-3 justify-end bg-zinc-50/50 dark:bg-zinc-900">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditCohortModalOpen(false);
+                  setEditingCohort(null);
+                }}
+                className="px-4 py-2.5 text-sm font-black text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
+              >
+                {isAr ? 'إلغاء' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCohortMeta}
+                disabled={savingCohortMeta}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-xl text-sm font-black shadow-sm transition-all cursor-pointer flex items-center gap-2"
+              >
+                {savingCohortMeta ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                <span>{isAr ? 'حفظ التعديلات' : 'Save Changes'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
