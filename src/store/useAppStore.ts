@@ -1102,7 +1102,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const remainingSubjects = subjects.filter(s => {
-      const isTemplate = (s.universityTemplateId && templateSubjectIds.has(s.universityTemplateId)) || templateSubjectIds.has(s.id);
+      const isTemplate = Boolean(s.universityTemplateId) || templateSubjectIds.has(s.id);
       if (isTemplate) {
         db.deleteSubject(userId, s.id).catch(() => {});
         return false;
@@ -1111,7 +1111,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
 
     const remainingFiles = files.filter(f => {
-      const isTemplate = (f.universityTemplateId && templateFileIds.has(f.universityTemplateId)) || templateFileIds.has(f.id);
+      const isTemplate = Boolean(f.universityTemplateId) || templateFileIds.has(f.id);
       if (isTemplate) {
         // Tombstone so a future re-link never re-imports what the student removed.
         if (f.universityTemplateId) addDeletedTemplateFileId(userId, f.universityTemplateId);
@@ -1216,7 +1216,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const sm = Number(s.semesterIndex || 1);
       const isSpecPhase = y > specStartYr || (y === specStartYr && sm >= specStartSem);
 
-      if (isSpecTemplate || isSpecPhase) {
+      if (isSpecTemplate || (!specDb && s.universityTemplateId && isSpecPhase)) {
         db.deleteSubject(userId, s.id).catch(() => {});
         return false;
       }
@@ -1225,7 +1225,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // Filter out files that belong to specialization
     const remainingFiles = files.filter(f => {
-      const isSpecFile = (f.universityTemplateId && specTemplateFileIds.has(f.universityTemplateId)) || specTemplateFileIds.has(f.id);
+      const isSpecPhase = Number(f.yearIndex) > specStartYr || (Number(f.yearIndex) === specStartYr && Number(f.semesterIndex) >= specStartSem);
+      const isSpecFile = (f.universityTemplateId && specTemplateFileIds.has(f.universityTemplateId)) || specTemplateFileIds.has(f.id) || (!specDb && f.universityTemplateId && isSpecPhase);
       if (isSpecFile) {
         db.deleteDriveFile(userId, f.id).catch(() => {});
         return false;

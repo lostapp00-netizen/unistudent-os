@@ -884,6 +884,7 @@ export const db = {
   async addDriveFile(userId: string, file: DriveFile & { b2FileId?: string }) {
     const baseRow: any = {
       id: file.id,
+      university_template_id: file.universityTemplateId ?? null,
       user_id: userId,
       name: file.name,
       size: file.size,
@@ -1162,7 +1163,7 @@ export const db = {
   async getUniversityDatabases(): Promise<UniversityDatabase[]> {
     try {
       const { data, error } = await supabase.from('university_databases').select('*').order('created_at', { ascending: false });
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         const mapped = data.map(d => mapUniversityDatabaseFromDB(d));
         try {
           localStorage.setItem('unistudent_university_databases', JSON.stringify(mapped));
@@ -1196,6 +1197,7 @@ export const db = {
         } catch {}
         return mapped;
       }
+      if (!error) return null;
     } catch (e) {
       console.warn('Direct fetch getUniversityDatabase failed, falling back:', e);
     }
@@ -1427,11 +1429,13 @@ export const db = {
       const targetDb = current.find(u => u.id === id);
       const remaining = current.filter(u => u.id !== id && u.parentDatabaseId !== id);
       const toDelete = current.filter(u => u.id === id || u.parentDatabaseId === id);
-      localStorage.setItem('unistudent_university_databases', JSON.stringify(remaining));
-
-      for (const item of toDelete) {
-        await supabase.from('university_databases').delete().eq('id', item.id);
-      }
+      const removeTemplates = async () => {
+        for (const item of [...toDelete].sort((a, b) => Number(Boolean(b.isSpecialization)) - Number(Boolean(a.isSpecialization)))) {
+          const { error } = await supabase.from('university_databases').delete().eq('id', item.id);
+          if (error) throw error;
+        }
+        localStorage.setItem('unistudent_university_databases', JSON.stringify(remaining));
+      };
 
       // Cascade cleanup for affected students:
       if (targetDb) {
@@ -1482,7 +1486,7 @@ export const db = {
             console.warn('Error cascading specialization deletion to students:', specErr);
           }
 
-          // Broadcast to active student sessions
+          await removeTemplates();
           await broadcastUniversityDatabaseUpdate({
             action: 'deleted',
             type: 'specialization',
@@ -1578,7 +1582,7 @@ export const db = {
             console.warn('Error cascading college deletion to students:', colErr);
           }
 
-          // Broadcast to active student sessions
+          await removeTemplates();
           await broadcastUniversityDatabaseUpdate({
             action: 'deleted',
             type: 'college',
@@ -3339,6 +3343,7 @@ function mapSubjectFromDB(row: any): Subject {
   const sem = row.semester_index !== undefined && row.semester_index !== null ? row.semester_index : (row.semesterIndex !== undefined ? row.semesterIndex : 1);
   return {
     id: row.id,
+    universityTemplateId: row.university_template_id ?? row.universityTemplateId ?? undefined,
     code: row.code || '',
     name: row.name,
     creditHours: Number(row.credit_hours !== undefined ? row.credit_hours : (row.creditHours !== undefined ? row.creditHours : 3)),
@@ -3357,6 +3362,7 @@ function mapSubjectToDB(userId: string, subject: Subject) {
   const sem = subject.semesterIndex !== undefined ? subject.semesterIndex : ((subject as any).semester_index !== undefined ? (subject as any).semester_index : 1);
   return {
     id: subject.id,
+    university_template_id: subject.universityTemplateId ?? null,
     user_id: userId,
     code: subject.code || '',
     name: subject.name,
@@ -3520,6 +3526,7 @@ function mapNoteToDB(userId: string, note: Note) {
 function mapDriveFileFromDB(row: any): DriveFile {
   return {
     id: row.id,
+    universityTemplateId: row.university_template_id ?? row.universityTemplateId ?? undefined,
     name: row.name,
     size: row.size,
     type: row.type,

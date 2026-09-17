@@ -31,20 +31,38 @@ export function selectAcademicDriveFiles(
     return inSpecialization === isSpecialization;
   });
   const byId = new Map(normalized.map(f => [f.id, f]));
-  const idMap = new Map(selected.map(f => [f.id, createId()]));
-  return selected.map(f => {
+  const included = new Map(selected.map(f => [f.id, f]));
+  for (const file of selected) {
+    const visited = new Set([file.id]);
+    let parentId = file.parentId;
+    while (parentId && !visited.has(parentId)) {
+      visited.add(parentId);
+      const parent = byId.get(parentId);
+      if (!parent || parent.type !== 'folder') break;
+      included.set(parent.id, parent);
+      parentId = parent.parentId;
+    }
+  }
+  const idMap = new Map(Array.from(included.keys(), id => [id, createId()]));
+  return Array.from(included.values(), f => {
     let parentId = f.parentId;
     const visited = new Set([f.id]);
-    while (parentId) {
-      if (visited.has(parentId) || byId.get(parentId)?.type !== 'folder') {
+    let ancestorId = parentId;
+    while (ancestorId) {
+      if (visited.has(ancestorId) || included.get(ancestorId)?.type !== 'folder') {
         parentId = null;
         break;
       }
-      visited.add(parentId);
-      if (idMap.has(parentId)) break;
-      parentId = byId.get(parentId)?.parentId || null;
+      visited.add(ancestorId);
+      ancestorId = included.get(ancestorId)?.parentId || null;
     }
-    return { ...f, id: idMap.get(f.id)!, parentId: parentId ? idMap.get(parentId)! : null };
+    return {
+      ...f,
+      id: idMap.get(f.id)!,
+      parentId: parentId ? idMap.get(parentId)! : null,
+      yearIndex: Number.isInteger(f.yearIndex) && f.yearIndex > 0 ? f.yearIndex : undefined,
+      semesterIndex: Number.isInteger(f.semesterIndex) && f.semesterIndex > 0 ? f.semesterIndex : undefined
+    };
   });
 }
 
