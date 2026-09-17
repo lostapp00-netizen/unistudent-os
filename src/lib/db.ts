@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, DatabaseBackup, EmailBackupConfig, UniversityDatabase, UniversityPendingUpdate, GradeRule, GradeDistributionItem } from '../types';
 import { normalizeSubjectName } from './academicTranslation';
+import { selectAcademicDriveFiles } from './utils';
 
 // Default grading scale a student falls back to after an automatic
 // un-restore (template deletion) — mirrors the store's fresh-state scale.
@@ -1961,7 +1962,12 @@ export const db = {
              (y === params.specializationStartYear && sem >= params.specializationStartSemester);
     });
 
-    const filteredFiles = rawFiles || [];
+    const filteredFiles = selectAcademicDriveFiles(rawFiles || [], {
+      totalYears: parentDb.totalYears,
+      semestersPerYear: parentDb.semestersPerYear,
+      specializationStartYear: params.specializationStartYear,
+      specializationStartSemester: params.specializationStartSemester
+    }, true);
 
     const specId = crypto.randomUUID();
     const defaultSpecYears: number[] = [];
@@ -3602,7 +3608,9 @@ function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
       parentId: f.parentId || f.parent_id || null,
       createdAt: f.createdAt || f.upload_date || new Date().toISOString(),
       url: f.url || '',
-      b2FileId: f.b2FileId || f.b2_file_id
+      b2FileId: f.b2FileId || f.b2_file_id,
+      yearIndex: f.yearIndex ?? f.year_index ?? undefined,
+      semesterIndex: f.semesterIndex ?? f.semester_index ?? undefined
     })),
     gradingScale: cleanGradingScale,
     createdAt: row.created_at || new Date().toISOString(),

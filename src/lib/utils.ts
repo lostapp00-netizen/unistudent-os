@@ -1,5 +1,52 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import type { DriveFile } from '../types';
+
+export function selectAcademicDriveFiles(
+  files: Array<DriveFile | Record<string, any>>,
+  structure: { specializationStartYear?: number; specializationStartSemester?: number; totalYears?: number; semestersPerYear?: number },
+  isSpecialization: boolean,
+  createId: () => string = () => crypto.randomUUID()
+): DriveFile[] {
+  const normalized: DriveFile[] = files.filter(Boolean).map(f => ({
+    id: String(f.id),
+    name: f.name || '',
+    size: Number(f.size || 0),
+    type: f.type || 'file',
+    parentId: f.parentId || ('parent_id' in f ? f.parent_id : null) || null,
+    createdAt: f.createdAt || ('upload_date' in f ? f.upload_date : '') || new Date().toISOString(),
+    url: f.url || '',
+    b2FileId: f.b2FileId || ('b2_file_id' in f ? f.b2_file_id : undefined),
+    yearIndex: Number(f.yearIndex ?? ('year_index' in f ? f.year_index : undefined)),
+    semesterIndex: Number(f.semesterIndex ?? ('semester_index' in f ? f.semester_index : undefined))
+  }));
+  const startYear = Number(structure.specializationStartYear || 2);
+  const startSemester = Number(structure.specializationStartSemester || 1);
+  const selected = normalized.filter(f => {
+    const year = f.yearIndex;
+    const semester = f.semesterIndex;
+    if (!Number.isInteger(year) || year < 1 || year > (structure.totalYears || 4) ||
+        !Number.isInteger(semester) || semester < 1 || semester > (structure.semestersPerYear || 2)) return false;
+    const inSpecialization = year > startYear || (year === startYear && semester >= startSemester);
+    return inSpecialization === isSpecialization;
+  });
+  const byId = new Map(normalized.map(f => [f.id, f]));
+  const idMap = new Map(selected.map(f => [f.id, createId()]));
+  return selected.map(f => {
+    let parentId = f.parentId;
+    const visited = new Set([f.id]);
+    while (parentId) {
+      if (visited.has(parentId) || byId.get(parentId)?.type !== 'folder') {
+        parentId = null;
+        break;
+      }
+      visited.add(parentId);
+      if (idMap.has(parentId)) break;
+      parentId = byId.get(parentId)?.parentId || null;
+    }
+    return { ...f, id: idMap.get(f.id)!, parentId: parentId ? idMap.get(parentId)! : null };
+  });
+}
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

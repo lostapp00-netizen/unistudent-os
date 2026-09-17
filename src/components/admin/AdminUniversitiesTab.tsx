@@ -55,7 +55,7 @@ import { supabase } from '../../lib/supabase';
 import { UniversityDatabase, UniversityPendingUpdate, Subject, DriveFile, GradeDistributionItem, GradeRule } from '../../types';
 import { ConfirmModal } from '../ui/CustomModal';
 import { autoTranslateUniversity, autoTranslateCollege, normalizeSubjectName } from '../../lib/academicTranslation';
-import { collegeGroupKey, cohortLabel, autoCohortName, currentAcademicYearRange, foundationSubjectsCount } from '../../lib/utils';
+import { collegeGroupKey, cohortLabel, autoCohortName, currentAcademicYearRange, foundationSubjectsCount, selectAcademicDriveFiles } from '../../lib/utils';
 import { previewFile, downloadFile, uploadFile } from '../../lib/backblaze';
 
 interface AdminUniversitiesTabProps {
@@ -361,7 +361,6 @@ export function AdminUniversitiesTab({
     customSemesters: number | '';
     specializationStartYear: number;
     specializationStartSemester: number;
-    availableYears: number[];
     collegeDetails: string;
   }>({
     collegeNameAr: '',
@@ -371,7 +370,6 @@ export function AdminUniversitiesTab({
     customSemesters: 2,
     specializationStartYear: 2,
     specializationStartSemester: 1,
-    availableYears: [1],
     collegeDetails: ''
   });
   const [collegeStudentSearchQuery, setCollegeStudentSearchQuery] = useState('');
@@ -415,9 +413,8 @@ export function AdminUniversitiesTab({
     semestersPerYear: number | '';
     specializationStartYear: number;
     specializationStartSemester: number;
-    availableYears: number[];
     collegeDetails: string;
-  }>({ totalYears: 4, semestersPerYear: 2, specializationStartYear: 2, specializationStartSemester: 1, availableYears: [1], collegeDetails: '' });
+  }>({ totalYears: 4, semestersPerYear: 2, specializationStartYear: 2, specializationStartSemester: 1, collegeDetails: '' });
   const [savingAnchorStructure, setSavingAnchorStructure] = useState(false);
 
   // Load Data
@@ -813,7 +810,6 @@ export function AdminUniversitiesTab({
       customSemesters: st.semestersPerYear || 2,
       specializationStartYear: Number(specStartYear || 2),
       specializationStartSemester: Number(specStartSem || 1),
-      availableYears: [1],
       collegeDetails: ''
     });
   };
@@ -858,7 +854,6 @@ export function AdminUniversitiesTab({
         semestersPerYear: Number(createCollegeForm.customSemesters) || source?.semestersPerYear || 2,
         specializationStartYear: startYear,
         specializationStartSemester: startSem,
-        availableYears: createCollegeForm.availableYears && createCollegeForm.availableYears.length > 0 ? createCollegeForm.availableYears : [1],
         subjects: [],
         driveFiles: [],
         gradingScale: (source?.gradingScale && source.gradingScale.length > 0) ? source.gradingScale : (source?.raw?.settings?.grading_scale || []),
@@ -877,7 +872,6 @@ export function AdminUniversitiesTab({
         customSemesters: 2,
         specializationStartYear: 2,
         specializationStartSemester: 1,
-        availableYears: [1],
         collegeDetails: ''
       });
       await loadUniData();
@@ -897,7 +891,6 @@ export function AdminUniversitiesTab({
       semestersPerYear: anchor.semestersPerYear || 2,
       specializationStartYear: anchor.specializationStartYear || 2,
       specializationStartSemester: anchor.specializationStartSemester || 1,
-      availableYears: (anchor.availableYears && anchor.availableYears.length > 0) ? [...anchor.availableYears] : [1],
       collegeDetails: anchor.cohortNotes || ''
     });
     setIsAnchorStructureModalOpen(true);
@@ -913,7 +906,6 @@ export function AdminUniversitiesTab({
         semestersPerYear: Number(anchorStructureForm.semestersPerYear || 2),
         specializationStartYear: Number(anchorStructureForm.specializationStartYear || 2),
         specializationStartSemester: Number(anchorStructureForm.specializationStartSemester || 1),
-        availableYears: (anchorStructureForm.availableYears && anchorStructureForm.availableYears.length > 0) ? anchorStructureForm.availableYears : [1],
         cohortNotes: anchorStructureForm.collegeDetails.trim()
       };
       await db.updateUniversityDatabase(anchor.id, updatedFields);
@@ -1012,21 +1004,12 @@ export function AdminUniversitiesTab({
         includeInGpa: s.includeInGpa !== false && s.include_in_gpa !== false
       }));
 
-      // Clone drive files — two-pass id remap so the folder tree stays intact.
-      const clonedDriveIdMap = new Map<string, string>();
-      studentFiles.forEach((f: any) => {
-        if (f && f.id) clonedDriveIdMap.set(String(f.id), uuidv4());
-      });
-      const clonedDrive: DriveFile[] = studentFiles.map((f: any) => ({
-        id: clonedDriveIdMap.get(String(f.id)) || uuidv4(),
-        name: f.name,
-        size: Number(f.size || 0),
-        type: f.type || 'file',
-        parentId: f.parentId ? (clonedDriveIdMap.get(String(f.parentId)) || null) : null,
-        createdAt: f.createdAt || f.upload_date || new Date().toISOString(),
-        url: f.url || '',
-        b2FileId: f.b2FileId || f.b2_file_id
-      }));
+      const clonedDrive = selectAcademicDriveFiles(studentFiles, {
+        totalYears: structureSource?.totalYears || selectedCohortSource.totalYears || 4,
+        semestersPerYear: structureSource?.semestersPerYear || selectedCohortSource.semestersPerYear || 2,
+        specializationStartYear: startYear,
+        specializationStartSemester: startSem
+      }, false, uuidv4);
 
       const newDb: UniversityDatabase = {
         id: uuidv4(),
@@ -1045,7 +1028,7 @@ export function AdminUniversitiesTab({
         semestersPerYear: structureSource?.semestersPerYear || selectedCohortSource.semestersPerYear || 2,
         specializationStartYear: startYear,
         specializationStartSemester: startSem,
-        availableYears: (structureSource?.availableYears && structureSource.availableYears.length > 0) ? [...structureSource.availableYears] : [1],
+        availableYears: [1],
         subjects: clonedSubjects,
         driveFiles: clonedDrive,
         gradingScale: (selectedCohortSource.gradingScale && selectedCohortSource.gradingScale.length > 0)
@@ -1057,27 +1040,6 @@ export function AdminUniversitiesTab({
       };
 
       await db.createUniversityDatabase(newDb);
-
-      // If the source student has a declared specialization, pull it too as a
-      // specialization row under the new cohort (same as the classic flow).
-      const declaredSpec = (selectedCohortSource.specialization || '').trim();
-      if (declaredSpec) {
-        try {
-          await db.createSpecializationDatabase({
-            parentCollegeDbId: newDb.id,
-            specializationNameAr: declaredSpec,
-            specializationNameEn: autoTranslateCollege(declaredSpec),
-            specializationStartYear: startYear,
-            specializationStartSemester: startSem,
-            sourceUserId: selectedCohortSource.userId,
-            sourceUserName: selectedCohortSource.name || '',
-            sourceUserEmail: selectedCohortSource.email || '',
-            subjects: studentSubjs
-          });
-        } catch (specErr) {
-          console.error('Error pulling specialization for cohort:', specErr);
-        }
-      }
 
       setIsCreateCohortModalOpen(false);
       await loadUniData();
@@ -1170,12 +1132,10 @@ export function AdminUniversitiesTab({
     setIsCreateSpecModalOpen(true);
     setLoadingSpecStudents(true);
     try {
-      const candidates = await db.getStudentsWithSpecialization(
-        selectedCollegeDb.collegeNameAr,
-        undefined,
-        selectedCollegeDb.sourceUserId,
-        studentsList,
-        selectedCollegeDb.id
+      const candidates = await db.getStudentsForCohortPull(
+        selectedCollegeDb.universityNameAr || selectedCollegeDb.universityNameEn,
+        selectedCollegeDb.collegeNameAr || selectedCollegeDb.collegeNameEn,
+        studentsList
       );
       setSpecStudentsList(candidates);
     } catch (e) {
@@ -1193,8 +1153,6 @@ export function AdminUniversitiesTab({
       sourceUserId: student.userId,
       sourceUserName: student.name,
       sourceUserEmail: student.email,
-      specializationStartYear: student.specializationStartYear || prev.specializationStartYear || 2,
-      specializationStartSemester: student.specializationStartSemester || prev.specializationStartSemester || 1,
       specializationNameAr: student.specialization ? student.specialization : prev.specializationNameAr
     }));
   };
@@ -1213,7 +1171,8 @@ export function AdminUniversitiesTab({
         sourceUserId: specForm.sourceUserId,
         sourceUserName: specForm.sourceUserName,
         sourceUserEmail: specForm.sourceUserEmail,
-        subjects: selectedStudentForSpec?.subjects || []
+        subjects: selectedStudentForSpec?.subjects || [],
+        driveFiles: selectedStudentForSpec?.files || []
       });
       await loadUniData();
       await onRefreshAllData();
@@ -1280,7 +1239,8 @@ export function AdminUniversitiesTab({
       const foundationSubjs = studentSubjs.filter((s: any) => {
         const y = Number(s.yearIndex || s.year_index || 1);
         const sem = Number(s.semesterIndex || s.semester_index || 1);
-        return y < startYear || (y === startYear && sem < startSem);
+        const inSpecialization = y > startYear || (y === startYear && sem >= startSem);
+        return inSpecialization === Boolean(selectedCollegeDb.isSpecialization);
       });
 
       // Clone subjects cleanly with fresh template IDs
@@ -1303,17 +1263,11 @@ export function AdminUniversitiesTab({
         includeInGpa: s.includeInGpa !== false && s.include_in_gpa !== false
       }));
 
-      // Clone drive files cleanly
-      const clonedDrive: DriveFile[] = studentFiles.map((f: any) => ({
-        id: f.id || uuidv4(),
-        name: f.name,
-        size: Number(f.size || 0),
-        type: f.type || 'file',
-        parentId: f.parentId || f.parent_id || null,
-        createdAt: f.createdAt || f.upload_date || new Date().toISOString(),
-        url: f.url || '',
-        b2FileId: f.b2FileId || f.b2_file_id
-      }));
+      const clonedDrive = selectAcademicDriveFiles(studentFiles, {
+        ...selectedCollegeDb,
+        totalYears: newStudent.totalYears || selectedCollegeDb.totalYears || 4,
+        semestersPerYear: newStudent.semestersPerYear || selectedCollegeDb.semestersPerYear || 2
+      }, Boolean(selectedCollegeDb.isSpecialization), uuidv4);
 
       const cleanOverwriteData: Partial<UniversityDatabase> = {
         sourceUserId: newStudent.id,
@@ -2729,7 +2683,6 @@ export function AdminUniversitiesTab({
                         customSemesters: 2,
                         specializationStartYear: 2,
                         specializationStartSemester: 1,
-                        availableYears: [1],
                         collegeDetails: ''
                       });
                       setShowAllStudentsForCollege(false);
@@ -2904,7 +2857,6 @@ export function AdminUniversitiesTab({
                                   customSemesters: 2,
                                   specializationStartYear: 2,
                                   specializationStartSemester: 1,
-                                  availableYears: [1],
                                   collegeDetails: ''
                                 });
                                 setShowAllStudentsForCollege(false);
@@ -2994,9 +2946,21 @@ export function AdminUniversitiesTab({
                           <span className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 text-[11px] font-bold">
                             {isAr ? `بداية التخصص: سنة ${selectedCollegeGroup.anchor.specializationStartYear || 2} ترم ${selectedCollegeGroup.anchor.specializationStartSemester || 1}` : `Spec starts: Y${selectedCollegeGroup.anchor.specializationStartYear || 2} T${selectedCollegeGroup.anchor.specializationStartSemester || 1}`}
                           </span>
-                          <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[11px] font-bold">
-                            {isAr ? 'سنوات متاحة' : 'Available'}: {(selectedCollegeGroup.anchor.availableYears && selectedCollegeGroup.anchor.availableYears.length > 0 ? selectedCollegeGroup.anchor.availableYears : [1]).join(', ')}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCollegeGroupVisibility(selectedCollegeGroup.cohortDbs.map(c => c.id), !selectedCollegeGroup.allVisible)}
+                            disabled={selectedCollegeGroup.cohortsCount === 0}
+                            aria-pressed={selectedCollegeGroup.allVisible}
+                            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                              selectedCollegeGroup.allVisible
+                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200'
+                            }`}
+                            title={isAr ? 'تغيير ظهور دفعات الكلية للطلاب' : 'Toggle visibility of college cohorts'}
+                          >
+                            {selectedCollegeGroup.allVisible ? <Eye size={14} /> : <EyeOff size={14} />}
+                            <span>{selectedCollegeGroup.allVisible ? (isAr ? 'مرئي' : 'Visible') : (isAr ? 'مخفي' : 'Hidden')}</span>
+                          </button>
                         </div>
                         {selectedCollegeGroup.anchor.cohortNotes && (
                           <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium mt-1.5 line-clamp-2" title={selectedCollegeGroup.anchor.cohortNotes}>
@@ -4455,56 +4419,16 @@ export function AdminUniversitiesTab({
                   <Info size={14} className="text-amber-600 shrink-0 mt-0.5" />
                   <span>
                     {isAr
-                      ? `سيتم سحب هيكل الكلية فقط (الاسم، السنين، الترمات، بداية التخصص، السنوات المتاحة، لائحة التقديرات). المواد والملفات لن تُسحب هنا — تُسحب لكل دفعة على حدة عند إنشائها من طالب معين داخل جدول الدفعات.`
-                      : `Only the college structure (name, years, semesters, spec milestone, available years, grading scale) is pulled. Subjects & files are pulled per cohort from a chosen student inside the cohorts table.`}
+                      ? `سيتم سحب هيكل الكلية فقط (الاسم، السنين، الترمات، بداية التخصص، لائحة التقديرات). المواد والملفات تُسحب لكل دفعة على حدة. السنوات المتاحة تُدار داخل كل دفعة وتبدأ بالسنة الأولى للدفعات الجديدة.`
+                      : `Only the college structure (name, years, semesters, spec milestone, grading scale) is pulled. Subjects & files are pulled per cohort. Available years are managed inside each cohort and default to Year 1 for new cohorts.`}
                   </span>
                 </p>
-              </div>
-
-              {/* Step 5: Available Years with Annual Update Note */}
-              <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white block">
-                    {isAr ? '5. السنين المتاحة في قاعدة البيانات حالياً' : '5. Currently Available Years in Database'}
-                  </label>
-                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">
-                    ({isAr ? 'يتم التحديث سنوياً' : 'Updated annually'})
-                  </span>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {Array.from({ length: Number(createCollegeForm.customYears) || 4 }, (_, i) => i + 1).map(yr => {
-                    const isChecked = (createCollegeForm.availableYears || []).includes(yr);
-                    return (
-                      <button
-                        key={yr}
-                        type="button"
-                        onClick={() => {
-                          const curr = createCollegeForm.availableYears || [];
-                          const next = isChecked ? curr.filter(y => y !== yr) : [...curr, yr].sort((a, b) => a - b);
-                          setCreateCollegeForm(prev => ({
-                            ...prev,
-                            availableYears: next.length > 0 ? next : [yr]
-                          }));
-                        }}
-                        className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
-                          isChecked 
-                            ? 'bg-amber-500 text-white border-amber-500 shadow-xs' 
-                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-amber-400'
-                        }`}
-                      >
-                        <span>{isAr ? `السنة ${yr}` : `Year ${yr}`}</span>
-                        {isChecked && <Check size={13} />}
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
 
               {/* Step 6: College Details (Optional) */}
               <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
                 <label className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white block">
-                  {isAr ? '6. تفاصيل الكلية (اختياري)' : '6. College Details (Optional)'}
+                  {isAr ? '5. تفاصيل الكلية (اختياري)' : '5. College Details (Optional)'}
                 </label>
                 <textarea
                   value={createCollegeForm.collegeDetails}
@@ -4754,17 +4678,12 @@ export function AdminUniversitiesTab({
                                     <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">
                                       {st.college || (isAr ? 'كلية غير محددة' : 'No college')}
                                     </span>
-                                    <span className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 border border-blue-100 dark:border-blue-900/60">
-                                      {isAr
-                                        ? `الترم الحالي: سنة ${st.currentYear || 1} - فصل ${st.currentSemester || 1}`
-                                        : `Now: Y${st.currentYear || 1}-S${st.currentSemester || 1}`}
-                                    </span>
                                   </div>
                                 </div>
 
                                 <div className="text-right shrink-0 space-y-1">
                                   <span className="block px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60 text-[11px] font-black">
-                                    {typeof st.specSubjectsCount === 'number' ? st.specSubjectsCount : (st.subjects || []).filter((x: Subject) => (x.yearIndex || 1) > Number(st.specializationStartYear || 2) || ((x.yearIndex || 1) === Number(st.specializationStartYear || 2) && (x.semesterIndex || 1) >= Number(st.specializationStartSemester || 1))).length} {isAr ? 'مادة تخصص' : 'spec subjs'}
+                                    {(st.subjects || []).filter((x: Subject) => (x.yearIndex || 1) > Number(specForm.specializationStartYear) || ((x.yearIndex || 1) === Number(specForm.specializationStartYear) && (x.semesterIndex || 1) >= Number(specForm.specializationStartSemester))).length} {isAr ? 'مادة تخصص' : 'spec subjs'}
                                   </span>
                                   <span className="block px-2 py-0.5 text-[10px] font-bold text-zinc-400">
                                     {st.subjectsCount || st.subjects?.length || 0} {isAr ? 'إجمالي' : 'total'}
@@ -5991,11 +5910,11 @@ export function AdminUniversitiesTab({
 
       {/* --- CREATE COHORT (الدفعة الدراسية) MODAL — WITH SOURCE-STUDENT PULL --- */}
       {isCreateCohortModalOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl rounded-[2rem] shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden animate-in zoom-in-95">
-            <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-600/30">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-4xl max-h-[92dvh] flex flex-col rounded-[2rem] shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden animate-in zoom-in-95">
+            <div className="p-4 sm:p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-start justify-between gap-3 shrink-0">
+              <div className="flex items-start gap-3 min-w-0 [overflow-wrap:anywhere]">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-600/30 shrink-0">
                   <Layers size={20} />
                 </div>
                 <div>
@@ -6017,11 +5936,11 @@ export function AdminUniversitiesTab({
               </button>
             </div>
 
-            <div className="p-6 space-y-4 max-h-[62vh] overflow-y-auto">
+            <div className="p-4 sm:p-6 space-y-4 min-h-0 overflow-y-auto flex-1">
 
               {/* STEP 1: Source Student (الطالب المصدر) */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <label className="block text-xs font-black text-zinc-900 dark:text-white">
                     {isAr ? '1. الطالب المصدر — سحب المواد منه' : '1. Source Student — Pull Subjects From'} <span className="text-rose-500">*</span>
                   </label>
@@ -6050,7 +5969,7 @@ export function AdminUniversitiesTab({
                       placeholder={isAr ? 'ابحث باسم الطالب أو الإيميل أو التخصص...' : 'Search by name, email or specialization...'}
                       className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     />
-                    <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
+                    <div className="max-h-[48dvh] sm:max-h-96 overflow-y-auto space-y-3 p-1">
                       {cohortSourceStudents
                         .filter(st => {
                           if (!cohortSourceSearch.trim()) return true;
@@ -6068,29 +5987,30 @@ export function AdminUniversitiesTab({
                               key={st.userId}
                               type="button"
                               onClick={() => setSelectedCohortSource(st)}
-                              className={`w-full text-left rtl:text-right p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center gap-3 ${
+                              aria-pressed={isSelected}
+                              className={`w-full min-w-0 text-left rtl:text-right p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 sm:gap-4 ${
                                 isSelected
                                   ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-500 shadow-sm'
                                   : 'bg-zinc-50 dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-700 hover:border-blue-400'
                               }`}
                             >
-                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 ${isSelected ? 'bg-blue-600 text-white' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300'}`}>
+                              <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center font-black shrink-0 ${isSelected ? 'bg-blue-600 text-white' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300'}`}>
                                 {(st.name || 'ط').trim().charAt(0)}
                               </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-xs font-black text-zinc-900 dark:text-white truncate">{st.name}</p>
-                                <p className="text-[11px] text-zinc-400 font-medium truncate">{st.email}</p>
-                              </div>
-                              <div className="flex flex-col items-end gap-1 shrink-0">
-                                <span className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-black">
-                                  {st.subjectsCount} {isAr ? 'مادة' : 'subjects'} • {st.filesCount} {isAr ? 'ملف' : 'files'}
-                                </span>
-                                {st.specialization && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-black max-w-[180px]">
-                                    <Sparkles size={10} className="shrink-0" />
-                                    <span className="truncate">{isAr ? 'تخصصه: ' : 'Spec: '}{st.specialization}</span>
+                              <div className="min-w-0 flex-1 space-y-2 whitespace-normal [overflow-wrap:anywhere]">
+                                <p className="text-sm sm:text-base font-black text-zinc-900 dark:text-white">{st.name}</p>
+                                <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 font-medium" dir="ltr">{st.email}</p>
+                                <div className="flex flex-wrap items-start gap-2">
+                                  <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-xs font-black">
+                                    {st.subjectsCount} {isAr ? 'مادة' : 'subjects'} • {st.filesCount} {isAr ? 'ملف' : 'files'}
                                   </span>
-                                )}
+                                  {st.specialization && (
+                                    <span className="inline-flex min-w-0 max-w-full items-start gap-1.5 px-2.5 py-1 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-black">
+                                      <Sparkles size={12} className="shrink-0 mt-0.5" />
+                                      <span className="min-w-0">{isAr ? 'تخصصه: ' : 'Spec: '}{st.specialization}</span>
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               {isSelected && <Check size={16} className="text-blue-600 shrink-0" />}
                             </button>
@@ -6191,14 +6111,14 @@ export function AdminUniversitiesTab({
                   {(() => {
                     const ss = selectedCollegeGroup?.anchor || selectedCollegeGroup?.latestCohort;
                     return isAr
-                      ? `سيتم سحب المواد العامة (${selectedCohortSource?.subjectsCount || 0} مادة قبل بداية التخصص) وملفات الدرايف من الطالب المختار، و${selectedCohortSource?.specialization ? `تخصصه (${selectedCohortSource.specialization}) هيتم سحبه كصف تخصص تابع للدفعة` : 'لو الطالب حاطط تخصص هيتم سحبه تلقائياً'}. الهيكل (${ss?.totalYears || 4} سنوات، ${ss?.semestersPerYear || 2} ترمات، بداية التخصص سنة ${ss?.specializationStartYear || 2}) يُورَّث من هيكل الكلية ويقبل التعديل لاحقاً.`
-                      : `General subjects (${selectedCohortSource?.subjectsCount || 0} before spec start) and drive files are pulled from the chosen student${selectedCohortSource?.specialization ? `, plus their specialization (${selectedCohortSource.specialization}) as a spec row` : ''}. Structure (${ss?.totalYears || 4} years, ${ss?.semestersPerYear || 2} semesters, spec start year ${ss?.specializationStartYear || 2}) inherits from the college structure and stays editable.`;
+                      ? `سيتم سحب المواد العامة وملفات الدرايف المسجلة في السنوات والترمات السابقة لبداية التخصص فقط من الطالب المختار. الملفات غير المحدد لها سنة وترم لن تُسحب. لن يتم سحب تخصصه تلقائياً؛ يمكنك سحب تخصص بشكل منفصل من داخل الدفعة. الهيكل (${ss?.totalYears || 4} سنوات، ${ss?.semestersPerYear || 2} ترمات، بداية التخصص سنة ${ss?.specializationStartYear || 2}) يُورَّث من هيكل الكلية ويقبل التعديل لاحقاً.`
+                      : `Only general subjects and Drive files assigned to years and terms before specialization are pulled from the chosen student. Files without a year and term are excluded. Their specialization is not pulled automatically; you can pull one separately inside the cohort. Structure (${ss?.totalYears || 4} years, ${ss?.semestersPerYear || 2} semesters, spec start year ${ss?.specializationStartYear || 2}) inherits from the college structure and stays editable.`;
                   })()}
                 </p>
               </div>
             </div>
 
-            <div className="p-5 border-t border-zinc-100 dark:border-zinc-800 flex items-center gap-3 justify-end bg-zinc-50/50 dark:bg-zinc-900">
+            <div className="p-4 sm:p-5 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center gap-3 justify-end bg-zinc-50/50 dark:bg-zinc-900 shrink-0">
               <button
                 type="button"
                 onClick={() => setIsCreateCohortModalOpen(false)}
@@ -6430,34 +6350,25 @@ export function AdminUniversitiesTab({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-zinc-500 mb-2">
-                  {isAr ? 'السنوات المتاحة' : 'Available Years'}
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {Array.from({ length: Number(anchorStructureForm.totalYears) || 4 }, (_, i) => i + 1).map(yr => {
-                    const isChecked = (anchorStructureForm.availableYears || []).includes(yr);
-                    return (
-                      <button
-                        key={yr}
-                        type="button"
-                        onClick={() => {
-                          const curr = anchorStructureForm.availableYears || [];
-                          const next = isChecked ? curr.filter(y => y !== yr) : [...curr, yr].sort((a, b) => a - b);
-                          setAnchorStructureForm(prev => ({ ...prev, availableYears: next.length > 0 ? next : [yr] }));
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
-                          isChecked
-                            ? 'bg-amber-500 text-white border-amber-500'
-                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-amber-400'
-                        }`}
-                      >
-                        <span>{isAr ? `السنة ${yr}` : `Year ${yr}`}</span>
-                        {isChecked && <Check size={12} />}
-                      </button>
-                    );
-                  })}
-                </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs font-bold text-zinc-500">
+                  {isAr ? 'ظهور دفعات الكلية للطلاب (يُطبق فوراً)' : 'Cohort visibility to students (applies immediately)'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleToggleCollegeGroupVisibility(selectedCollegeGroup.cohortDbs.map(c => c.id), !selectedCollegeGroup.allVisible)}
+                  disabled={selectedCollegeGroup.cohortsCount === 0 || savingAnchorStructure}
+                  aria-pressed={selectedCollegeGroup.allVisible}
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                    selectedCollegeGroup.allVisible
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200'
+                  }`}
+                  title={isAr ? 'تغيير ظهور دفعات الكلية للطلاب' : 'Toggle visibility of college cohorts'}
+                >
+                  {selectedCollegeGroup.allVisible ? <Eye size={14} /> : <EyeOff size={14} />}
+                  <span>{selectedCollegeGroup.allVisible ? (isAr ? 'مرئي' : 'Visible') : (isAr ? 'مخفي' : 'Hidden')}</span>
+                </button>
               </div>
 
               <div>
