@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, GraduationGradeRule, UniversityDatabase } from '../types';
 import { db, flushPendingWrites } from '../lib/db';
 import { normalizeSubjectName } from '../lib/academicTranslation';
+import { matchesDriveItem } from '../lib/utils';
 
 let activeSyncPromise: Promise<void> | null = null;
 let isImportInProgress = false;
@@ -735,6 +736,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     isImportInProgress = true;
 
     try {
+      if (activeSyncPromise) await activeSyncPromise;
       const udb = await db.getUniversityDatabase(universityDbId);
       if (!udb) throw new Error('قاعدة بيانات الجامعة غير موجودة');
 
@@ -1001,49 +1003,48 @@ export const useAppStore = create<AppState>((set, get) => ({
           : (mainCollegeDb.driveFiles || []);
 
         if (incomingDriveFiles.length > 0) {
-          const currentDrive = get().files || [];
-          const existingTemplateIds = new Set(
-            currentDrive.map(f => f.universityTemplateId).filter(Boolean) as string[]
-          );
-          const existingSignatures = new Set(currentDrive.map(f => `${f.name}-${f.type}-${f.parentId || 'root'}`));
-
-          const idMap = new Map<string, string>();
           const clonedFiles: DriveFile[] = [];
           const clonedTemplateIds = new Set<string>();
+          const idMap = new Map<string, string>();
+          const currentDriveSnapshot = [...(get().files || [])];
 
-          // Parent-first (topological) clone: a folder is always cloned before
-          // its children so idMap can link them. The old flat "folders first"
-          // sort used an invalid comparator that produced arbitrary order and
-          // flattened nested folders to the root.
+          // Parent-first (topological) clone: a folder is always resolved
+          // before its children so idMap can link them. Dedup matches the
+          // RESOLVED LOCAL parent (not the template parent id), so ancestor
+          // folders shared between the college DB and the specialization DB
+          // (different template ids by design) are reused instead of being
+          // imported a second time.
           const byId = new Map(incomingDriveFiles.map(f => [f.id, f]));
           const inProgress = new Set<string>();
           const cloneFile = async (file: DriveFile): Promise<void> => {
             if (!file || clonedTemplateIds.has(file.id) || inProgress.has(file.id)) return;
             inProgress.add(file.id);
 
-            // Clone parent chain first
             if (file.parentId) {
               await cloneFile(byId.get(file.parentId));
             }
 
             clonedTemplateIds.add(file.id);
+            const newParentId = file.parentId ? (idMap.get(file.parentId) || null) : null;
 
-            // Idempotency: skip if this template item was already imported
-            if (existingTemplateIds.has(file.id)) {
-              idMap.set(file.id, currentDrive.find(f => f.universityTemplateId === file.id)!.id);
+            // Exact template item already imported.
+            const templateTwin = currentDriveSnapshot.find(f => f.universityTemplateId === file.id);
+            if (templateTwin) {
+              idMap.set(file.id, templateTwin.id);
               return;
             }
-            const signature = `${file.name}-${file.type}-${file.parentId || 'root'}`;
-            if (existingSignatures.has(signature)) {
-              // Map to the existing local twin so children can attach to it
-              const twin = currentDrive.find(f => f.type === file.type && f.name === file.name);
-              if (twin) idMap.set(file.id, twin.id);
+
+            // Same logical item already present under the resolved local
+            // parent (same name, type, phase and identical content) — e.g. the
+            // shared foundation folder chain that both databases contain.
+            const twin = currentDriveSnapshot.find(f => matchesDriveItem(f, file, newParentId));
+            if (twin) {
+              idMap.set(file.id, twin.id);
               return;
             }
 
             const newId = uuidv4();
             idMap.set(file.id, newId);
-            const newParentId = file.parentId ? (idMap.get(file.parentId) || null) : null;
 
             const cloned: DriveFile = {
               id: newId,
@@ -1059,6 +1060,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               semesterIndex: file.semesterIndex
             };
             clonedFiles.push(cloned);
+            currentDriveSnapshot.push(cloned);
             await db.addDriveFile(userId, cloned);
           };
 
@@ -1753,6 +1755,28 @@ export const useAppStore = create<AppState>((set, get) => ({
         for (const tFile of combinedDriveFiles) {
           await importTemplateFile(tFile);
         }
+
+        // Heal duplicates created by older restores: collapse template-derived
+        // rows that share the same logical path (name + type + phase + local
+        // parent + identical content) into one row — personal items are never
+        // touched.
+        const dedupedFiles: DriveFile[] = [];
+        const seenDriveKeys = new Set<string>();
+        for (const f of currentFiles) {
+          if (!f.universityTemplateId) {
+            dedupedFiles.push(f);
+            continue;
+          }
+          const key = `${(f.name || '').trim().toLowerCase()}-${f.type}-${f.parentId || 'root'}`;
+          if (seenDriveKeys.has(key)) {
+            await db.deleteDriveFile(userId, f.id);
+            hasFileChanges = true;
+            continue;
+          }
+          seenDriveKeys.add(key);
+          dedupedFiles.push(f);
+        }
+        currentFiles = dedupedFiles;
 
         // Remove drive files that were deleted from template. Only rows
         // carrying a template id are template-derived — treating any file

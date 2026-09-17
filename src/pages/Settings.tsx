@@ -415,6 +415,28 @@ export function Settings() {
     )
   );
 
+  // Going back to a pre-specialization semester wipes the typed specialization
+  // (locally and persisted) so returning to the specialization phase always
+  // starts from a blank field. The start year/term configuration is kept.
+  const prevReachedSpecializationRef = React.useRef<boolean | null>(null);
+  useEffect(() => {
+    const prev = prevReachedSpecializationRef.current;
+    prevReachedSpecializationRef.current = hasReachedSpecialization;
+    if (prev !== true || hasReachedSpecialization) return;
+    if (!formData.specialization && !formData.specializationDatabaseId) return;
+    setFormData(prevForm => ({
+      ...prevForm,
+      specialization: '',
+      specializationDatabaseId: ''
+    }));
+    const cleared = { specialization: '', specializationDatabaseId: undefined as string | undefined };
+    updateSettings(cleared);
+    const { userId } = useAppStore.getState();
+    if (userId) {
+      db.upsertSettings(userId, cleared).catch(() => {});
+    }
+  }, [hasReachedSpecialization, formData.specialization, formData.specializationDatabaseId, updateSettings]);
+
   return (
     <div className="space-y-4 sm:space-y-6 pb-20 max-w-6xl mx-auto w-full">
       {/* Top Header - Fully Responsive on Mobile, Tablet & Desktop */}
