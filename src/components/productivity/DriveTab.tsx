@@ -27,7 +27,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ConfirmModal } from '../ui/CustomModal';
 
 // Recursive Tree Node for Destination Folders
-function FolderTreeItem({
+export function FolderTreeItem({
   folder,
   level,
   allAvailableFolders,

@@ -48,7 +48,9 @@ import {
   Award,
   Save,
   EyeOff,
-  Pencil
+  Pencil,
+  FolderOpen,
+  Home
 } from 'lucide-react';
 import { db, broadcastUniversityDatabaseUpdate } from '../../lib/db';
 import { supabase } from '../../lib/supabase';
@@ -57,6 +59,7 @@ import { ConfirmModal } from '../ui/CustomModal';
 import { autoTranslateUniversity, autoTranslateCollege, normalizeSubjectName } from '../../lib/academicTranslation';
 import { collegeGroupKey, cohortLabel, autoCohortName, currentAcademicYearRange, foundationSubjectsCount, selectAcademicDriveFiles } from '../../lib/utils';
 import { previewFile, downloadFile, uploadFile } from '../../lib/backblaze';
+import { FolderTreeItem } from '../productivity/DriveTab';
 
 interface AdminUniversitiesTabProps {
   studentsList: any[];
@@ -340,6 +343,7 @@ export function AdminUniversitiesTab({
   // Move Drive Item Modal State
   const [movingFile, setMovingFile] = useState<DriveFile | null>(null);
   const [targetMoveFolderId, setTargetMoveFolderId] = useState<string | null>(null);
+  const [expandedDriveFolderIds, setExpandedDriveFolderIds] = useState<Set<string>>(new Set());
 
   // --- Step 1: Create University Modal State ---
   const [isCreateUniModalOpen, setIsCreateUniModalOpen] = useState(false);
@@ -1756,9 +1760,23 @@ export function AdminUniversitiesTab({
   // Move Drive Item into Folder
   const handleConfirmMoveFile = async () => {
     if (!selectedCollegeDb || !movingFile) return;
+    const all = selectedCollegeDb.driveFiles || [];
+    if (targetMoveFolderId && driveMoveInvalidIds.has(targetMoveFolderId)) return;
+    const destination = targetMoveFolderId ? all.find(f => f.id === targetMoveFolderId) : null;
     try {
-      const updatedFiles = selectedCollegeDb.driveFiles.map(f => 
-        f.id === movingFile.id ? { ...f, parentId: targetMoveFolderId } : f
+      const updatedFiles = all.map(f =>
+        f.id === movingFile.id
+          ? {
+              ...f,
+              parentId: targetMoveFolderId,
+              ...(destination
+                ? {
+                    yearIndex: Number(destination.yearIndex) || Number(movingFile.yearIndex) || 1,
+                    semesterIndex: Number(destination.semesterIndex) || Number(movingFile.semesterIndex) || 1
+                  }
+                : {})
+            }
+          : f
       );
       await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
       setMovingFile(null);
@@ -2091,6 +2109,66 @@ export function AdminUniversitiesTab({
     if (!selectedCollegeDb || !currentDriveFolderId) return null;
     return (selectedCollegeDb.driveFiles || []).find(f => f.id === currentDriveFolderId) || null;
   }, [selectedCollegeDb, currentDriveFolderId]);
+
+  // Full ancestor path of the active folder (Home > ... > current), like the
+  // student drive — the admin must see the whole trail, not just the last name.
+  const driveBreadcrumbs = useMemo(() => {
+    if (!selectedCollegeDb) return [];
+    const all = selectedCollegeDb.driveFiles || [];
+    const crumbs: DriveFile[] = [];
+    let curr = currentDriveFolderId ? all.find(f => f.id === currentDriveFolderId) : null;
+    while (curr) {
+      crumbs.unshift(curr);
+      curr = curr.parentId ? all.find(f => f.id === curr!.parentId) : null;
+    }
+    return crumbs;
+  }, [selectedCollegeDb, currentDriveFolderId]);
+
+  // All descendant ids of a folder — used to forbid moving a folder into itself
+  // or one of its own children.
+  const getDriveDescendantIds = (folderId: string, all: DriveFile[]): string[] => {
+    const children = all.filter(f => f.parentId === folderId);
+    let ids = children.map(c => c.id);
+    children.filter(c => c.type === 'folder').forEach(c => {
+      ids = [...ids, ...getDriveDescendantIds(c.id, all)];
+    });
+    return ids;
+  };
+
+  const driveMoveInvalidIds = useMemo(() => {
+    if (!movingFile || !selectedCollegeDb) return new Set<string>();
+    const all = selectedCollegeDb.driveFiles || [];
+    return new Set([movingFile.id, ...(movingFile.type === 'folder' ? getDriveDescendantIds(movingFile.id, all) : [])]);
+  }, [movingFile, selectedCollegeDb]);
+
+  const driveAvailableFolders = useMemo(() => {
+    if (!selectedCollegeDb) return [];
+    return (selectedCollegeDb.driveFiles || []).filter(f => f.type === 'folder' && !driveMoveInvalidIds.has(f.id));
+  }, [selectedCollegeDb, driveMoveInvalidIds]);
+
+  const driveRootFolders = useMemo(() => driveAvailableFolders.filter(f => !f.parentId), [driveAvailableFolders]);
+
+  const openDriveMoveModal = (file: DriveFile) => {
+    setMovingFile(file);
+    setTargetMoveFolderId(file.parentId);
+    const all = selectedCollegeDb?.driveFiles || [];
+    const ancestors = new Set<string>();
+    let curr = file.parentId ? all.find(f => f.id === file.parentId) : null;
+    while (curr) {
+      ancestors.add(curr.id);
+      curr = curr.parentId ? all.find(f => f.id === curr!.parentId) : null;
+    }
+    setExpandedDriveFolderIds(ancestors);
+  };
+
+  const toggleDriveFolderExpand = (folderId: string) => {
+    setExpandedDriveFolderIds(prev => {
+      const next = new Set(prev);
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
+      return next;
+    });
+  };
 
   // Students explicitly linked to this college (or one of its child
   // specializations) — name-matching is never used.
@@ -3715,24 +3793,35 @@ export function AdminUniversitiesTab({
                 <div className="space-y-4">
                   {/* Drive Actions & Breadcrumbs */}
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xs">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <button
                         onClick={() => setCurrentDriveFolderId(null)}
-                        className={`text-xs font-bold hover:underline cursor-pointer ${
-                          !currentDriveFolderId ? 'text-blue-600 font-black' : 'text-zinc-500'
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          !currentDriveFolderId
+                            ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50 shadow-2xs'
+                            : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
                         }`}
                       >
-                        {isAr ? 'الدرايف الرئيسي' : 'Root Drive'}
+                        <Home size={14} />
+                        <span>{isAr ? 'الدرايف الرئيسي' : 'Root Drive'}</span>
                       </button>
 
-                      {currentFolderObject && (
-                        <>
-                          <span className="text-zinc-400">/</span>
-                          <span className="text-xs font-black text-blue-600 dark:text-blue-400">
-                            {currentFolderObject.name}
-                          </span>
-                        </>
-                      )}
+                      {driveBreadcrumbs.map((crumb, idx) => (
+                        <React.Fragment key={crumb.id}>
+                          <span className="text-zinc-300 dark:text-zinc-700">/</span>
+                          <button
+                            onClick={() => setCurrentDriveFolderId(crumb.id)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer max-w-[220px] truncate ${
+                              idx === driveBreadcrumbs.length - 1
+                                ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50 shadow-2xs'
+                                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                            }`}
+                            title={crumb.name}
+                          >
+                            {crumb.name}
+                          </button>
+                        </React.Fragment>
+                      ))}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -3795,10 +3884,7 @@ export function AdminUniversitiesTab({
                             <div className="grid grid-cols-2 gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
                               {/* Move Button */}
                               <button
-                                onClick={() => {
-                                  setMovingFile(file);
-                                  setTargetMoveFolderId(null);
-                                }}
+                                onClick={() => openDriveMoveModal(file)}
                                 className="p-2 text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 dark:hover:text-blue-400 border border-zinc-200 dark:border-zinc-700/60 rounded-xl transition-all shadow-2xs cursor-pointer"
                                 title={isAr ? 'نقل إلى مجلد' : 'Move'}
                               >
@@ -5283,6 +5369,23 @@ export function AdminUniversitiesTab({
               </div>
               )}
 
+              {editingDriveItem && (
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                    {editingDriveItem.type === 'folder'
+                      ? (isAr ? 'اسم المجلد' : 'Folder Name')
+                      : (isAr ? 'اسم الملف المعروض للطلاب' : 'Displayed File Name')}
+                  </label>
+                  <input
+                    type="text"
+                    value={driveForm.name}
+                    onChange={(e) => setDriveForm({ ...driveForm, name: e.target.value })}
+                    placeholder={isAr ? 'الاسم' : 'Name'}
+                    className="w-full px-4 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
+
               {!editingDriveItem && (driveForm.type === 'file' ? (
                 <div className="space-y-3">
                   {/* File Upload Dropzone */}
@@ -5457,60 +5560,93 @@ export function AdminUniversitiesTab({
         </div>
       )}
 
-      {/* --- MOVE DRIVE ITEM MODAL --- */}
+      {/* --- MOVE DRIVE ITEM MODAL (expandable folder tree, like student drive) --- */}
       {movingFile && selectedCollegeDb && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-md p-6 sm:p-7 space-y-4 border border-zinc-200 dark:border-zinc-800 shadow-2xl">
-            <h3 className="font-black text-base text-zinc-900 dark:text-white">
-              {isAr ? `نقل "${movingFile.name}" إلى:` : `Move "${movingFile.name}" to:`}
-            </h3>
-
-            <div className="space-y-2 max-h-[220px] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-lg w-full shadow-2xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2 min-w-0">
+                <FolderInput className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0" />
+                <h3 className="font-bold text-base text-zinc-900 dark:text-white truncate">
+                  {isAr ? 'نقل العنصر:' : 'Move Item:'} <span className="text-blue-600">{movingFile.name}</span>
+                </h3>
+              </div>
               <button
-                type="button"
-                onClick={() => setTargetMoveFolderId(null)}
-                className={`w-full p-3 rounded-xl border text-xs font-bold flex items-center gap-2 cursor-pointer ${
-                  targetMoveFolderId === null
-                    ? 'bg-blue-50 dark:bg-blue-950 border-blue-500 text-blue-700 dark:text-blue-300'
-                    : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700'
-                }`}
+                onClick={() => setMovingFile(null)}
+                className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg cursor-pointer"
               >
-                <HardDrive size={16} />
-                <span>{isAr ? 'الدرايف الرئيسي (بدون مجلد)' : 'Root Directory'}</span>
+                <X size={18} />
               </button>
-
-              {selectedCollegeDb.driveFiles?.filter(f => f.type === 'folder' && f.id !== movingFile.id).map(folder => (
-                <button
-                  key={folder.id}
-                  type="button"
-                  onClick={() => setTargetMoveFolderId(folder.id)}
-                  className={`w-full p-3 rounded-xl border text-xs font-bold flex items-center gap-2 cursor-pointer ${
-                    targetMoveFolderId === folder.id
-                      ? 'bg-blue-50 dark:bg-blue-950 border-blue-500 text-blue-700 dark:text-blue-300'
-                      : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700'
-                  }`}
-                >
-                  <Folder size={16} className="text-amber-500" />
-                  <span>{folder.name}</span>
-                </button>
-              ))}
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-              <button
-                type="button"
-                onClick={() => setMovingFile(null)}
-                className="px-4 py-2 text-xs font-bold text-zinc-500"
-              >
-                {isAr ? 'إلغاء' : 'Cancel'}
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmMoveFile}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold cursor-pointer"
-              >
-                {isAr ? 'نقل العنصر' : 'Move Item'}
-              </button>
+            <div className="space-y-2.5">
+              <label className="text-xs font-bold text-zinc-500 block">
+                {isAr ? 'اختر مجلد الوجهة (اضغط على السهم لفتح المجلدات الفرعية):' : 'Select Destination (click arrow to expand subfolders):'}
+              </label>
+
+              <div className="space-y-1.5 max-h-72 overflow-y-auto overflow-x-auto pr-1">
+                <div
+                  onClick={() => setTargetMoveFolderId(null)}
+                  className={`w-max min-w-full p-2.5 rounded-2xl border flex items-center justify-between cursor-pointer transition-all ${
+                    targetMoveFolderId === null
+                      ? 'border-blue-600 bg-blue-50/80 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-bold shadow-xs'
+                      : 'border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 text-zinc-800 dark:text-zinc-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="w-6 shrink-0" />
+                    <Home size={16} className="text-blue-600" />
+                    <span>{isAr ? 'الدرايف الرئيسي (المستوى الأول)' : 'Root Drive (Top Level)'}</span>
+                  </div>
+                  {targetMoveFolderId === null && <Check size={16} className="text-blue-600 shrink-0" />}
+                </div>
+
+                {driveRootFolders.map(f => (
+                  <FolderTreeItem
+                    key={f.id}
+                    folder={f}
+                    level={0}
+                    allAvailableFolders={driveAvailableFolders}
+                    selectedId={targetMoveFolderId}
+                    onSelect={setTargetMoveFolderId}
+                    expandedIds={expandedDriveFolderIds}
+                    onToggleExpand={toggleDriveFolderExpand}
+                    isAr={isAr}
+                  />
+                ))}
+
+                {driveAvailableFolders.length === 0 && (
+                  <p className="text-center py-6 text-xs text-zinc-400">
+                    {isAr ? 'لا توجد مجلدات أخرى متاحة للنقل إليها.' : 'No other folders available.'}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2.5 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <div className="text-[11px] text-zinc-400 truncate">
+                {isAr ? 'الوجهة المحددة: ' : 'Selected: '}
+                <span className="font-bold text-blue-600 dark:text-blue-400">
+                  {targetMoveFolderId === null
+                    ? (isAr ? 'الدرايف الرئيسي' : 'Root Drive')
+                    : ((selectedCollegeDb.driveFiles || []).find(f => f.id === targetMoveFolderId)?.name || '')}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setMovingFile(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer"
+                >
+                  {isAr ? 'إلغاء' : 'Cancel'}
+                </button>
+                <button
+                  onClick={handleConfirmMoveFile}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white transition-all shadow-md shadow-blue-500/25 cursor-pointer"
+                >
+                  {isAr ? 'نقل إلى هنا' : 'Move Here'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
