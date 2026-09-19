@@ -172,16 +172,15 @@ export function Settings() {
       await unlinkUniversityDatabase();
       setIsUnlinkModalOpen(false);
       isDirtyRef.current = false;
-      // Keep the typed profile names (the store preserves them); only the
-      // explicit link ids are cleared so the form matches the store exactly.
       setFormData(prev => ({
         ...prev,
         universityDatabaseId: undefined,
-        specializationDatabaseId: undefined
+        specializationDatabaseId: undefined,
+        specialization: ''
       }));
       setSaveStatus({
         type: 'success',
-        message: isAr ? 'تم إلغاء استخدام قاعدة البيانات وحذف المواد والدرايف بنجاح.' : 'Database unlinked and curriculum reset successfully.'
+        message: isAr ? 'تم إلغاء ربط قاعدة البيانات وحذف المواد والملفات المستوردة بنجاح.' : 'Database unlinked and imported curriculum reset successfully.'
       });
       window.scrollTo({ top: 0, behavior: 'smooth' });
       setTimeout(() => setSaveStatus(null), 5000);
@@ -202,15 +201,14 @@ export function Settings() {
       await unlinkSpecializationDatabase();
       setIsUnlinkSpecModalOpen(false);
       isDirtyRef.current = false;
-      // Keep the typed specialization name (the store preserves it); only the
-      // explicit link id is cleared so the form matches the store exactly.
       setFormData(prev => ({
         ...prev,
-        specializationDatabaseId: undefined
+        specializationDatabaseId: undefined,
+        specialization: ''
       }));
       setSaveStatus({
         type: 'success',
-        message: isAr ? 'تم إلغاء ربط التخصص وحذف مواده بنجاح، مع بقاء مواد الكلية العامة.' : 'Specialization unlinked successfully.'
+        message: isAr ? 'تم إلغاء ربط التخصص وحذف مواده وملفاته بنجاح، مع بقاء مواد الكلية العامة.' : 'Specialization unlinked successfully.'
       });
       window.scrollTo({ top: 0, behavior: 'smooth' });
       setTimeout(() => setSaveStatus(null), 5000);
@@ -414,28 +412,6 @@ export function Settings() {
       (currentSemester.yearIndex === startYearNum && currentSemester.semesterIndex >= startSemNum)
     )
   );
-
-  // Going back to a pre-specialization semester wipes the typed specialization
-  // (locally and persisted) so returning to the specialization phase always
-  // starts from a blank field. The start year/term configuration is kept.
-  const prevReachedSpecializationRef = React.useRef<boolean | null>(null);
-  useEffect(() => {
-    const prev = prevReachedSpecializationRef.current;
-    prevReachedSpecializationRef.current = hasReachedSpecialization;
-    if (prev !== true || hasReachedSpecialization) return;
-    if (!formData.specialization && !formData.specializationDatabaseId) return;
-    setFormData(prevForm => ({
-      ...prevForm,
-      specialization: '',
-      specializationDatabaseId: ''
-    }));
-    const cleared = { specialization: '', specializationDatabaseId: undefined as string | undefined };
-    updateSettings(cleared);
-    const { userId } = useAppStore.getState();
-    if (userId) {
-      db.upsertSettings(userId, cleared).catch(() => {});
-    }
-  }, [hasReachedSpecialization, formData.specialization, formData.specializationDatabaseId, updateSettings]);
 
   return (
     <div className="space-y-4 sm:space-y-6 pb-20 max-w-6xl mx-auto w-full">

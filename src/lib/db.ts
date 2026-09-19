@@ -366,7 +366,7 @@ export const db = {
         specializationDatabaseId: 'specializationDatabaseId' in settings ? settings.specializationDatabaseId : existingObj.specializationDatabaseId
       }));
 
-      // Embed student specialization metadata inside grading_scale JSONB as a dual-layer backup
+      // Embed student specialization & database metadata inside grading_scale JSONB as a dual-layer backup
       let scale = settings.gradingScale !== undefined 
         ? [...settings.gradingScale] 
         : (payload.grading_scale ? [...payload.grading_scale] : (existingObj.gradingScale ? [...existingObj.gradingScale] : []));
@@ -376,14 +376,16 @@ export const db = {
       const curStartYr = 'specializationStartYear' in settings ? settings.specializationStartYear : existingObj.specializationStartYear;
       const curStartSem = 'specializationStartSemester' in settings ? settings.specializationStartSemester : existingObj.specializationStartSemester;
       const curSpecDbId = 'specializationDatabaseId' in settings ? settings.specializationDatabaseId : existingObj.specializationDatabaseId;
+      const curUniDbId = 'universityDatabaseId' in settings ? settings.universityDatabaseId : existingObj.universityDatabaseId;
 
-      if (curSpec || curStartYr || curStartSem || curSpecDbId) {
+      if (curUniDbId || curSpec || curStartYr || curStartSem || curSpecDbId) {
         scale.push({
           id: '__student_spec_meta__',
           specialization: curSpec || null,
           specializationStartYear: curStartYr || null,
           specializationStartSemester: curStartSem || null,
-          specializationDatabaseId: curSpecDbId || null
+          specializationDatabaseId: curSpecDbId || null,
+          universityDatabaseId: curUniDbId || null
         } as any);
       }
 
@@ -2135,7 +2137,8 @@ export const db = {
     await broadcastUniversityDatabaseUpdate({
       action: 'deleted',
       type: 'university',
-      uniKey: uniName.trim()
+      uniKey: uniName.trim(),
+      deletedDbIds: toDelete.map(d => d.id)
     });
   },
 
@@ -3268,13 +3271,13 @@ function mapSettingsFromDB(row: any): UserSettings {
   // (e.g. after an unlink) — otherwise the student appears linked forever.
   const resolvedDbId = (row.university_database_id && row.university_database_id !== 'null')
     ? row.university_database_id
-    : undefined;
+    : (specMeta?.universityDatabaseId && specMeta.universityDatabaseId !== 'null' ? specMeta.universityDatabaseId : (localExtra.universityDatabaseId || undefined));
 
   const cleanGradingScale = Array.isArray(row.grading_scale)
     ? row.grading_scale.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))))
     : (localExtra.gradingScale || []);
 
-  const resolvedSpecialization = row.specialization != null 
+  const resolvedSpecialization = (row.specialization != null && row.specialization !== 'null') 
     ? row.specialization 
     : (specMeta?.specialization || localExtra.specialization || undefined);
 
@@ -3286,9 +3289,9 @@ function mapSettingsFromDB(row: any): UserSettings {
     ? Number(row.specialization_start_semester)
     : (specMeta?.specializationStartSemester ? Number(specMeta.specializationStartSemester) : ((localExtra.specializationStartSemester != null && localExtra.specializationStartSemester !== '' && Number(localExtra.specializationStartSemester) > 0) ? Number(localExtra.specializationStartSemester) : undefined));
 
-  const resolvedSpecDbId = row.specialization_database_id != null 
+  const resolvedSpecDbId = (row.specialization_database_id && row.specialization_database_id !== 'null') 
     ? row.specialization_database_id 
-    : undefined;
+    : (specMeta?.specializationDatabaseId && specMeta.specializationDatabaseId !== 'null' ? specMeta.specializationDatabaseId : (localExtra.specializationDatabaseId || undefined));
 
   const deletedMeta = Array.isArray(row.grading_scale)
     ? row.grading_scale.find((g: any) => g && g.id === '__student_deleted_subjects__')

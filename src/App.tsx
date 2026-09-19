@@ -209,13 +209,16 @@ export function App() {
               } else if (data.type === 'college') {
                 if (
                   settings.universityDatabaseId === data.id ||
-                  settings.college === data.collegeNameAr ||
-                  (Array.isArray(data.childSpecIds) && data.childSpecIds.includes(settings.specializationDatabaseId))
+                  (Array.isArray(data.childSpecIds) && data.childSpecIds.includes(settings.specializationDatabaseId)) ||
+                  (settings.college && data.collegeNameAr && (settings.college.includes(data.collegeNameAr) || data.collegeNameAr.includes(settings.college)))
                 ) {
                   unlinkUniversityDatabase();
                 }
               } else if (data.type === 'university') {
-                if (settings.university === data.uniKey) {
+                if (
+                  (settings.university && data.uniKey && settings.university.trim() === data.uniKey.trim()) ||
+                  (Array.isArray(data.deletedDbIds) && (data.deletedDbIds.includes(settings.universityDatabaseId) || data.deletedDbIds.includes(settings.specializationDatabaseId)))
+                ) {
                   unlinkUniversityDatabase();
                 }
               }

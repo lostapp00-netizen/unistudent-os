@@ -250,8 +250,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         college: (settingsData?.college && settingsData.college !== 'غير محدد' && settingsData.college !== 'Not specified')
           ? settingsData.college
           : (localSettings.college || settingsData?.college || defaultSettings.college),
-        email: email || settingsData?.email || localSettings.email || ''
+        email: email || settingsData?.email || localSettings.email || '',
+        universityDatabaseId: settingsData?.universityDatabaseId || localSettings.universityDatabaseId || undefined,
+        specializationDatabaseId: settingsData?.specializationDatabaseId || localSettings.specializationDatabaseId || undefined,
+        specialization: (settingsData?.specialization && settingsData.specialization.trim()) ? settingsData.specialization : (localSettings.specialization || defaultSettings.specialization || ''),
+        specializationStartYear: settingsData?.specializationStartYear ?? localSettings.specializationStartYear ?? defaultSettings.specializationStartYear,
+        specializationStartSemester: settingsData?.specializationStartSemester ?? localSettings.specializationStartSemester ?? defaultSettings.specializationStartSemester,
+        gradingScale: (settingsData?.gradingScale && settingsData.gradingScale.length > 0) ? settingsData.gradingScale : (localSettings.gradingScale && localSettings.gradingScale.length > 0 ? localSettings.gradingScale : defaultSettings.gradingScale),
+        semesters: (settingsData?.semesters && settingsData.semesters.length > 0) ? settingsData.semesters : (localSettings.semesters && localSettings.semesters.length > 0 ? localSettings.semesters : defaultSettings.semesters)
       };
+
+      try {
+        localStorage.setItem(`unistudent_settings_${userId}`, JSON.stringify(mergedSettings));
+      } catch {}
 
       // Always persist the settings row on login. Brand-new accounts previously
       // never wrote a row (the old equality check always matched), so they were
@@ -816,6 +827,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (specDb) {
         updatedSettings.specialization = specDb.specializationNameAr || specDb.specializationNameEn || '';
         updatedSettings.specializationDatabaseId = specDb.id;
+      } else {
+        // General College Restore: keep student's existing specialization if present
+        if (settings.specialization) updatedSettings.specialization = settings.specialization;
+        if (settings.specializationDatabaseId) updatedSettings.specializationDatabaseId = settings.specializationDatabaseId;
       }
 
       // Generate or update semesters based on Foundation vs Specialization scope
@@ -831,13 +846,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       const existingSemesters = settings.semesters || [];
+      const activePrev = existingSemesters.find(sm => sm.isCurrent);
+      const activeYear = activePrev ? activePrev.yearIndex : 1;
+      const activeSem = activePrev ? activePrev.semesterIndex : 1;
+
       const updatedSemesters: any[] = [];
 
       for (const y of targetYears) {
         for (let s = 1; s <= semY; s++) {
           const existing = existingSemesters.find(sm => sm.yearIndex === y && sm.semesterIndex === s);
+          const isThisCurrent = (y === activeYear && s === activeSem);
           if (existing) {
-            updatedSemesters.push(existing);
+            updatedSemesters.push({ ...existing, isCurrent: isThisCurrent });
           } else {
             updatedSemesters.push({
               id: uuidv4(),
@@ -845,15 +865,28 @@ export const useAppStore = create<AppState>((set, get) => ({
               semesterIndex: s,
               startDate: '',
               endDate: '',
-              isCurrent: y === 1 && s === 1
+              isCurrent: isThisCurrent
             });
           }
         }
       }
+
+      // Fallback: guarantee at least one semester is marked current
+      if (!updatedSemesters.some(sm => sm.isCurrent) && updatedSemesters.length > 0) {
+        updatedSemesters[0].isCurrent = true;
+      }
       updatedSettings.semesters = updatedSemesters;
 
       set(state => ({ settings: { ...state.settings, ...updatedSettings } }));
-      db.upsertSettings(userId, updatedSettings).catch(console.error);
+      try {
+        const currentLocalRaw = localStorage.getItem(`unistudent_settings_${userId}`);
+        const currentLocal = currentLocalRaw ? JSON.parse(currentLocalRaw) : {};
+        localStorage.setItem(`unistudent_settings_${userId}`, JSON.stringify({
+          ...currentLocal,
+          ...get().settings
+        }));
+      } catch {}
+      await db.upsertSettings(userId, updatedSettings);
 
       // Non-Destructive Dual-Database Merging
       const currentSubjects = get().subjects || [];
@@ -1152,6 +1185,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updatedSettings: Partial<UserSettings> = {
       universityDatabaseId: undefined,
       specializationDatabaseId: undefined,
+      specialization: '',
       deletedSubjectNames: [],
       gradingScale: [
         { id: '1', letter: 'A+', nameAr: 'امتياز مرتفع', nameEn: 'High Distinction', minPercentage: 97, maxPercentage: 100, points: 4.0 },
@@ -1173,20 +1207,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(remainingSubjects));
       localStorage.setItem(`unistudent_files_${userId}`, JSON.stringify(remainingFiles));
-      // Belt & braces: scrub the link ids from the cached settings so no stale
-      // copy can ever resurrect the link after an unlink.
+      // Scrub link IDs and specialization from cached settings
       const savedRaw = localStorage.getItem(`unistudent_settings_${userId}`);
       if (savedRaw) {
         try {
           const parsed = JSON.parse(savedRaw);
           delete parsed.universityDatabaseId;
           delete parsed.specializationDatabaseId;
+          parsed.specialization = '';
+          delete parsed.specializationStartYear;
+          delete parsed.specializationStartSemester;
+          parsed.semesters = personalSemesters;
+          parsed.totalYears = maxYear > 0 ? maxYear : 4;
+          parsed.semestersPerYear = maxSem > 0 ? maxSem : 2;
           localStorage.setItem(`unistudent_settings_${userId}`, JSON.stringify(parsed));
         } catch {}
       }
     } catch {}
 
-    await db.upsertSettings(userId, updatedSettings);
+    await db.upsertSettings(userId, {
+      ...updatedSettings,
+      universityDatabaseId: null as any,
+      specializationDatabaseId: null as any,
+      specialization: null as any,
+      specializationStartYear: null as any,
+      specializationStartSemester: null as any
+    });
   },
 
   unlinkSpecializationDatabase: async () => {
@@ -1263,13 +1309,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       localStorage.setItem(`unistudent_subjects_${userId}`, JSON.stringify(remainingSubjects));
       localStorage.setItem(`unistudent_files_${userId}`, JSON.stringify(remainingFiles));
-      // Belt & braces: scrub the spec link id from the cached settings so no
-      // stale copy can ever resurrect the link after an unlink.
       const savedRaw = localStorage.getItem(`unistudent_settings_${userId}`);
       if (savedRaw) {
         try {
           const parsed = JSON.parse(savedRaw);
           delete parsed.specializationDatabaseId;
+          parsed.specialization = '';
           if (repairedUniDbId) {
             parsed.universityDatabaseId = repairedUniDbId;
           } else {
@@ -1280,7 +1325,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     } catch {}
 
-    await db.upsertSettings(userId, updatedSettings);
+    await db.upsertSettings(userId, {
+      ...updatedSettings,
+      specializationDatabaseId: null as any,
+      specialization: null as any
+    });
   },
 
   syncWithUniversityDatabase: async () => {
@@ -1308,35 +1357,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (targetDbId) {
           matchedDb = allDbs.find(d => d.id === targetDbId) || null;
         }
-
-        // No name-based self-healing: linking happens ONLY through an explicit
-        // restore. If the stored id no longer resolves (admin deleted the
-        // database), the link is simply cleared below — the student re-links
-        // by restoring again.
       }
 
       if (!matchedDb) {
-        // If student had a universityDatabaseId, but no matching admin database exists anymore
-        // (or student entered a custom university / college), simply clear the template ID link!
-        // NEVER reset the student's university or college name to 'غير محدد', and NEVER wipe their subjects!
+        // If student had a universityDatabaseId, but no matching admin database exists anymore (deleted by admin),
+        // unlink the university database completely and remove the template data!
         if (settings.universityDatabaseId || targetDbId) {
-          set(state => ({ settings: { ...state.settings, universityDatabaseId: undefined } }));
-          db.upsertSettings(userId, { universityDatabaseId: null }).catch(() => {});
-          try {
-            const savedRaw = localStorage.getItem(`unistudent_settings_${userId}`);
-            if (savedRaw) {
-              const parsed = JSON.parse(savedRaw);
-              delete parsed.universityDatabaseId;
-              localStorage.setItem(`unistudent_settings_${userId}`, JSON.stringify(parsed));
-            }
-          } catch {}
+          await get().unlinkUniversityDatabase();
         }
         return;
       }
 
       // Self-Healing: If matchedDb is a specialization database, resolve its parent general college.
-      // Parent resolution is ID-ONLY (parentDatabaseId) — never by name, and no
-      // settings are rewritten when the parent cannot be resolved.
       if (matchedDb && matchedDb.isSpecialization) {
         let parentCollege: UniversityDatabase | null = null;
         if (matchedDb.parentDatabaseId) {
@@ -1372,7 +1404,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
 
-      // Check for Specialization Database (ID-ONLY — no name-based re-link)
+      // Check for Specialization Database
       let specDb: UniversityDatabase | null = null;
       const targetSpecId = settings.specializationDatabaseId;
       if (targetSpecId) {
@@ -1380,9 +1412,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       if (targetSpecId && !specDb) {
-        // Specialization was deleted by Admin or custom: gracefully clear the database ID link without deleting subjects
-        set(state => ({ settings: { ...state.settings, specializationDatabaseId: undefined } }));
-        db.upsertSettings(userId, { specializationDatabaseId: null }).catch(() => {});
+        // Specialization was deleted by Admin: unlink specialization database and clean up its template data!
+        await get().unlinkSpecializationDatabase();
       }
 
       const isCollegeSource = !!(matchedDb.sourceUserId && matchedDb.sourceUserId === userId);
