@@ -52,12 +52,19 @@ import {
   ChevronLeft,
   BellRing,
   Bell,
-  Plus
+  Plus,
+  RotateCcw,
+  Lock,
+  Unlock,
+  MessageCircle,
+  CheckCheck,
+  Image as ImageIcon
 } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
 import { useAppStore } from '../store/useAppStore';
-import { db } from '../lib/db';
+import { db, subscribeToFeedbackUpdates } from '../lib/db';
 import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWarningRisk } from '../lib/academic';
-import { FeedbackSuggestion, EmailBackupConfig, DatabaseBackup } from '../types';
+import { FeedbackSuggestion, FeedbackMessage, EmailBackupConfig, DatabaseBackup } from '../types';
 import { ConfirmModal } from '../components/ui/CustomModal';
 import { formatDateTime, getAcademicEvaluation } from '../lib/utils';
 import { AdminUniversitiesTab } from '../components/admin/AdminUniversitiesTab';
@@ -145,7 +152,7 @@ export function Admin() {
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
 
   // --- Suggestions Filter & Modals ---
-  const [feedbackSubTab, setFeedbackSubTab] = useState<'new' | 'reviewed' | 'resolved'>('new');
+  const [feedbackSubTab, setFeedbackSubTab] = useState<'all' | 'new' | 'reviewed' | 'resolved'>('all');
   const [selectedFeedback, setSelectedFeedback] = useState<FeedbackSuggestion | null>(null);
   const [feedbackSearch, setFeedbackSearch] = useState('');
   const [adminNoteInput, setAdminNoteInput] = useState('');
@@ -154,6 +161,14 @@ export function Admin() {
   const [suggestionTypeFilter, setSuggestionTypeFilter] = useState<string>('all');
   const [suggestionStatusFilter, setSuggestionStatusFilter] = useState<string>('all');
   const [feedbackToDelete, setFeedbackToDelete] = useState<string | null>(null);
+
+  // --- Admin Chat & Reply State ---
+  const [adminReplyText, setAdminReplyText] = useState('');
+  const [adminReplyAttachments, setAdminReplyAttachments] = useState<{ id: string; name: string; size: number; type: string; url: string; b2FileId?: string }[]>([]);
+  const [adminReplyUploading, setAdminReplyUploading] = useState(false);
+  const [adminSendingReply, setAdminSendingReply] = useState(false);
+  const [adminActionLoading, setAdminActionLoading] = useState(false);
+  const adminChatEndRef = React.useRef<HTMLDivElement>(null);
 
   // --- Backup & Email State ---
   const [backupLoading, setBackupLoading] = useState(false);
@@ -203,11 +218,40 @@ export function Admin() {
           .subscribe();
       });
 
+      // Realtime listener for support chat updates
+      const unsubFeedback = subscribeToFeedbackUpdates((payload) => {
+        if (!payload) return;
+        fetchData();
+        if (payload.feedbackId && selectedFeedback && selectedFeedback.id === payload.feedbackId) {
+          if (payload.action === 'new_message' && payload.message) {
+            setSelectedFeedback((prev) => {
+              if (!prev || prev.id !== payload.feedbackId) return prev;
+              const msgs = prev.messages || [];
+              if (msgs.some((m) => m.id === payload.message.id)) return prev;
+              return { ...prev, messages: [...msgs, payload.message] };
+            });
+          } else if (payload.action === 'closed') {
+            setSelectedFeedback((prev) =>
+              prev && prev.id === payload.feedbackId
+                ? { ...prev, status: 'resolved', closedAt: payload.closedAt, closedBy: payload.closedBy }
+                : prev
+            );
+          } else if (payload.action === 'reopened') {
+            setSelectedFeedback((prev) =>
+              prev && prev.id === payload.feedbackId
+                ? { ...prev, status: 'reviewed', closedAt: undefined, closedBy: undefined }
+                : prev
+            );
+          }
+        }
+      });
+
       return () => {
         if (channel) channel.unsubscribe();
+        unsubFeedback();
       };
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, selectedFeedback?.id]);
 
   const handleLogout = async () => {
     sessionStorage.removeItem('unistudent_admin_auth');
@@ -427,10 +471,10 @@ export function Admin() {
   const reviewedFeedbacks = adminData?.feedbacks.filter(f => f.status === 'reviewed').length || 0;
   const resolvedFeedbacks = adminData?.feedbacks.filter(f => f.status === 'resolved').length || 0;
 
-  // Filtered Suggestions
+  // Filtered Suggestions (Active conversations first, resolved at bottom)
   const filteredSuggestions = React.useMemo(() => {
     if (!adminData) return [];
-    return adminData.feedbacks.filter(fb => {
+    const list = adminData.feedbacks.filter(fb => {
       if (feedbackSubTab === 'new' && fb.status !== 'new') return false;
       if (feedbackSubTab === 'reviewed' && fb.status !== 'reviewed') return false;
       if (feedbackSubTab === 'resolved' && fb.status !== 'resolved') return false;
@@ -453,7 +497,27 @@ export function Admin() {
       }
       return true;
     });
+
+    // Custom sorting:
+    // 1. Active items (status !== 'resolved') on top, sorted from newest to oldest
+    // 2. Resolved items (status === 'resolved') at the bottom of the list
+    return list.sort((a, b) => {
+      const aIsResolved = a.status === 'resolved';
+      const bIsResolved = b.status === 'resolved';
+      if (aIsResolved && !bIsResolved) return 1;
+      if (!aIsResolved && bIsResolved) return -1;
+      const dateA = new Date(a.closedAt || (a.messages && a.messages.length > 0 ? a.messages[a.messages.length - 1].createdAt : a.createdAt)).getTime();
+      const dateB = new Date(b.closedAt || (b.messages && b.messages.length > 0 ? b.messages[b.messages.length - 1].createdAt : b.createdAt)).getTime();
+      return dateB - dateA;
+    });
   }, [adminData, feedbackSubTab, suggestionTypeFilter, feedbackSearch, studentsList]);
+
+  // Auto-scroll admin chat modal
+  useEffect(() => {
+    if (selectedFeedback) {
+      adminChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [selectedFeedback?.messages?.length, selectedFeedback?.id]);
 
   // Instant optimistic feedback updates
   const handleUpdateFeedbackStatus = async (id: string, newStatus: FeedbackSuggestion['status']) => {
@@ -487,6 +551,163 @@ export function Admin() {
       console.error('Error updating feedback type:', e);
     }
   };
+
+  // Admin Reply Handlers
+  const handleAdminFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setAdminReplyUploading(true);
+    for (const file of Array.from(files)) {
+      if (file.size > 10 * 1024 * 1024) continue;
+      const fileId = uuidv4();
+      const b2Path = `admin_reply_${fileId}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      let uploadedUrl = '';
+      try {
+        const { uploadToB2 } = await import('../lib/backblaze');
+        uploadedUrl = await uploadToB2(file, b2Path);
+      } catch (uploadErr) {
+        console.warn('Direct B2 upload fallback:', uploadErr);
+      }
+
+      if (uploadedUrl) {
+        setAdminReplyAttachments(prev => [...prev, {
+          id: fileId,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          url: uploadedUrl,
+          b2FileId: b2Path
+        }]);
+      } else {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          setAdminReplyAttachments(prev => [...prev, {
+            id: fileId,
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            url: ev.target?.result as string
+          }]);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+    setAdminReplyUploading(false);
+    e.target.value = '';
+  };
+
+  const handleAdminRemoveAttachment = async (id: string) => {
+    const target = adminReplyAttachments.find(a => a.id === id);
+    if (target) {
+      const key = (target as any).b2FileId || (target as any).b2_file_id || (target.url ? (await import('../lib/backblaze')).extractB2KeyFromUrl(target.url) : null);
+      if (key) {
+        try {
+          const { deleteFromB2 } = await import('../lib/backblaze');
+          await deleteFromB2(key);
+        } catch (err) {}
+      }
+    }
+    setAdminReplyAttachments(prev => prev.filter(a => a.id !== id));
+  };
+
+  const handleAdminSendReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedFeedback || (!adminReplyText.trim() && adminReplyAttachments.length === 0)) return;
+
+    try {
+      setAdminSendingReply(true);
+      const newMsg: FeedbackMessage = {
+        id: uuidv4(),
+        sender: 'admin',
+        senderName: isAr ? 'إدارة المنصة' : 'UniStudent Admin',
+        senderEmail: 'admin@unistudent.com',
+        content: adminReplyText.trim(),
+        attachments: adminReplyAttachments,
+        createdAt: new Date().toISOString()
+      };
+
+      const feedbackId = selectedFeedback.id;
+      setAdminReplyText('');
+      setAdminReplyAttachments([]);
+
+      // Optimistic update
+      setSelectedFeedback(prev => prev ? {
+        ...prev,
+        messages: [...(prev.messages || []), newMsg],
+        status: prev.status === 'new' ? 'reviewed' : prev.status
+      } : null);
+
+      setAdminData(prev => prev ? {
+        ...prev,
+        feedbacks: prev.feedbacks.map(f => f.id === feedbackId ? {
+          ...f,
+          messages: [...(f.messages || []), newMsg],
+          status: f.status === 'new' ? 'reviewed' : f.status
+        } : f)
+      } : null);
+
+      await db.addFeedbackMessage(feedbackId, newMsg);
+    } catch (err) {
+      console.error('Error sending admin reply:', err);
+    } finally {
+      setAdminSendingReply(false);
+    }
+  };
+
+  const handleAdminEndConversation = async (feedbackId: string) => {
+    try {
+      setAdminActionLoading(true);
+      const closedAt = new Date().toISOString();
+      setSelectedFeedback(prev => prev && prev.id === feedbackId ? { ...prev, status: 'resolved', closedAt, closedBy: 'admin' } : prev);
+      setAdminData(prev => prev ? {
+        ...prev,
+        feedbacks: prev.feedbacks.map(f => f.id === feedbackId ? { ...f, status: 'resolved', closedAt, closedBy: 'admin' } : f)
+      } : null);
+      await db.closeFeedbackConversation(feedbackId, 'admin');
+    } catch (e) {
+      console.error('Error closing feedback conversation:', e);
+    } finally {
+      setAdminActionLoading(false);
+    }
+  };
+
+  const handleAdminReopenConversation = async (feedbackId: string) => {
+    try {
+      setAdminActionLoading(true);
+      setSelectedFeedback(prev => prev && prev.id === feedbackId ? { ...prev, status: 'reviewed', closedAt: undefined, closedBy: undefined } : prev);
+      setAdminData(prev => prev ? {
+        ...prev,
+        feedbacks: prev.feedbacks.map(f => f.id === feedbackId ? { ...f, status: 'reviewed', closedAt: undefined, closedBy: undefined } : f)
+      } : null);
+      await db.reopenFeedbackConversation(feedbackId);
+    } catch (e) {
+      console.error('Error reopening feedback conversation:', e);
+    } finally {
+      setAdminActionLoading(false);
+    }
+  };
+
+  const handlePreviewAttachment = async (att: any) => {
+    try {
+      const { previewFile } = await import('../lib/backblaze');
+      await previewFile(att);
+    } catch (e) {
+      if (att.url) window.open(att.url, '_blank');
+      else alert(isAr ? 'تعذر معاينة الملف.' : 'Failed to preview file.');
+    }
+  };
+
+  const handleDownloadAttachment = async (att: any) => {
+    try {
+      const { downloadFile } = await import('../lib/backblaze');
+      await downloadFile(att);
+    } catch (e) {
+      if (att.url) window.open(att.url, '_blank');
+      else alert(isAr ? 'تعذر تنزيل الملف.' : 'Failed to download file.');
+    }
+  };
+
 
   // Export Backup
   const handleExportBackup = async () => {
@@ -1216,34 +1437,51 @@ export function Admin() {
           {/* TAB 4: SUGGESTIONS & FEEDBACK HUB */}
           {activeTab === 'suggestions' && (
             <div className="space-y-6">
-              {/* Sub-Tabs: الرئيسية / قيد المراجعة / تم الرد عليها */}
+              {/* Sub-Tabs: الكل / الرئيسية / قيد المراجعة / تم الرد عليها */}
               <div className="flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-zinc-900 p-4 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                 <div className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800/80 p-1.5 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 flex-wrap">
                   <button
+                    onClick={() => setFeedbackSubTab('all')}
+                    className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                      feedbackSubTab === 'all'
+                        ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <MessageSquare size={15} />
+                    <span>{isAr ? 'جميع المحادثات' : 'All Conversations'}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-black">
+                      {adminData?.feedbacks.length || 0}
+                    </span>
+                  </button>
+
+                  <button
                     onClick={() => setFeedbackSubTab('new')}
-                    className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+                    className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
                       feedbackSubTab === 'new'
                         ? 'bg-white dark:bg-zinc-900 text-blue-600 dark:text-blue-400 shadow-sm'
                         : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                     }`}
                   >
                     <Inbox size={15} />
-                    <span>{isAr ? 'الرئيسية (الرسائل الواردة)' : 'Inbox (New)'}</span>
-                    <span className="px-2 py-0.5 rounded-full text-[11px] bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-black">
-                      {pendingFeedbacks}
-                    </span>
+                    <span>{isAr ? 'الرئيسية (الوارد والجديد)' : 'Inbox (New)'}</span>
+                    {pendingFeedbacks > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-black animate-pulse">
+                        {pendingFeedbacks}
+                      </span>
+                    )}
                   </button>
 
                   <button
                     onClick={() => setFeedbackSubTab('reviewed')}
-                    className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+                    className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
                       feedbackSubTab === 'reviewed'
                         ? 'bg-white dark:bg-zinc-900 text-blue-600 dark:text-blue-400 shadow-sm'
                         : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                     }`}
                   >
                     <Clock size={15} />
-                    <span>{isAr ? 'قيد المراجعة' : 'Under Review'}</span>
+                    <span>{isAr ? 'قيد المراجعة والرد' : 'Under Review'}</span>
                     {reviewedFeedbacks > 0 && (
                       <span className="px-2 py-0.5 rounded-full text-[11px] bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-black">
                         {reviewedFeedbacks}
@@ -1253,14 +1491,14 @@ export function Admin() {
 
                   <button
                     onClick={() => setFeedbackSubTab('resolved')}
-                    className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+                    className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
                       feedbackSubTab === 'resolved'
                         ? 'bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
                         : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                     }`}
                   >
                     <CheckCircle2 size={15} />
-                    <span>{isAr ? 'تم الرد عليها' : 'Resolved & Replied'}</span>
+                    <span>{isAr ? 'تم الرد والإنهاء' : 'Resolved & Replied'}</span>
                     {resolvedFeedbacks > 0 && (
                       <span className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-black">
                         {resolvedFeedbacks}
@@ -1290,8 +1528,9 @@ export function Admin() {
                     <option value="all">{isAr ? 'كل التصنيفات' : 'All Categories'}</option>
                     <option value="suggestion">{isAr ? 'اقتراح وتطوير' : 'Suggestions'}</option>
                     <option value="complaint">{isAr ? 'شكاوى ومشاكل' : 'Complaints'}</option>
+                    <option value="inquiry">{isAr ? 'استفسار ومساعدة' : 'Inquiries'}</option>
                     <option value="bug">{isAr ? 'أخطاء تقنية' : 'Bug Reports'}</option>
-                    <option value="other">{isAr ? 'أخرى / استفسار' : 'Other'}</option>
+                    <option value="other">{isAr ? 'أخرى' : 'Other'}</option>
                   </select>
                 </div>
               </div>
@@ -1332,6 +1571,8 @@ export function Admin() {
                   const registeredHours = student?.registeredCreditHours || 0;
                   const passedHours = student?.passedCreditHours || 0;
                   const studentEvaluation = getAcademicEvaluation(studentCgpa, isAr);
+                  const isResolved = fb.status === 'resolved';
+                  const messagesCount = fb.messages?.length || 0;
 
                   return (
                     <div
@@ -1341,7 +1582,11 @@ export function Admin() {
                         setAdminNoteInput(fb.adminNotes || '');
                         setNoteSavedSuccess(false);
                       }}
-                      className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700/60 transition-all cursor-pointer flex flex-col justify-between space-y-4 group relative"
+                      className={`p-5 sm:p-6 rounded-3xl border transition-all cursor-pointer flex flex-col justify-between space-y-4 group relative shadow-xs hover:shadow-md ${
+                        isResolved
+                          ? 'bg-zinc-50/70 dark:bg-zinc-900/40 border-zinc-200 dark:border-zinc-800 opacity-85 hover:opacity-100'
+                          : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-indigo-300 dark:hover:border-indigo-700/60'
+                      }`}
                     >
                       <div className="space-y-3.5">
                         {/* Header Badges with Interactive Category and Status Switcher */}
@@ -1349,64 +1594,66 @@ export function Admin() {
                           <div className="flex items-center gap-2 flex-wrap">
                             {/* Interactive Category Selector Pills */}
                             <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/80 p-0.5 rounded-xl border border-zinc-200/50 dark:border-zinc-700/50">
-                              {(['complaint', 'suggestion', 'bug', 'other'] as const).map((tType) => (
+                              {(['complaint', 'suggestion', 'inquiry', 'bug', 'other'] as const).map((tType) => (
                                 <button
                                   key={tType}
                                   type="button"
                                   onClick={() => handleUpdateFeedbackType(fb.id, tType)}
-                                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all ${
+                                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
                                     fb.type === tType
                                       ? (tType === 'complaint'
                                           ? 'bg-rose-600 text-white shadow-2xs'
                                           : tType === 'bug'
                                           ? 'bg-amber-600 text-white shadow-2xs'
+                                          : tType === 'inquiry'
+                                          ? 'bg-cyan-600 text-white shadow-2xs'
                                           : tType === 'suggestion'
-                                          ? 'bg-blue-600 text-white shadow-2xs'
+                                          ? 'bg-indigo-600 text-white shadow-2xs'
                                           : 'bg-zinc-700 text-white shadow-2xs')
                                       : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
                                   }`}
                                   title={isAr ? 'تغيير التصنيف فوراً' : 'Change category'}
                                 >
-                                  {tType === 'complaint' ? (isAr ? 'شكوى' : 'Complaint') : tType === 'bug' ? (isAr ? 'عطل' : 'Bug') : tType === 'suggestion' ? (isAr ? 'مقترح' : 'Suggestion') : (isAr ? 'أخرى' : 'Other')}
+                                  {tType === 'complaint' ? (isAr ? 'شكوى' : 'Complaint') : tType === 'bug' ? (isAr ? 'عطل' : 'Bug') : tType === 'inquiry' ? (isAr ? 'استفسار' : 'Inquiry') : tType === 'suggestion' ? (isAr ? 'اقتراح' : 'Suggestion') : (isAr ? 'أخرى' : 'Other')}
                                 </button>
                               ))}
                             </div>
 
                             <span className={`px-2.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1 ${
                               fb.status === 'resolved' 
-                                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
+                                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800' 
                                 : fb.status === 'reviewed' 
-                                ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300' 
-                                : 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                                ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-800' 
+                                : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 animate-pulse'
                             }`}>
                               {fb.status === 'resolved' && <CheckCircle2 size={12} />}
                               {fb.status === 'reviewed' && <Clock size={12} />}
                               {fb.status === 'new' && <Inbox size={12} />}
-                              <span>{fb.status === 'resolved' ? (isAr ? 'تم الرد والحل' : 'Resolved') : fb.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد (الوارد)' : 'New')}</span>
+                              <span>{fb.status === 'resolved' ? (isAr ? 'تم الرد والإنهاء' : 'Resolved') : fb.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد (الوارد)' : 'New')}</span>
                             </span>
                           </div>
 
                           <span className="text-[11px] text-zinc-400 font-medium shrink-0">
-                            {formatDateTime(fb.createdAt, isAr)}
+                            {formatDateTime(fb.closedAt || fb.createdAt, isAr)}
                           </span>
                         </div>
 
                         {/* Student Profile Card Header */}
-                        <div className="p-4 bg-gradient-to-r from-zinc-50 to-blue-50/40 dark:from-zinc-800/40 dark:to-blue-950/20 rounded-2xl border border-zinc-200/70 dark:border-zinc-700/60 space-y-2.5">
+                        <div className="p-3.5 bg-gradient-to-r from-zinc-50 to-indigo-50/40 dark:from-zinc-800/40 dark:to-indigo-950/20 rounded-2xl border border-zinc-200/70 dark:border-zinc-700/60 space-y-2">
                           <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-sm">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs">
                                 {studentName.charAt(0)}
                               </div>
                               <div className="min-w-0">
-                                <p className="font-bold text-sm text-zinc-900 dark:text-white truncate">{studentName}</p>
-                                <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 truncate dir-ltr text-right rtl:text-right">{studentEmail}</p>
-                                <p className="text-[11px] text-zinc-400 truncate">{studentUni} {studentCollege && `• ${studentCollege}`}</p>
+                                <p className="font-bold text-xs sm:text-sm text-zinc-900 dark:text-white truncate">{studentName}</p>
+                                <p className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 truncate dir-ltr text-right rtl:text-right">{studentEmail}</p>
+                                <p className="text-[10px] text-zinc-400 truncate">{studentUni} {studentCollege && `• ${studentCollege}`}</p>
                               </div>
                             </div>
 
                             <div className="text-right rtl:text-left shrink-0">
-                              <span className={`inline-block px-2.5 py-1 rounded-xl text-xs font-black border ${
+                              <span className={`inline-block px-2.5 py-0.5 rounded-lg text-[11px] font-black border ${
                                 studentCgpa >= 3.5 
                                   ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800' 
                                   : studentCgpa >= 2.0 
@@ -1415,48 +1662,42 @@ export function Admin() {
                               }`}>
                                 {Number(studentCgpa || 0).toFixed(2)} CGPA
                               </span>
-                              <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 mt-0.5">
+                              <p className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">
                                 {studentEvaluation}
                               </p>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-200/60 dark:border-zinc-700/50 text-[11px] text-zinc-600 dark:text-zinc-300">
-                            <div>
-                              <span className="text-zinc-400">{isAr ? 'عدد الساعات: ' : 'Credit Hours: '}</span>
-                              <span className="font-bold">{registeredHours} {isAr ? 'ساعة' : 'hrs'}</span>
-                              {passedHours > 0 && <span className="text-[10px] text-zinc-400"> ({passedHours} {isAr ? 'مجتازة' : 'passed'})</span>}
-                            </div>
-                            <div>
-                              <span className="text-zinc-400">{isAr ? 'عدد المواد: ' : 'Subjects: '}</span>
-                              <span className="font-bold">{subjectsCount} {isAr ? 'مواد مسجلة' : 'courses'}</span>
                             </div>
                           </div>
                         </div>
 
                         {/* Complaint / Message Title & Content */}
                         <div className="space-y-1.5">
-                          <h4 className="font-bold text-base text-zinc-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                          <h4 className="font-bold text-sm sm:text-base text-zinc-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                             {fb.title}
                           </h4>
-                          <p className="text-xs text-zinc-600 dark:text-zinc-300 line-clamp-2 leading-relaxed bg-zinc-50/70 dark:bg-zinc-800/30 p-3 rounded-2xl border border-zinc-100 dark:border-zinc-800/80">
+                          <p className="text-xs text-zinc-600 dark:text-zinc-300 line-clamp-2 leading-relaxed bg-zinc-50/70 dark:bg-zinc-800/30 p-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800/80">
                             {fb.content}
                           </p>
                         </div>
 
-                        {/* Attachments & Admin Note Indicators */}
+                        {/* Attachments & Messages Indicators */}
                         <div className="flex items-center gap-3 flex-wrap text-xs">
+                          <div className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 font-bold text-[11px] bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800/40">
+                            <MessageCircle size={12} />
+                            <span>{messagesCount} {isAr ? 'رسائل بالشات' : 'messages'}</span>
+                          </div>
+
                           {fb.attachments && fb.attachments.length > 0 && (
-                            <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-bold">
-                              <Paperclip size={13} />
-                              <span>{fb.attachments.length} {isAr ? 'مرفقات مرفوعة' : 'attachments'}</span>
+                            <div className="flex items-center gap-1 text-blue-600 dark:text-blue-400 font-bold text-[11px] bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-800/40">
+                              <Paperclip size={12} />
+                              <span>{fb.attachments.length} {isAr ? 'مرفقات' : 'files'}</span>
                             </div>
                           )}
-                          {fb.adminNotes && (
-                            <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold text-[11px]">
-                              <CheckCircle2 size={13} />
-                              <span>{isAr ? 'تم تدوين رد/ملاحظة أدمن' : 'Admin replied'}</span>
-                            </div>
+
+                          {isResolved && (
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                              <CheckCheck size={12} />
+                              {isAr ? 'محادثة منتهية ومحفوظة' : 'Archived Chat'}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -1469,47 +1710,37 @@ export function Admin() {
                             setAdminNoteInput(fb.adminNotes || '');
                             setNoteSavedSuccess(false);
                           }}
-                          className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-bold rounded-xl border border-blue-200 dark:border-blue-800/60 transition-all flex items-center gap-1.5 shadow-2xs"
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
                         >
-                          <Eye size={13} />
-                          <span>{isAr ? 'عرض التفاصيل والمواد' : 'View Details & Courses'}</span>
+                          <MessageCircle size={13} />
+                          <span>{isAr ? 'فتح الشات والمحادثة' : 'Open Support Chat'}</span>
                         </button>
 
-                        {/* Instant Status Switcher Buttons */}
+                        {/* Quick End / Reopen Buttons */}
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          {fb.status !== 'new' && (
+                          {!isResolved ? (
                             <button
-                              onClick={() => handleUpdateFeedbackStatus(fb.id, 'new')}
-                              className="px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 text-blue-700 dark:text-blue-300 text-[11px] font-bold rounded-xl border border-blue-200 dark:border-blue-800/40 transition-all"
-                              title={isAr ? 'إرجاع للرئيسية (الوارد)' : 'Move to Inbox'}
+                              onClick={() => handleAdminEndConversation(fb.id)}
+                              className="px-2.5 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-700 dark:text-rose-300 text-[11px] font-bold rounded-xl border border-rose-200 dark:border-rose-800/40 transition-all flex items-center gap-1 cursor-pointer"
+                              title={isAr ? 'إنهاء المحادثة ونقلها للأسفل' : 'End conversation and move to bottom'}
                             >
-                              {isAr ? 'إرجاع للرئيسية' : 'To Inbox'}
+                              <Lock size={12} />
+                              <span>{isAr ? 'إنهاء المحادثة' : 'End Chat'}</span>
                             </button>
-                          )}
-
-                          {fb.status !== 'reviewed' && (
+                          ) : (
                             <button
-                              onClick={() => handleUpdateFeedbackStatus(fb.id, 'reviewed')}
-                              className="px-2.5 py-1.5 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 text-blue-700 dark:text-blue-300 text-[11px] font-bold rounded-xl border border-blue-200 dark:border-blue-800/40 transition-all"
-                              title={isAr ? 'نقل لقيد المراجعة' : 'Move to Under Review'}
+                              onClick={() => handleAdminReopenConversation(fb.id)}
+                              className="px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold rounded-xl border border-emerald-200 dark:border-emerald-800/40 transition-all flex items-center gap-1 cursor-pointer"
+                              title={isAr ? 'إعادة فتح المحادثة واستئناف الشات (خاص بالأدمن فقط)' : 'Reopen conversation (Admin only)'}
                             >
-                              {isAr ? 'قيد المراجعة' : 'To Review'}
-                            </button>
-                          )}
-
-                          {fb.status !== 'resolved' && (
-                            <button
-                              onClick={() => handleUpdateFeedbackStatus(fb.id, 'resolved')}
-                              className="px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold rounded-xl border border-emerald-200 dark:border-emerald-800/40 transition-all"
-                              title={isAr ? 'تم الرد والحل' : 'Mark as Resolved'}
-                            >
-                              {isAr ? 'تم الرد' : 'Resolve'}
+                              <RotateCcw size={12} />
+                              <span>{isAr ? 'إعادة فتح المحادثة' : 'Reopen Chat'}</span>
                             </button>
                           )}
 
                           <button
                             onClick={() => setFeedbackToDelete(fb.id)}
-                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
+                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
                             title={isAr ? 'حذف' : 'Delete'}
                           >
                             <Trash2 size={14} />
@@ -1888,7 +2119,7 @@ export function Admin() {
         </div>
       )}
 
-      {/* --- DETAILED FEEDBACK & STUDENT COURSES MODAL --- */}
+      {/* --- DETAILED SUPPORT CHAT & STUDENT OVERVIEW MODAL --- */}
       {selectedFeedback && (() => {
         const student = studentsList.find(s => s.id === selectedFeedback.userId);
         
@@ -1922,371 +2153,371 @@ export function Admin() {
         const studentEvaluation = getAcademicEvaluation(studentCgpa, isAr);
         const registeredHours = student?.registeredCreditHours || 0;
         const passedHours = student?.passedCreditHours || 0;
-
-        const handleSaveAdminNote = async () => {
-          try {
-            setSavingNote(true);
-            await db.updateFeedback(selectedFeedback.id, { adminNotes: adminNoteInput });
-            setSelectedFeedback((prev: any) => prev ? { ...prev, adminNotes: adminNoteInput } : null);
-            setAdminData(prev => {
-              if (!prev) return prev;
-              return {
-                ...prev,
-                feedbacks: prev.feedbacks.map(f => f.id === selectedFeedback.id ? { ...f, adminNotes: adminNoteInput } : f)
-              };
-            });
-            setNoteSavedSuccess(true);
-            setTimeout(() => setNoteSavedSuccess(false), 2500);
-          } catch (e) {
-            console.error('Failed to save note:', e);
-          } finally {
-            setSavingNote(false);
-          }
-        };
-
-        const handlePreviewAttachment = async (att: any) => {
-          try {
-            const { previewFile } = await import('../lib/backblaze');
-            await previewFile(att);
-          } catch (e) {
-            if (att.url) window.open(att.url, '_blank');
-          }
-        };
-
-        const handleDownloadAttachment = async (att: any) => {
-          try {
-            const { downloadFile } = await import('../lib/backblaze');
-            await downloadFile(att);
-          } catch (e) {
-            if (att.url) window.open(att.url, '_blank');
-          }
-        };
+        const isResolved = selectedFeedback.status === 'resolved';
 
         return (
           <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-4xl w-full max-h-[92vh] overflow-y-auto border border-zinc-200 dark:border-zinc-800 shadow-2xl p-5 sm:p-7 space-y-6">
+            <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              
               {/* Modal Header */}
-              <div className="flex items-start justify-between gap-3 pb-4 border-b border-zinc-100 dark:border-zinc-800">
-                <div className="space-y-2">
+              <div className="p-4 sm:p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-start justify-between gap-3 bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
+                <div className="space-y-2 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     {/* Category Selector */}
-                    <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl">
+                    <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-xl border border-zinc-200/60 dark:border-zinc-700/60">
                       <span className="text-[10px] font-bold text-zinc-400 px-1.5">{isAr ? 'التصنيف:' : 'Type:'}</span>
-                      {(['complaint', 'suggestion', 'bug', 'other'] as const).map((tType) => (
+                      {(['complaint', 'suggestion', 'inquiry', 'bug', 'other'] as const).map((tType) => (
                         <button
                           key={tType}
+                          type="button"
                           onClick={() => handleUpdateFeedbackType(selectedFeedback.id, tType)}
-                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all ${
+                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
                             selectedFeedback.type === tType
                               ? (tType === 'complaint' 
                                   ? 'bg-rose-600 text-white shadow-xs' 
                                   : tType === 'bug' 
                                   ? 'bg-amber-600 text-white shadow-xs' 
+                                  : tType === 'inquiry' 
+                                  ? 'bg-cyan-600 text-white shadow-xs' 
                                   : tType === 'suggestion' 
-                                  ? 'bg-blue-600 text-white shadow-xs' 
+                                  ? 'bg-indigo-600 text-white shadow-xs' 
                                   : 'bg-zinc-700 text-white shadow-xs')
                               : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                           }`}
                         >
-                          {tType === 'complaint' ? (isAr ? 'شكوى' : 'Complaint') : tType === 'bug' ? (isAr ? 'عطل تقني' : 'Bug') : tType === 'suggestion' ? (isAr ? 'اقتراح' : 'Suggestion') : (isAr ? 'أخرى' : 'Other')}
+                          {tType === 'complaint' ? (isAr ? 'شكوى' : 'Complaint') : tType === 'bug' ? (isAr ? 'عطل تقني' : 'Bug') : tType === 'inquiry' ? (isAr ? 'استفسار' : 'Inquiry') : tType === 'suggestion' ? (isAr ? 'اقتراح' : 'Suggestion') : (isAr ? 'أخرى' : 'Other')}
                         </button>
                       ))}
                     </div>
 
                     <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase flex items-center gap-1 ${
-                      selectedFeedback.status === 'resolved'
-                        ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                      isResolved
+                        ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
                         : selectedFeedback.status === 'reviewed'
-                        ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
-                        : 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                        ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-800'
+                        : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 animate-pulse'
                     }`}>
-                      {selectedFeedback.status === 'resolved' && <CheckCircle2 size={12} />}
+                      {isResolved && <CheckCircle2 size={12} />}
                       {selectedFeedback.status === 'reviewed' && <Clock size={12} />}
                       {selectedFeedback.status === 'new' && <Inbox size={12} />}
-                      <span>{selectedFeedback.status === 'resolved' ? (isAr ? 'تم الحل والرد' : 'Resolved') : selectedFeedback.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد (الوارد)' : 'New')}</span>
+                      <span>{isResolved ? (isAr ? 'تم الرد والإنهاء' : 'Resolved') : selectedFeedback.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد (الوارد)' : 'New')}</span>
                     </span>
 
                     <span className="text-xs text-zinc-400">
-                      {formatDateTime(selectedFeedback.createdAt, isAr)}
+                      {formatDateTime(selectedFeedback.closedAt || selectedFeedback.createdAt, isAr)}
                     </span>
                   </div>
 
-                  <h3 className="font-black text-lg sm:text-xl text-zinc-900 dark:text-white">
+                  <h3 className="font-black text-base sm:text-xl text-zinc-900 dark:text-white truncate">
                     {selectedFeedback.title}
                   </h3>
                 </div>
 
                 <button
+                  type="button"
                   onClick={() => setSelectedFeedback(null)}
-                  className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors"
+                  className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors cursor-pointer shrink-0"
                 >
                   <X size={18} />
                 </button>
               </div>
 
-              {/* Student Overview Profile */}
-              <div className="p-4 bg-gradient-to-br from-blue-500/10 via-zinc-50 dark:via-zinc-800/50 to-blue-500/5 rounded-3xl border border-blue-200/60 dark:border-blue-900/40 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white font-black text-lg flex items-center justify-center shadow-md">
-                      {studentName.charAt(0)}
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="font-bold text-base text-zinc-900 dark:text-white">{studentName}</h4>
-                      <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 dir-ltr text-right rtl:text-right">{studentEmail}</p>
-                      <p className="text-xs text-zinc-400">{studentUni} {studentCollege && `• ${studentCollege}`}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div className="px-3.5 py-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
-                      <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'المعدل التراكمي' : 'CGPA'}</span>
-                      <span className="text-base font-black text-blue-600 dark:text-blue-400">{Number(studentCgpa || 0).toFixed(2)}</span>
+              {/* Modal Body - Scrollable */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+                
+                {/* Student Overview Profile Card */}
+                <div className="p-4 bg-gradient-to-br from-indigo-500/10 via-zinc-50 dark:via-zinc-800/50 to-indigo-500/5 rounded-2xl border border-indigo-200/60 dark:border-indigo-900/40 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white font-black text-base flex items-center justify-center shadow-md">
+                        {studentName.charAt(0)}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-sm sm:text-base text-zinc-900 dark:text-white truncate">{studentName}</h4>
+                        <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 dir-ltr text-right rtl:text-right truncate">{studentEmail}</p>
+                        <p className="text-xs text-zinc-400 truncate">{studentUni} {studentCollege && `• ${studentCollege}`}</p>
+                      </div>
                     </div>
 
-                    <div className="px-3.5 py-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
-                      <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'التقدير العام' : 'Evaluation'}</span>
-                      <span className="text-xs font-black text-zinc-800 dark:text-zinc-200">{studentEvaluation}</span>
-                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="px-3 py-1.5 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
+                        <span className="text-[9px] text-zinc-400 block font-medium">{isAr ? 'المعدل التراكمي' : 'CGPA'}</span>
+                        <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{Number(studentCgpa || 0).toFixed(2)}</span>
+                      </div>
 
-                    <div className="px-3.5 py-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
-                      <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'الساعات المسجلة' : 'Credit Hours'}</span>
-                      <span className="text-xs font-black text-zinc-800 dark:text-zinc-200">{registeredHours} ({passedHours} {isAr ? 'مجتازة' : 'passed'})</span>
-                    </div>
+                      <div className="px-3 py-1.5 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
+                        <span className="text-[9px] text-zinc-400 block font-medium">{isAr ? 'التقدير العام' : 'Evaluation'}</span>
+                        <span className="text-xs font-black text-zinc-800 dark:text-zinc-200">{studentEvaluation}</span>
+                      </div>
 
-                    <div className="px-3.5 py-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
-                      <span className="text-[10px] text-zinc-400 block font-medium">{isAr ? 'المواد المسجلة' : 'Subjects'}</span>
-                      <span className="text-base font-black text-zinc-800 dark:text-zinc-200">{studentSubjects.length}</span>
+                      <div className="px-3 py-1.5 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
+                        <span className="text-[9px] text-zinc-400 block font-medium">{isAr ? 'الساعات المسجلة' : 'Credits'}</span>
+                        <span className="text-xs font-black text-zinc-800 dark:text-zinc-200">{registeredHours} ({passedHours} {isAr ? 'مجتازة' : 'passed'})</span>
+                      </div>
+
+                      <div className="px-3 py-1.5 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700/60 text-center shadow-2xs">
+                        <span className="text-[9px] text-zinc-400 block font-medium">{isAr ? 'المواد المسجلة' : 'Subjects'}</span>
+                        <span className="text-sm font-black text-zinc-800 dark:text-zinc-200">{studentSubjects.length}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Message Details & Attachments */}
-              <div className="space-y-3">
-                <h4 className="font-bold text-sm text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
-                  <MessageSquare size={16} className="text-blue-500" />
-                  <span>{isAr ? 'شرح وتفاصيل الرسالة بالكامل:' : 'Full Message Details & Description:'}</span>
-                </h4>
-                <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 text-xs sm:text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed">
-                  {selectedFeedback.content}
-                </div>
+                {/* Original Inquiry Description & Initial Attachments */}
+                <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/80 dark:border-zinc-700/60 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-zinc-500 flex items-center gap-1.5">
+                      <FileText size={14} className="text-indigo-500" />
+                      <span>{isAr ? 'الوصف والتفاصيل الأساسية من الطالب:' : 'Original Student Inquiry:'}</span>
+                    </span>
+                  </div>
 
-                {/* Uploaded Attachments */}
-                {selectedFeedback.attachments && selectedFeedback.attachments.length > 0 && (
-                  <div className="space-y-2 pt-2">
-                    <h5 className="text-xs font-bold text-zinc-500 flex items-center gap-1.5">
-                      <Paperclip size={14} className="text-blue-500" />
-                      <span>{isAr ? 'الملفات المرفقة مع الطلب:' : 'Attached Files:'}</span>
-                    </h5>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      {selectedFeedback.attachments.map((att) => (
-                        <div
-                          key={att.id}
-                          className="p-3 bg-zinc-50 dark:bg-zinc-800/80 rounded-2xl border border-zinc-200 dark:border-zinc-700 flex items-center justify-between gap-2"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <FileText size={16} className="text-blue-500 shrink-0" />
-                            <div className="min-w-0">
-                              <p className="font-bold text-xs text-zinc-800 dark:text-zinc-200 truncate">{att.name}</p>
-                              <p className="text-[10px] text-zinc-400">{Math.round(att.size / 1024)} KB</p>
-                            </div>
-                          </div>
+                  <p className="text-xs sm:text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed">
+                    {selectedFeedback.content}
+                  </p>
 
-                          <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Uploaded Initial Attachments */}
+                  {selectedFeedback.attachments && selectedFeedback.attachments.length > 0 && (
+                    <div className="space-y-1.5 pt-2 border-t border-zinc-200/60 dark:border-zinc-700/50">
+                      <span className="text-[11px] font-bold text-zinc-400 block">{isAr ? 'المرفقات الأولية:' : 'Initial Attachments:'}</span>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedFeedback.attachments.map((att) => (
+                          <div
+                            key={att.id}
+                            className="p-2 px-3 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700 flex items-center gap-2 shadow-2xs text-xs font-bold"
+                          >
+                            <Paperclip size={13} className="text-indigo-500" />
+                            <span className="max-w-[140px] truncate text-zinc-800 dark:text-zinc-200">{att.name}</span>
                             <button
                               type="button"
                               onClick={() => handlePreviewAttachment(att)}
-                              className="p-1.5 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 text-blue-600 dark:text-blue-300 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                              title={isAr ? 'معاينة في نافذة جديدة' : 'Preview'}
+                              className="p-1 text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                              title={isAr ? 'معاينة' : 'Preview'}
                             >
-                              <ExternalLink size={12} />
-                              <span>{isAr ? 'معاينة' : 'View'}</span>
+                              <Eye size={12} />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDownloadAttachment(att)}
-                              className="p-1.5 bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 text-zinc-700 dark:text-zinc-200 rounded-lg text-xs cursor-pointer transition-colors"
+                              className="p-1 text-emerald-600 hover:text-emerald-800 cursor-pointer"
                               title={isAr ? 'تنزيل' : 'Download'}
                             >
                               <Download size={12} />
                             </button>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Student's Current Registered Courses with Detailed Breakdown */}
-              <div className="space-y-3 pt-2">
-                <h4 className="font-bold text-sm text-zinc-800 dark:text-zinc-200 flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <BookOpen size={16} className="text-blue-500" />
-                    <span>{isAr ? 'مواد الطالب وتفاصيل تقسيم الدرجات في كل مادة:' : 'Student Courses & Grading Breakdown:'}</span>
-                  </span>
-                  <span className="text-xs text-zinc-400 font-medium">
-                    {studentSubjects.length} {isAr ? 'مادة مسجلة' : 'subjects'}
-                  </span>
-                </h4>
-
-                <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                  {studentSubjects.map((sub: any) => {
-                    const gr = calculateSubjectGrade(sub, gradingScale);
-                    return (
-                      <div
-                        key={sub.id}
-                        className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 space-y-2.5"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="font-bold text-sm text-zinc-900 dark:text-white">{sub.name}</p>
-                            <p className="text-[11px] text-zinc-400">
-                              {sub.code} • {sub.credit_hours || sub.creditHours} {isAr ? 'ساعات معتمدة' : 'credits'} • {sub.total_marks || sub.totalMarks} {isAr ? 'درجة إجمالية' : 'total marks'}
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <span className="font-black text-xs text-zinc-600 dark:text-zinc-300">
-                              {gr?.totalAchieved || 0} / {sub.total_marks || sub.totalMarks} ({Math.round(gr?.percentage || 0)}%)
-                            </span>
-                            <span className="px-2.5 py-1 rounded-xl bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-black text-xs">
-                              {gr?.letter || 'F'}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Distributions Breakdown */}
-                        {sub.distributions && sub.distributions.length > 0 && (
-                          <div className="flex flex-wrap gap-2 pt-1 border-t border-zinc-200/50 dark:border-zinc-700/40">
-                            {sub.distributions.map((d: any, idx: number) => (
-                              <div
-                                key={idx}
-                                className="px-2.5 py-1 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700/60 text-[11px] flex items-center gap-1.5 shadow-2xs"
-                              >
-                                <span className="font-bold text-zinc-700 dark:text-zinc-300">{d.name}:</span>
-                                <span className="font-black text-blue-600 dark:text-blue-400">
-                                  {d.achievedMarks !== null && d.achievedMarks !== undefined ? d.achievedMarks : '-'} / {d.maxMarks}
-                                </span>
-                                <span className={`text-[9px] px-1.5 py-0.2 rounded-md font-bold ${
-                                  d.status === 'final' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
-                                }`}>
-                                  {d.status === 'final' ? (isAr ? 'نهائي' : 'Final') : (isAr ? 'أعمال سنة/حالي' : 'Current')}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        ))}
                       </div>
-                    );
-                  })}
-
-                  {studentSubjects.length === 0 && (
-                    <p className="text-center py-6 text-xs text-zinc-400 bg-zinc-50 dark:bg-zinc-800/40 rounded-2xl">
-                      {isAr ? 'لا توجد مواد مسجلة لهذا الطالب حالياً.' : 'No courses registered.'}
-                    </p>
+                    </div>
                   )}
                 </div>
-              </div>
 
-              {/* Admin Note / Response Box & Status Updates */}
-              <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300">{isAr ? 'تغيير حالة الطلب والتنقل بين الأقسام:' : 'Update Ticket Status:'}</span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleUpdateFeedbackStatus(selectedFeedback.id, 'new')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                        selectedFeedback.status === 'new'
-                          ? 'bg-blue-600 text-white shadow-xs'
-                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-blue-100'
-                      }`}
-                    >
-                      {isAr ? 'جديد (الرئيسية)' : 'Set New'}
-                    </button>
-
-                    <button
-                      onClick={() => handleUpdateFeedbackStatus(selectedFeedback.id, 'reviewed')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                        selectedFeedback.status === 'reviewed'
-                          ? 'bg-blue-600 text-white shadow-xs'
-                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-blue-100'
-                      }`}
-                    >
-                      {isAr ? 'قيد المراجعة' : 'In Review'}
-                    </button>
-
-                    <button
-                      onClick={() => handleUpdateFeedbackStatus(selectedFeedback.id, 'resolved')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                        selectedFeedback.status === 'resolved'
-                          ? 'bg-emerald-600 text-white shadow-xs'
-                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-emerald-100'
-                      }`}
-                    >
-                      {isAr ? 'تم الرد والحل' : 'Mark Resolved'}
-                    </button>
+                {/* 2-Way Interactive Live Chat Message Thread */}
+                <div className="space-y-3 pt-1">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-xs sm:text-sm text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                      <MessageCircle size={16} className="text-indigo-500" />
+                      <span>{isAr ? 'سجل المحادثة والرسائل المتبادلة مع الطالب:' : '2-Way Live Message Thread:'}</span>
+                    </h4>
+                    <span className="text-xs text-zinc-400">
+                      {(selectedFeedback.messages?.length || 0)} {isAr ? 'رسائل' : 'messages'}
+                    </span>
                   </div>
-                </div>
 
-                {/* Admin Note Input */}
-                <div className="space-y-2 pt-2 border-t border-zinc-200/60 dark:border-zinc-700/40">
-                  <label className="text-xs font-bold text-zinc-600 dark:text-zinc-300 flex items-center justify-between">
-                    <span>{isAr ? 'ملاحظة الإدارة أو نص الرد الداخلي:' : 'Admin Notes & Internal Reply:'}</span>
-                    {noteSavedSuccess && (
-                      <span className="text-emerald-600 text-[11px] font-bold flex items-center gap-1">
-                        <CheckCircle2 size={13} /> {isAr ? 'تم الحفظ بنجاح!' : 'Saved successfully!'}
-                      </span>
+                  <div className="space-y-3 max-h-[300px] overflow-y-auto p-4 bg-zinc-50/70 dark:bg-zinc-800/40 rounded-2xl border border-zinc-200/80 dark:border-zinc-700/60">
+                    {(!selectedFeedback.messages || selectedFeedback.messages.length === 0) ? (
+                      <div className="text-center py-6 text-xs text-zinc-400">
+                        {isAr ? 'لا توجد ردود إضافية بعد. يمكنك كتابة أول رد للطالب في المربع أدناه.' : 'No replies yet. Type your reply below.'}
+                      </div>
+                    ) : (
+                      selectedFeedback.messages.map((m) => {
+                        const isAdmin = m.sender === 'admin';
+                        return (
+                          <div
+                            key={m.id}
+                            className={`flex flex-col ${isAdmin ? 'items-start' : 'items-end'} space-y-1`}
+                          >
+                            <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 px-1">
+                              {isAdmin ? (
+                                <span className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800/40">
+                                  <ShieldCheck size={11} />
+                                  {isAr ? 'إدارة المنصة (أنت)' : 'Admin (You)'}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-zinc-600 dark:text-zinc-300 font-bold">
+                                  <User size={11} />
+                                  {m.senderName || studentName}
+                                </span>
+                              )}
+                              <span>•</span>
+                              <span>{formatDateTime(m.createdAt, isAr)}</span>
+                            </div>
+
+                            <div
+                              className={`p-3.5 rounded-2xl max-w-[85%] text-xs sm:text-sm leading-relaxed space-y-2 shadow-2xs ${
+                                isAdmin
+                                  ? 'bg-gradient-to-br from-indigo-600 to-blue-600 text-white rounded-tr-none rtl:rounded-tr-2xl rtl:rounded-tl-none font-medium'
+                                  : 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-tl-none rtl:rounded-tl-2xl rtl:rounded-tr-none border border-zinc-200 dark:border-zinc-700'
+                              }`}
+                            >
+                              <p className="whitespace-pre-wrap">{m.content}</p>
+
+                              {/* Message attachments */}
+                              {m.attachments && m.attachments.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 pt-2 border-t border-white/20 dark:border-zinc-700">
+                                  {m.attachments.map((att) => (
+                                    <div
+                                      key={att.id}
+                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold ${
+                                        isAdmin
+                                          ? 'bg-white/20 text-white'
+                                          : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700'
+                                      }`}
+                                    >
+                                      <Paperclip size={11} />
+                                      <span className="max-w-[120px] truncate">{att.name}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePreviewAttachment(att)}
+                                        className="p-0.5 hover:opacity-75 cursor-pointer"
+                                        title={isAr ? 'معاينة' : 'Preview'}
+                                      >
+                                        <Eye size={11} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDownloadAttachment(att)}
+                                        className="p-0.5 hover:opacity-75 cursor-pointer"
+                                        title={isAr ? 'تنزيل' : 'Download'}
+                                      >
+                                        <Download size={11} />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
                     )}
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={adminNoteInput}
-                      onChange={(e) => setAdminNoteInput(e.target.value)}
-                      placeholder={isAr ? 'اكتب ملاحظة أو رداً هنا...' : 'Type admin notes or reply...'}
-                      className="flex-1 px-3 py-2 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-zinc-800 dark:text-zinc-200"
-                    />
-                    <button
-                      onClick={handleSaveAdminNote}
-                      disabled={savingNote}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50"
-                    >
-                      {savingNote ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ الملاحظة' : 'Save Note')}
-                    </button>
+                    <div ref={adminChatEndRef} />
                   </div>
+
+                  {/* Live Admin Reply Composer */}
+                  <form onSubmit={handleAdminSendReply} className="space-y-2.5 pt-1">
+                    <div className="relative">
+                      <textarea
+                        rows={3}
+                        value={adminReplyText}
+                        onChange={(e) => setAdminReplyText(e.target.value)}
+                        placeholder={isAr ? 'اكتب ردك الرسمي على الطالب هنا...' : 'Type your official response to student...'}
+                        className="w-full px-4 py-3 rounded-2xl border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white text-xs sm:text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none shadow-2xs"
+                      />
+                    </div>
+
+                    {/* Admin Reply Attachments */}
+                    {adminReplyAttachments.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {adminReplyAttachments.map((att) => (
+                          <div
+                            key={att.id}
+                            className="flex items-center gap-2 px-3 py-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-medium"
+                          >
+                            <FileText size={13} className="text-indigo-500" />
+                            <span className="max-w-[130px] truncate text-zinc-800 dark:text-zinc-200">{att.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleAdminRemoveAttachment(att.id)}
+                              className="p-0.5 text-zinc-400 hover:text-rose-500 cursor-pointer"
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="cursor-pointer px-3.5 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5">
+                        {adminReplyUploading ? <Loader2 size={13} className="animate-spin text-indigo-500" /> : <Paperclip size={13} className="text-indigo-500" />}
+                        <span>{adminReplyUploading ? (isAr ? 'جاري الرفع...' : 'Uploading...') : (isAr ? 'إرفاق صورة / ملف' : 'Attach File')}</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*,.pdf,.doc,.docx,.txt"
+                          onChange={handleAdminFileUpload}
+                          disabled={adminReplyUploading}
+                          className="hidden"
+                        />
+                      </label>
+
+                      <button
+                        type="submit"
+                        disabled={adminSendingReply || (!adminReplyText.trim() && adminReplyAttachments.length === 0)}
+                        className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+                      >
+                        {adminSendingReply ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                        <span>{isAr ? 'إرسال الرد للطالب فوراً' : 'Send Reply Now'}</span>
+                      </button>
+                    </div>
+                  </form>
                 </div>
               </div>
 
               {/* Modal Footer Controls */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-                <button
-                  onClick={() => {
-                    const id = selectedFeedback.id;
-                    setSelectedFeedback(null);
-                    setFeedbackToDelete(id);
-                  }}
-                  className="px-4 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-bold rounded-xl border border-rose-200 dark:border-rose-800/50 transition-all flex items-center gap-1.5"
-                >
-                  <Trash2 size={14} />
-                  <span>{isAr ? 'حذف الشكوى' : 'Delete Feedback'}</span>
-                </button>
+              <div className="p-4 sm:p-5 bg-zinc-50/80 dark:bg-zinc-800/50 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {!isResolved ? (
+                    <button
+                      type="button"
+                      onClick={() => handleAdminEndConversation(selectedFeedback.id)}
+                      disabled={adminActionLoading}
+                      className="px-4 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-bold rounded-xl border border-rose-200 dark:border-rose-800/50 transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Lock size={14} />
+                      <span>{isAr ? 'إنهاء المحادثة وحل المشكلة' : 'Resolve & Close Chat'}</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleAdminReopenConversation(selectedFeedback.id)}
+                      disabled={adminActionLoading}
+                      className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold rounded-xl border border-emerald-200 dark:border-emerald-800/50 transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RotateCcw size={14} />
+                      <span>{isAr ? 'إعادة فتح المحادثة واستئناف الشات' : 'Reopen Conversation (Admin Only)'}</span>
+                    </button>
+                  )}
 
-                <div className="flex items-center gap-2">
                   <a
                     href={`mailto:${studentEmail}?subject=${encodeURIComponent(`رد إدارة UniStudent بخصوص: ${selectedFeedback.title}`)}&body=${encodeURIComponent(`مرحباً ${studentName}،\n\nبخصوص طلبك/شكوتك بعنوان "${selectedFeedback.title}":\n\n`)}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2"
+                    className="px-3.5 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-bold rounded-xl border border-zinc-200 dark:border-zinc-700 transition-all flex items-center gap-1.5"
                   >
-                    <Mail size={14} />
-                    <span>{isAr ? 'الرد على الطالب عبر البريد' : 'Reply via Email'}</span>
+                    <Mail size={13} />
+                    <span>{isAr ? 'مراسلة عبر البريد' : 'Email'}</span>
                   </a>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = selectedFeedback.id;
+                      setSelectedFeedback(null);
+                      setFeedbackToDelete(id);
+                    }}
+                    className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors cursor-pointer"
+                    title={isAr ? 'حذف الشكوى' : 'Delete'}
+                  >
+                    <Trash2 size={16} />
+                  </button>
 
                   <button
+                    type="button"
                     onClick={() => setSelectedFeedback(null)}
-                    className="px-5 py-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold text-xs rounded-xl transition-all"
+                    className="px-5 py-2 bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 text-zinc-800 dark:text-zinc-200 font-bold text-xs rounded-xl transition-all cursor-pointer"
                   >
                     {isAr ? 'إغلاق' : 'Close'}
                   </button>

@@ -189,17 +189,30 @@ export type Group = {
   color?: string;
 };
 
+export type FeedbackMessage = {
+  id: string;
+  sender: 'student' | 'admin';
+  senderName?: string;
+  senderEmail?: string;
+  content: string;
+  attachments?: { id: string; name: string; size: number; type: string; url: string; b2FileId?: string }[];
+  createdAt: string;
+};
+
 export type FeedbackSuggestion = {
   id: string;
   userId: string;
   userEmail: string;
   userName?: string;
-  type: 'suggestion' | 'complaint' | 'bug' | 'other';
+  type: 'suggestion' | 'complaint' | 'bug' | 'inquiry' | 'other';
   title: string;
   content: string;
-  attachments?: { id: string; name: string; size: number; type: string; url: string }[];
+  attachments?: { id: string; name: string; size: number; type: string; url: string; b2FileId?: string }[];
   createdAt: string;
   status: 'new' | 'reviewed' | 'resolved';
+  messages?: FeedbackMessage[];
+  closedAt?: string;
+  closedBy?: 'student' | 'admin';
   adminNotes?: string;
 };
 

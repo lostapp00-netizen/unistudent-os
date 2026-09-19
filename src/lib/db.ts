@@ -83,6 +83,57 @@ export async function broadcastUniversityDatabaseUpdate(payload: any): Promise<v
   }
 }
 
+export async function broadcastFeedbackUpdate(payload: any): Promise<void> {
+  let ephemeralChannel: any = null;
+  try {
+    const existing = supabase.getChannels().find(c => c.topic === 'realtime:support_chat_sync');
+    const ch = existing || (() => { ephemeralChannel = supabase.channel('support_chat_sync'); return ephemeralChannel; })();
+
+    if (existing && existing.state === 'joined') {
+      await ch.send({ type: 'broadcast', event: 'support_chat_updated', payload }).catch(() => {});
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      ch.subscribe((status: string) => {
+        if (status === 'SUBSCRIBED') {
+          ch.send({
+            type: 'broadcast',
+            event: 'support_chat_updated',
+            payload
+          }).then(() => resolve()).catch(() => resolve());
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          resolve();
+        }
+      });
+      setTimeout(resolve, 1500);
+    });
+  } catch (err) {
+    console.warn('Realtime feedback broadcast error:', err);
+  } finally {
+    if (ephemeralChannel) {
+      try { supabase.removeChannel(ephemeralChannel); } catch {}
+    }
+  }
+}
+
+export function subscribeToFeedbackUpdates(onUpdate: (payload: any) => void): () => void {
+  const channel = supabase.channel(`support_chat_sync_${Math.random().toString(36).substring(2, 9)}`);
+  channel
+    .on('broadcast', { event: 'support_chat_updated' }, (data: any) => {
+      if (data && data.payload) {
+        onUpdate(data.payload);
+      }
+    })
+    .subscribe();
+
+  return () => {
+    try {
+      supabase.removeChannel(channel);
+    } catch {}
+  };
+}
+
 // --- Resilient persistence layer ---
 // 1. resilientWrite(): runs a Supabase write and retries once on failure.
 // 2. On permanent failure the operation is NOT silently dropped anymore:
@@ -940,7 +991,7 @@ export const db = {
     );
   },
 
-  // --- Feedback & Suggestions ---
+  // --- Feedback & Support Conversations ---
   async addFeedback(feedback: FeedbackSuggestion) {
     try {
       // 1. Sanitize attachments for localStorage to avoid 5MB quota exhaustion
@@ -967,6 +1018,14 @@ export const db = {
     }
 
     try {
+      const chatMeta = {
+        __chat_meta__: true,
+        messages: feedback.messages || [],
+        closedAt: feedback.closedAt || null,
+        closedBy: feedback.closedBy || null,
+        adminNotes: feedback.adminNotes || ''
+      };
+
       const payload = {
         id: feedback.id,
         user_id: feedback.userId,
@@ -985,44 +1044,27 @@ export const db = {
         })),
         created_at: feedback.createdAt,
         status: feedback.status,
-        admin_notes: feedback.adminNotes || ''
+        admin_notes: JSON.stringify(chatMeta)
       };
       await supabase.from('suggestions').insert([payload]);
     } catch (err) {
       console.warn('Supabase suggestions insert note:', err);
     }
+
+    await broadcastFeedbackUpdate({ action: 'created', feedback });
   },
 
   async getUserFeedbacks(userId: string): Promise<FeedbackSuggestion[]> {
     try {
       const { data, error } = await supabase.from('suggestions').select('*').eq('user_id', userId).order('created_at', { ascending: false });
       if (!error && data && data.length > 0) {
-        return data.map(row => ({
-          id: row.id,
-          userId: row.user_id,
-          userEmail: row.user_email || '',
-          userName: row.user_name || '',
-          type: row.type || 'suggestion',
-          title: row.title || '',
-          content: row.content || '',
-          attachments: (row.attachments || []).map((a: any) => ({
-            id: a.id || a.name,
-            name: a.name,
-            size: a.size || 0,
-            type: a.type || '',
-            url: a.url || '',
-            b2FileId: a.b2FileId || a.b2_file_id
-          })),
-          createdAt: row.created_at || new Date().toISOString(),
-          status: row.status || 'new',
-          adminNotes: row.admin_notes || ''
-        }));
+        return data.map(mapFeedbackFromRow);
       }
     } catch (e) {}
 
     try {
       const cached = localStorage.getItem(`unistudent_user_suggestions_${userId}`);
-      if (cached) return JSON.parse(cached);
+      if (cached) return JSON.parse(cached).map(mapFeedbackFromRow);
     } catch {}
 
     return [];
@@ -1032,32 +1074,13 @@ export const db = {
     try {
       const { data, error } = await supabase.from('suggestions').select('*').order('created_at', { ascending: false });
       if (!error && data && data.length > 0) {
-        return data.map(row => ({
-          id: row.id,
-          userId: row.user_id,
-          userEmail: row.user_email || '',
-          userName: row.user_name || '',
-          type: row.type || 'suggestion',
-          title: row.title || '',
-          content: row.content || '',
-          attachments: (row.attachments || []).map((a: any) => ({
-            id: a.id || a.name,
-            name: a.name,
-            size: a.size || 0,
-            type: a.type || '',
-            url: a.url || '',
-            b2FileId: a.b2FileId || a.b2_file_id
-          })),
-          createdAt: row.created_at || new Date().toISOString(),
-          status: row.status || 'new',
-          adminNotes: row.admin_notes || ''
-        }));
+        return data.map(mapFeedbackFromRow);
       }
     } catch (e) {}
 
     try {
       const cached = localStorage.getItem('unistudent_all_suggestions');
-      if (cached) return JSON.parse(cached);
+      if (cached) return JSON.parse(cached).map(mapFeedbackFromRow);
     } catch {}
 
     return [];
@@ -1085,6 +1108,14 @@ export const db = {
     } catch {}
 
     try {
+      const all = await this.getAllFeedbacks();
+      const existing = all.find(f => f.id === id);
+
+      const effectiveMessages = updates.messages !== undefined ? updates.messages : (existing?.messages || []);
+      const effectiveClosedAt = updates.closedAt !== undefined ? updates.closedAt : existing?.closedAt;
+      const effectiveClosedBy = updates.closedBy !== undefined ? updates.closedBy : existing?.closedBy;
+      const effectiveAdminNotes = updates.adminNotes !== undefined ? updates.adminNotes : (existing?.adminNotes || '');
+
       const payload: any = {};
       if (updates.title !== undefined) payload.title = updates.title;
       if (updates.content !== undefined) payload.content = updates.content;
@@ -1100,11 +1131,55 @@ export const db = {
           b2FileId: (a as any).b2FileId || (a as any).b2_file_id
         }));
       }
-      if (updates.adminNotes !== undefined) payload.admin_notes = updates.adminNotes;
+
+      payload.admin_notes = JSON.stringify({
+        __chat_meta__: true,
+        messages: effectiveMessages,
+        closedAt: effectiveClosedAt,
+        closedBy: effectiveClosedBy,
+        adminNotes: effectiveAdminNotes
+      });
+
       await supabase.from('suggestions').update(payload).eq('id', id);
     } catch (e) {
       console.warn('Supabase update feedback note:', e);
     }
+  },
+
+  async addFeedbackMessage(feedbackId: string, message: FeedbackMessage): Promise<FeedbackSuggestion | null> {
+    const all = await this.getAllFeedbacks();
+    const target = all.find(f => f.id === feedbackId);
+    if (!target) return null;
+
+    const updatedMessages = [...(target.messages || []), message];
+    const newStatus = message.sender === 'admin' && target.status === 'new' ? 'reviewed' : target.status;
+    
+    await this.updateFeedback(feedbackId, {
+      messages: updatedMessages,
+      status: newStatus
+    });
+
+    await broadcastFeedbackUpdate({ action: 'new_message', feedbackId, message });
+    return { ...target, messages: updatedMessages, status: newStatus };
+  },
+
+  async closeFeedbackConversation(feedbackId: string, closedBy: 'student' | 'admin'): Promise<void> {
+    const now = new Date().toISOString();
+    await this.updateFeedback(feedbackId, {
+      status: 'resolved',
+      closedAt: now,
+      closedBy
+    });
+    await broadcastFeedbackUpdate({ action: 'closed', feedbackId, closedAt: now, closedBy });
+  },
+
+  async reopenFeedbackConversation(feedbackId: string): Promise<void> {
+    await this.updateFeedback(feedbackId, {
+      status: 'reviewed',
+      closedAt: undefined,
+      closedBy: undefined
+    });
+    await broadcastFeedbackUpdate({ action: 'reopened', feedbackId });
   },
 
   async deleteFeedback(id: string) {
