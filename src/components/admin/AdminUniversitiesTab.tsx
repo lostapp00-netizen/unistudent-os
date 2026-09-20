@@ -1998,6 +1998,12 @@ export function AdminUniversitiesTab({
               ...targetDb,
               driveFiles: (targetDb.driveFiles || []).filter(f => f.id !== targetId && f.name !== targetName)
             };
+          } else if (update.type === 'update_grading_scale' && update.data) {
+            const newScale = update.data.gradingScale || update.data;
+            return {
+              ...targetDb,
+              gradingScale: Array.isArray(newScale) ? newScale : targetDb.gradingScale
+            };
           }
           return targetDb;
         });
@@ -2031,6 +2037,12 @@ export function AdminUniversitiesTab({
               return {
                 ...d,
                 subjects: (d.subjects || []).filter(s => s.id !== update.data.id && s.name !== update.data.name)
+              };
+            } else if (update.type === 'update_grading_scale' && update.data) {
+              const newScale = update.data.gradingScale || update.data;
+              return {
+                ...d,
+                gradingScale: Array.isArray(newScale) ? newScale : d.gradingScale
               };
             }
           }
@@ -2345,30 +2357,32 @@ export function AdminUniversitiesTab({
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <h4 className="font-black text-base text-zinc-900 dark:text-white">{group.studentName}</h4>
-                            {group.collegeDb?.isSpecialization ? (
-                              <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/40 flex items-center gap-1">
-                                <Sparkles size={11} />
-                                <span>{group.collegeDb.universityNameAr} • {group.collegeDb.collegeNameAr} (تخصص: {group.collegeDb.specializationNameAr || ''})</span>
-                              </span>
-                            ) : (
-                              <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
-                                {group.collegeDb ? `${group.collegeDb.universityNameAr} • ${group.collegeDb.collegeNameAr}` : group.collegeId}
-                              </span>
-                            )}
                             {(() => {
-                              if (!group.collegeDb) return null;
-                              const cohortDb = group.collegeDb.cohortName
+                              const firstUpd = group.updates[0];
+                              const uniName = group.collegeDb?.universityNameAr || firstUpd?.universityName || '';
+                              const colName = group.collegeDb?.collegeNameAr || firstUpd?.collegeName || '';
+                              const cohortDb = group.collegeDb?.cohortName
                                 ? group.collegeDb
                                 : databases.find(d => d.id === group.collegeDb?.parentDatabaseId);
-                              if (!cohortDb?.cohortName) return null;
+                              const cohortName = cohortDb?.cohortName || firstUpd?.cohortName || '';
+                              const isSpec = Boolean(group.collegeDb?.isSpecialization || firstUpd?.isSpecialization);
+                              const specName = group.collegeDb?.specializationNameAr || firstUpd?.specializationName || '';
+
                               return (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200 inline-flex items-center gap-1">
-                                  <Layers size={10} />
-                                  <span>{cohortDb.cohortName}</span>
+                                <span className={`px-3 py-1 rounded-xl text-xs font-black border flex items-center gap-1.5 shadow-2xs ${
+                                  isSpec
+                                    ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800/40'
+                                    : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800/40'
+                                }`}>
+                                  {isSpec ? <Sparkles size={12} className="text-purple-500 shrink-0" /> : <Building2 size={12} className="text-blue-500 shrink-0" />}
+                                  <span>
+                                    {uniName ? `${uniName} • ` : ''}{colName}
+                                    {cohortName ? ` • ${cohortName}` : ''} • {isSpec ? `تخصص: ${specName || (isAr ? 'غير محدد' : 'Not specified')}` : 'عام'}
+                                  </span>
                                 </span>
                               );
                             })()}
-                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300">
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300">
                               {group.updates.length} {isAr ? 'تعديل' : 'updates'}
                             </span>
                           </div>
@@ -2436,30 +2450,56 @@ export function AdminUniversitiesTab({
                                 {update.description || (isAr ? 'تعديل مقترح' : 'Proposed Update')}
                               </h5>
                               {update.data && (
-                                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                                  {update.data.yearIndex !== undefined && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-black">
-                                      <Calendar size={11} />
-                                      <span>{isAr ? `سنة ${update.data.yearIndex}` : `Year ${update.data.yearIndex}`}</span>
-                                    </span>
-                                  )}
-                                  {update.data.semesterIndex !== undefined && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-black">
-                                      <BookOpen size={11} />
-                                      <span>{isAr ? `ترم ${update.data.semesterIndex}` : `Term ${update.data.semesterIndex}`}</span>
-                                    </span>
-                                  )}
-                                  {update.data.creditHours !== undefined && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
-                                      <Clock size={11} />
-                                      <span>{update.data.creditHours} {isAr ? 'ساعات' : 'hrs'}</span>
-                                    </span>
-                                  )}
-                                  {update.data.totalMarks !== undefined && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
-                                      <Award size={11} />
-                                      <span>{update.data.totalMarks} {isAr ? 'درجة' : 'marks'}</span>
-                                    </span>
+                                <div className="space-y-2 pt-0.5">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {update.data.yearIndex !== undefined && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-black">
+                                        <Calendar size={11} />
+                                        <span>{isAr ? `سنة ${update.data.yearIndex}` : `Year ${update.data.yearIndex}`}</span>
+                                      </span>
+                                    )}
+                                    {update.data.semesterIndex !== undefined && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-black">
+                                        <BookOpen size={11} />
+                                        <span>{isAr ? `ترم ${update.data.semesterIndex}` : `Term ${update.data.semesterIndex}`}</span>
+                                      </span>
+                                    )}
+                                    {update.data.creditHours !== undefined && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
+                                        <Clock size={11} />
+                                        <span>{update.data.creditHours} {isAr ? 'ساعات' : 'hrs'}</span>
+                                      </span>
+                                    )}
+                                    {update.data.totalMarks !== undefined && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
+                                        <Award size={11} />
+                                        <span>{update.data.totalMarks} {isAr ? 'درجة' : 'marks'}</span>
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Proposed Grading Scale Visual Preview */}
+                                  {update.type === 'update_grading_scale' && update.data?.gradingScale && Array.isArray(update.data.gradingScale) && (
+                                    <div className="pt-1.5 space-y-1.5">
+                                      <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                                        <Award size={13} />
+                                        <span>{isAr ? 'التقديرات والنسب المقترحة:' : 'Proposed Grade Scale:'}</span>
+                                      </div>
+                                      <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-2 bg-zinc-50 dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700/60">
+                                        {update.data.gradingScale.map((rule: any, rIdx: number) => (
+                                          <span 
+                                            key={rIdx} 
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-2xs"
+                                          >
+                                            <span className="text-indigo-600 dark:text-indigo-400 font-black">{rule.letter}</span>
+                                            <span className="text-zinc-400">•</span>
+                                            <span className="text-zinc-600 dark:text-zinc-300">من {rule.minPercentage}%</span>
+                                            <span className="text-zinc-400">•</span>
+                                            <span className="text-emerald-600 dark:text-emerald-400">{Number(rule.points || 0).toFixed(2)} نق.</span>
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
                               )}

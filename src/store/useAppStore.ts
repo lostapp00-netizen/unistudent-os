@@ -385,11 +385,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   updateSettings: (newSettings) => {
-    const { userId, settings } = get();
+    const { userId, userEmail, settings } = get();
+    const oldGradingScale = settings.gradingScale;
     const updated = { ...settings, ...newSettings };
     set({ settings: updated });
     if (userId) {
       db.upsertSettings(userId, updated);
+      if (
+        newSettings.gradingScale && 
+        Array.isArray(newSettings.gradingScale) && 
+        newSettings.gradingScale.length > 0 &&
+        JSON.stringify(newSettings.gradingScale) !== JSON.stringify(oldGradingScale)
+      ) {
+        checkAndNotifySourceUpdate(
+          userId,
+          userEmail,
+          updated.name,
+          'update_grading_scale',
+          'تعديل جدول التقديرات الأكاديمي',
+          { gradingScale: newSettings.gradingScale, previous: oldGradingScale }
+        );
+      }
       try {
         const knownRaw = localStorage.getItem('unistudent_known_users');
         if (knownRaw) {
@@ -1860,7 +1876,7 @@ async function checkAndNotifySourceUpdate(
   userId: string,
   userEmail: string | null,
   userName: string | undefined,
-  type: 'add_subject' | 'update_subject' | 'delete_subject' | 'add_file' | 'delete_file',
+  type: 'add_subject' | 'update_subject' | 'delete_subject' | 'add_file' | 'update_file' | 'delete_file' | 'update_grading_scale',
   description: string,
   data: any,
   changedFields?: Record<string, any>
@@ -1878,42 +1894,98 @@ async function checkAndNotifySourceUpdate(
     }
 
     const uniDbs = await db.getUniversityDatabases();
-    const matchingDbs = uniDbs.filter(u => u.sourceUserId === userId);
-    for (const matchingDb of matchingDbs) {
-      if (data?.yearIndex) {
-        const startYr = Number(matchingDb.specializationStartYear || 2);
-        const startSm = Number(matchingDb.specializationStartSemester || 1);
-        const y = Number(data.yearIndex || 1);
-        const sm = Number(data.semesterIndex || 1);
+    const sourceDbs = uniDbs.filter(u => u.sourceUserId === userId);
+    if (sourceDbs.length === 0) return;
 
-        if (matchingDb.isSpecialization) {
-          // If this is a specialization database, ignore subjects before specialization start
-          if (y < startYr || (y === startYr && sm < startSm)) {
-            continue;
-          }
-        } else {
-          // If this is the general college database, ignore subjects at or after specialization start
-          if (y > startYr || (y === startYr && sm >= startSm)) {
-            continue;
-          }
+    // Deduplication & Scope Filtering:
+    // 1. Separate specialization and non-specialization databases.
+    // 2. If the update has a yearIndex, only match databases where the year aligns (specialization vs foundation).
+    // 3. For non-specialization (general) databases belonging to the same college, if a Cohort DB exists (cohortName !== ''),
+    //    target ONLY the Cohort DB to avoid duplicate notifications to the empty college shell!
+    const targetDbs: UniversityDatabase[] = [];
+
+    const isYearSpecific = data?.yearIndex !== undefined;
+    const y = Number(data?.yearIndex || 1);
+    const sm = Number(data?.semesterIndex || 1);
+
+    for (const sDb of sourceDbs) {
+      const startYr = Number(sDb.specializationStartYear || 2);
+      const startSm = Number(sDb.specializationStartSemester || 1);
+      const isSpecYear = isYearSpecific && (y > startYr || (y === startYr && sm >= startSm));
+      const isGeneralYear = isYearSpecific && !isSpecYear;
+
+      if (isYearSpecific) {
+        if (sDb.isSpecialization && isSpecYear) {
+          targetDbs.push(sDb);
+        } else if (!sDb.isSpecialization && isGeneralYear) {
+          targetDbs.push(sDb);
         }
+      } else {
+        // Non-year specific (e.g. general files or gradingScale update)
+        targetDbs.push(sDb);
       }
+    }
+
+    // Deduplicate general college shell vs cohort DBs
+    const filteredTargetDbs: UniversityDatabase[] = [];
+    const nonSpecTargets = targetDbs.filter(d => !d.isSpecialization);
+    const specTargets = targetDbs.filter(d => d.isSpecialization);
+
+    const collegeGroups = new Map<string, UniversityDatabase[]>();
+    for (const d of nonSpecTargets) {
+      const colKey = `${d.universityNameAr || d.universityNameEn}_${d.collegeNameAr || d.collegeNameEn}`;
+      if (!collegeGroups.has(colKey)) collegeGroups.set(colKey, []);
+      collegeGroups.get(colKey)!.push(d);
+    }
+
+    for (const [, dbsInCol] of collegeGroups) {
+      const withCohort = dbsInCol.filter(d => d.cohortName && d.cohortName.trim() !== '');
+      if (withCohort.length > 0) {
+        // Prefer the active cohort DB(s), avoid sending duplicate to the empty college shell
+        filteredTargetDbs.push(...withCohort);
+      } else {
+        // Only college shell exists
+        filteredTargetDbs.push(dbsInCol[0]);
+      }
+    }
+
+    // Add specialization DBs
+    filteredTargetDbs.push(...specTargets);
+
+    for (const matchingDb of filteredTargetDbs) {
+      const uniName = matchingDb.universityNameAr || matchingDb.universityNameEn || '';
+      const colName = matchingDb.collegeNameAr || matchingDb.collegeNameEn || '';
+      const cohortName = matchingDb.cohortName ? matchingDb.cohortName.trim() : '';
+      const isSpec = Boolean(matchingDb.isSpecialization);
+      const specName = matchingDb.specializationNameAr || matchingDb.specializationNameEn || '';
+      const scopeLabel = isSpec ? `تخصص: ${specName}` : 'عام';
 
       let finalDescription = description;
       if (type === 'add_subject' && data?.name) {
-        finalDescription = `إضافة مادة جديدة: ${data.name} (سنة ${data.yearIndex || 1} - ترم ${data.semesterIndex || 1})`;
+        finalDescription = `إضافة مادة جديدة: ${data.name} (سنة ${data.yearIndex || 1} - ترم ${data.semesterIndex || 1}) • ${scopeLabel}`;
       } else if (type === 'update_subject' && data?.name) {
-        finalDescription = `تعديل مادة: ${data.name} (سنة ${data.yearIndex || 1} - ترم ${data.semesterIndex || 1})`;
+        finalDescription = `تعديل مادة: ${data.name} (سنة ${data.yearIndex || 1} - ترم ${data.semesterIndex || 1}) • ${scopeLabel}`;
+      } else if (type === 'delete_subject' && data?.name) {
+        finalDescription = `حذف مادة: ${data.name} (سنة ${data.yearIndex || 1} - ترم ${data.semesterIndex || 1}) • ${scopeLabel}`;
+      } else if (type === 'add_file' && data?.name) {
+        finalDescription = `رفع ملف للدرايف: ${data.name} • ${scopeLabel}`;
+      } else if (type === 'delete_file' && data?.name) {
+        finalDescription = `حذف ملف من الدرايف: ${data.name} • ${scopeLabel}`;
+      } else if (type === 'update_grading_scale') {
+        const rulesCount = (data?.gradingScale && Array.isArray(data.gradingScale)) ? data.gradingScale.length : 0;
+        finalDescription = `تعديل جدول التقديرات (${rulesCount} تقدير) • ${cohortName ? `${cohortName} • ` : ''}${scopeLabel}`;
       }
 
       await db.recordPendingUpdate({
         id: uuidv4(),
         universityDatabaseId: matchingDb.id,
-        universityName: matchingDb.universityNameAr || matchingDb.universityNameEn,
-        collegeName: matchingDb.collegeNameAr || matchingDb.collegeNameEn,
-        isSpecialization: matchingDb.isSpecialization,
-        specializationName: matchingDb.specializationNameAr || matchingDb.specializationNameEn,
-        parentCollegeName: matchingDb.collegeNameAr || matchingDb.collegeNameEn,
+        universityName: uniName,
+        collegeName: colName,
+        cohortName: cohortName,
+        isSpecialization: isSpec,
+        specializationName: specName,
+        parentCollegeName: colName,
+        scopeType: isSpec ? 'specialization' : 'general',
         sourceUserId: userId,
         sourceUserEmail: userEmail || '',
         sourceUserName: userName || '',

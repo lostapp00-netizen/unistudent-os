@@ -275,13 +275,15 @@ export type UniversityPendingUpdate = {
   universityDatabaseId: string;
   universityName?: string;
   collegeName?: string;
+  cohortName?: string;
   isSpecialization?: boolean;
   specializationName?: string;
   parentCollegeName?: string;
+  scopeType?: 'general' | 'specialization';
   sourceUserId: string;
   sourceUserEmail?: string;
   sourceUserName?: string;
-  type: 'add_subject' | 'update_subject' | 'delete_subject' | 'add_file' | 'update_file' | 'delete_file';
+  type: 'add_subject' | 'update_subject' | 'delete_subject' | 'add_file' | 'update_file' | 'delete_file' | 'update_grading_scale';
   description: string;
   data: any;
   status: 'pending' | 'approved' | 'rejected';
