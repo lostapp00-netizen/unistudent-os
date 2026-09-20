@@ -59,7 +59,6 @@ import {
   RotateCcw,
   Lock,
   Unlock,
-  MessageCircle,
   CheckCheck,
   Image as ImageIcon
 } from 'lucide-react';

@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '../store/useAppStore';
+import { useAppStore, defaultGraduationScale, checkAndNotifySourceUpdate } from '../store/useAppStore';
 import { GradingScale } from '../components/settings/GradingScale';
 import { GraduationGradingScale } from '../components/settings/GraduationGradingScale';
 import { SemestersManager } from '../components/settings/SemestersManager';
 import { UserFeedbackSection } from '../components/settings/UserFeedbackSection';
-import { defaultGraduationScale } from '../store/useAppStore';
 import { supabase } from '../lib/supabase';
 import { db } from '../lib/db';
 import { UniversityDatabase } from '../types';
@@ -360,11 +359,8 @@ export function Settings() {
         ? Number(formData.specializationStartSemester) 
         : undefined;
 
-      // Database linking is EXPLICIT-ONLY: preserve an existing link (created
-      // via the restore action) and never create one by name-matching.
-      // If a linked student renames his college to a different one, the sync
-      // detects the mismatch and clears the stale link gracefully (no data loss).
-      const targetUniDbId = settings.universityDatabaseId;
+      const { userId, userEmail, settings: currentStoreSettings } = useAppStore.getState();
+      const targetUniDbId = currentStoreSettings.universityDatabaseId;
 
       const newSettings = {
         ...formData,
@@ -379,12 +375,24 @@ export function Settings() {
         universityDatabaseId: targetUniDbId
       };
       
-      const { userId } = useAppStore.getState();
       if (userId) {
         await db.upsertSettings(userId, newSettings);
       }
       
       updateSettings(newSettings);
+
+      // Explicitly check and dispatch grading scale update for source students
+      if (formData.gradingScale && Array.isArray(formData.gradingScale) && formData.gradingScale.length > 0) {
+        checkAndNotifySourceUpdate(
+          userId || '',
+          userEmail || currentStoreSettings.email || null,
+          formData.name || currentStoreSettings.name,
+          'update_grading_scale',
+          'تعديل جدول التقديرات الأكاديمي',
+          { gradingScale: formData.gradingScale }
+        );
+      }
+
       isDirtyRef.current = false;
       setSaveStatus({
         type: 'success',
