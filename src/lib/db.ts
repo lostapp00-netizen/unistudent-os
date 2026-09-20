@@ -1006,13 +1006,13 @@ export const db = {
       const cachedFeedback = { ...feedback, attachments: sanitizedAttachments };
 
       const allKey = 'unistudent_all_suggestions';
-      const existingAll: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(allKey) || '[]');
+      const existingAll: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(allKey) || '[]').map(mapFeedbackFromRow);
       const updatedAll = [cachedFeedback, ...existingAll.filter(f => f.id !== feedback.id)];
-      localStorage.setItem(allKey, JSON.stringify(updatedAll.slice(0, 100)));
+      localStorage.setItem(allKey, JSON.stringify(updatedAll.slice(0, 200)));
 
       const userKey = `unistudent_user_suggestions_${feedback.userId}`;
-      const existingUser: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(userKey) || '[]');
-      localStorage.setItem(userKey, JSON.stringify([cachedFeedback, ...existingUser.filter(f => f.id !== feedback.id)].slice(0, 50)));
+      const existingUser: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(userKey) || '[]').map(mapFeedbackFromRow);
+      localStorage.setItem(userKey, JSON.stringify([cachedFeedback, ...existingUser.filter(f => f.id !== feedback.id)].slice(0, 100)));
     } catch (e) {
       console.warn('LocalStorage error in addFeedback:', e);
     }
@@ -1026,7 +1026,7 @@ export const db = {
         adminNotes: feedback.adminNotes || ''
       };
 
-      const payload = {
+      const payload: any = {
         id: feedback.id,
         user_id: feedback.userId,
         user_email: feedback.userEmail,
@@ -1046,7 +1046,21 @@ export const db = {
         status: feedback.status,
         admin_notes: JSON.stringify(chatMeta)
       };
-      await supabase.from('suggestions').insert([payload]);
+
+      // Resilient insert: drop missing column if schema-cache lag
+      let insertPayload = { ...payload };
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const res = await supabase.from('suggestions').insert([insertPayload]);
+        if (!res.error) break;
+        const missing = missingColumnFromError(res.error);
+        if (missing && Object.prototype.hasOwnProperty.call(insertPayload, missing)) {
+          console.warn(`suggestions insert: dropping missing column '${missing}' and retrying.`);
+          delete insertPayload[missing];
+          continue;
+        }
+        console.warn('Supabase suggestions insert error:', res.error);
+        break;
+      }
     } catch (err) {
       console.warn('Supabase suggestions insert note:', err);
     }
@@ -1055,41 +1069,74 @@ export const db = {
   },
 
   async getUserFeedbacks(userId: string): Promise<FeedbackSuggestion[]> {
+    let list: FeedbackSuggestion[] = [];
     try {
-      const { data, error } = await supabase.from('suggestions').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('suggestions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
       if (!error && data && data.length > 0) {
-        return data.map(mapFeedbackFromRow);
+        list = data.map(mapFeedbackFromRow);
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Supabase getUserFeedbacks error:', e);
+    }
 
     try {
       const cached = localStorage.getItem(`unistudent_user_suggestions_${userId}`);
-      if (cached) return JSON.parse(cached).map(mapFeedbackFromRow);
-    } catch {}
+      if (cached) {
+        const localList: FeedbackSuggestion[] = JSON.parse(cached).map(mapFeedbackFromRow);
+        const map = new Map<string, FeedbackSuggestion>();
+        list.forEach(item => map.set(item.id, item));
+        localList.forEach(item => {
+          if (!map.has(item.id)) map.set(item.id, item);
+        });
+        list = Array.from(map.values());
+      }
+    } catch (e) {
+      console.warn('LocalStorage getUserFeedbacks error:', e);
+    }
 
-    return [];
+    return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
   async getAllFeedbacks(): Promise<FeedbackSuggestion[]> {
+    let list: FeedbackSuggestion[] = [];
     try {
-      const { data, error } = await supabase.from('suggestions').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('suggestions')
+        .select('*')
+        .order('created_at', { ascending: false });
       if (!error && data && data.length > 0) {
-        return data.map(mapFeedbackFromRow);
+        list = data.map(mapFeedbackFromRow);
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Supabase getAllFeedbacks error:', e);
+    }
 
     try {
       const cached = localStorage.getItem('unistudent_all_suggestions');
-      if (cached) return JSON.parse(cached).map(mapFeedbackFromRow);
-    } catch {}
+      if (cached) {
+        const localList: FeedbackSuggestion[] = JSON.parse(cached).map(mapFeedbackFromRow);
+        const map = new Map<string, FeedbackSuggestion>();
+        list.forEach(item => map.set(item.id, item));
+        localList.forEach(item => {
+          if (!map.has(item.id)) map.set(item.id, item);
+        });
+        list = Array.from(map.values());
+      }
+    } catch (e) {
+      console.warn('LocalStorage getAllFeedbacks error:', e);
+    }
 
-    return [];
+    return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
   async updateFeedback(id: string, updates: Partial<FeedbackSuggestion>) {
     try {
       const allKey = 'unistudent_all_suggestions';
-      const list: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(allKey) || '[]');
+      const list: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(allKey) || '[]').map(mapFeedbackFromRow);
       const updated = list.map(item => item.id === id ? { ...item, ...updates } : item);
       localStorage.setItem(allKey, JSON.stringify(updated));
 
@@ -1098,7 +1145,7 @@ export const db = {
         const key = localStorage.key(i);
         if (key && key.startsWith('unistudent_user_suggestions_')) {
           try {
-            const uList: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(key) || '[]');
+            const uList: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(key) || '[]').map(mapFeedbackFromRow);
             if (uList.some(f => f.id === id)) {
               localStorage.setItem(key, JSON.stringify(uList.map(item => item.id === id ? { ...item, ...updates } : item)));
             }
@@ -1186,7 +1233,7 @@ export const db = {
     try {
       // Find feedback to extract all attachment B2 keys before deleting
       const allKey = 'unistudent_all_suggestions';
-      const list: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(allKey) || '[]');
+      const list: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(allKey) || '[]').map(mapFeedbackFromRow);
       const targetLocal = list.find(f => f.id === id);
 
       let attachmentsToDelete: any[] = targetLocal?.attachments || [];
@@ -1224,7 +1271,7 @@ export const db = {
         const key = localStorage.key(i);
         if (key && key.startsWith('unistudent_user_suggestions_')) {
           try {
-            const uList: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(key) || '[]');
+            const uList: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(key) || '[]').map(mapFeedbackFromRow);
             localStorage.setItem(key, JSON.stringify(uList.filter(f => f.id !== id)));
           } catch {}
         }
@@ -2811,7 +2858,9 @@ export const db = {
           if (bData.schedule_items && bData.schedule_items.length > 0) rawSchedule = bData.schedule_items;
           if (bData.groups && bData.groups.length > 0) rawGroups = bData.groups;
           if (bData.drive_files && bData.drive_files.length > 0) rawFiles = bData.drive_files;
-          if (bData.suggestions && bData.suggestions.length > 0) feedbacks = bData.suggestions;
+          if (bData.suggestions && bData.suggestions.length > 0) {
+            feedbacks = bData.suggestions.map(mapFeedbackFromRow);
+          }
 
           if (bData.auth_users && Array.isArray(bData.auth_users)) {
             bData.auth_users.forEach((au: any) => {
@@ -2851,26 +2900,32 @@ export const db = {
         const { data: emailEdgeData, error: emailEdgeErr } = await supabase.functions.invoke('send-database-backup', {
           body: { targetEmail: 'admin@gmail.com' }
         });
-        const authUsers = emailEdgeData?.backup?.data?.auth_users;
-        if (!emailEdgeErr && Array.isArray(authUsers)) {
-          authUsers.forEach((au: any) => {
-            if (!au.id) return;
-            const existing = rawSettings.find(s => s.user_id === au.id);
-            if (existing) {
-              if (!existing.email || existing.email === '') existing.email = au.email || existing.email;
-              if ((!existing.name || existing.name === '') && au.email) existing.name = au.email.split('@')[0];
-            } else {
-              rawSettings.push({
-                user_id: au.id,
-                name: au.email ? au.email.split('@')[0] : 'طالب مسجل',
-                email: au.email || '',
-                university: '',
-                college: '',
-                grading_scale: [],
-                semesters: []
-              });
-            }
-          });
+        if (!emailEdgeErr && emailEdgeData?.backup?.data) {
+          const authUsers = emailEdgeData.backup.data.auth_users;
+          if (Array.isArray(authUsers)) {
+            authUsers.forEach((au: any) => {
+              if (!au.id) return;
+              const existing = rawSettings.find(s => s.user_id === au.id);
+              if (existing) {
+                if (!existing.email || existing.email === '') existing.email = au.email || existing.email;
+                if ((!existing.name || existing.name === '') && au.email) existing.name = au.email.split('@')[0];
+              } else {
+                rawSettings.push({
+                  user_id: au.id,
+                  name: au.email ? au.email.split('@')[0] : 'طالب مسجل',
+                  email: au.email || '',
+                  university: '',
+                  college: '',
+                  grading_scale: [],
+                  semesters: []
+                });
+              }
+            });
+          }
+
+          if (feedbacks.length === 0 && Array.isArray(emailEdgeData.backup.data.suggestions) && emailEdgeData.backup.data.suggestions.length > 0) {
+            feedbacks = emailEdgeData.backup.data.suggestions.map(mapFeedbackFromRow);
+          }
         }
       } catch (err) {
         console.warn('Email enrichment via edge function failed:', err);
@@ -3061,6 +3116,54 @@ export const db = {
           }
         }
       } catch {}
+    });
+
+    // 4. Merge any localStorage feedback/suggestions so nothing is missed
+    try {
+      const cachedAll = localStorage.getItem('unistudent_all_suggestions');
+      if (cachedAll) {
+        const localList: FeedbackSuggestion[] = JSON.parse(cachedAll).map(mapFeedbackFromRow);
+        const fbMap = new Map<string, FeedbackSuggestion>();
+        feedbacks.forEach(fb => fbMap.set(fb.id, fb));
+        localList.forEach(fb => {
+          if (!fbMap.has(fb.id)) fbMap.set(fb.id, fb);
+        });
+        feedbacks = Array.from(fbMap.values());
+      }
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('unistudent_user_suggestions_')) {
+          try {
+            const uList: FeedbackSuggestion[] = JSON.parse(localStorage.getItem(key) || '[]').map(mapFeedbackFromRow);
+            const fbMap = new Map<string, FeedbackSuggestion>();
+            feedbacks.forEach(fb => fbMap.set(fb.id, fb));
+            uList.forEach(fb => {
+              if (!fbMap.has(fb.id)) fbMap.set(fb.id, fb);
+            });
+            feedbacks = Array.from(fbMap.values());
+          } catch {}
+        }
+      }
+    } catch (err) {
+      console.warn('LocalStorage feedback merge in getAdminAllData:', err);
+    }
+
+    // 5. Enrich each feedback row with accurate student name and email
+    feedbacks = feedbacks.map(fb => {
+      const student = rawSettings.find(s => s.user_id === fb.userId);
+      let resolvedEmail = fb.userEmail;
+      if (!resolvedEmail || resolvedEmail === 'student@unistudent.com' || resolvedEmail === 'لم يحدد بريد' || resolvedEmail === 'No email') {
+        resolvedEmail = student?.email || resolvedEmail || '';
+      }
+      let resolvedName = fb.userName;
+      if (!resolvedName || resolvedName === 'طالب مسجل' || resolvedName === 'Registered Student' || resolvedName === 'Student' || resolvedName === 'طالب') {
+        resolvedName = student?.name || (resolvedEmail && resolvedEmail.includes('@') ? resolvedEmail.split('@')[0] : '') || resolvedName;
+      }
+      return {
+        ...fb,
+        userEmail: resolvedEmail,
+        userName: resolvedName
+      };
     });
 
     return {
@@ -3720,5 +3823,178 @@ function mapPendingUpdateFromDB(row: any): UniversityPendingUpdate {
     status: row.status || 'pending',
     createdAt: row.created_at || new Date().toISOString(),
     resolvedAt: row.resolved_at
+  };
+}
+
+export function mapFeedbackFromRow(row: any): FeedbackSuggestion {
+  if (!row) {
+    return {
+      id: '',
+      userId: '',
+      userEmail: '',
+      userName: '',
+      type: 'suggestion',
+      title: '',
+      content: '',
+      attachments: [],
+      createdAt: new Date().toISOString(),
+      status: 'new',
+      messages: []
+    };
+  }
+
+  // Parse admin_notes & chat meta
+  let messages: FeedbackMessage[] = [];
+  let closedAt: string | undefined = undefined;
+  let closedBy: 'student' | 'admin' | undefined = undefined;
+  let adminNotes: string = '';
+
+  if (Array.isArray(row.messages)) {
+    messages = row.messages.map((m: any) => ({
+      id: m.id || `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      sender: m.sender === 'admin' ? 'admin' : 'student',
+      senderName: m.senderName || m.sender_name || undefined,
+      senderEmail: m.senderEmail || m.sender_email || undefined,
+      content: String(m.content || ''),
+      attachments: Array.isArray(m.attachments) ? m.attachments : [],
+      createdAt: m.createdAt || m.created_at || new Date().toISOString()
+    }));
+  }
+
+  if (row.closed_at || row.closedAt) {
+    closedAt = row.closed_at || row.closedAt;
+  }
+
+  if (row.closed_by || row.closedBy) {
+    closedBy = row.closed_by || row.closedBy;
+  }
+
+  const rawAdminNotes = row.admin_notes ?? row.adminNotes;
+  if (typeof rawAdminNotes === 'string' && rawAdminNotes.trim()) {
+    try {
+      const parsed = JSON.parse(rawAdminNotes);
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.__chat_meta__) {
+          if (Array.isArray(parsed.messages) && messages.length === 0) {
+            messages = parsed.messages.map((m: any) => ({
+              id: m.id || `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              sender: m.sender === 'admin' ? 'admin' : 'student',
+              senderName: m.senderName || m.sender_name || undefined,
+              senderEmail: m.senderEmail || m.sender_email || undefined,
+              content: String(m.content || ''),
+              attachments: Array.isArray(m.attachments) ? m.attachments : [],
+              createdAt: m.createdAt || m.created_at || new Date().toISOString()
+            }));
+          }
+          if (parsed.closedAt && !closedAt) {
+            closedAt = parsed.closedAt;
+          }
+          if (parsed.closedBy && !closedBy) {
+            closedBy = parsed.closedBy;
+          }
+          adminNotes = parsed.adminNotes || '';
+        } else if (Array.isArray(parsed)) {
+          if (messages.length === 0) {
+            messages = parsed.map((m: any) => ({
+              id: m.id || `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              sender: m.sender === 'admin' ? 'admin' : 'student',
+              senderName: m.senderName || m.sender_name || undefined,
+              senderEmail: m.senderEmail || m.sender_email || undefined,
+              content: String(m.content || ''),
+              attachments: Array.isArray(m.attachments) ? m.attachments : [],
+              createdAt: m.createdAt || m.created_at || new Date().toISOString()
+            }));
+          }
+        } else {
+          adminNotes = rawAdminNotes;
+        }
+      } else {
+        adminNotes = rawAdminNotes;
+      }
+    } catch {
+      adminNotes = rawAdminNotes;
+    }
+  } else if (typeof rawAdminNotes === 'object' && rawAdminNotes !== null) {
+    if (rawAdminNotes.__chat_meta__) {
+      if (Array.isArray(rawAdminNotes.messages) && messages.length === 0) {
+        messages = rawAdminNotes.messages.map((m: any) => ({
+          id: m.id || `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          sender: m.sender === 'admin' ? 'admin' : 'student',
+          senderName: m.senderName || m.sender_name || undefined,
+          senderEmail: m.senderEmail || m.sender_email || undefined,
+          content: String(m.content || ''),
+          attachments: Array.isArray(m.attachments) ? m.attachments : [],
+          createdAt: m.createdAt || m.created_at || new Date().toISOString()
+        }));
+      }
+      if (rawAdminNotes.closedAt && !closedAt) {
+        closedAt = rawAdminNotes.closedAt;
+      }
+      if (rawAdminNotes.closedBy && !closedBy) {
+        closedBy = rawAdminNotes.closedBy;
+      }
+      adminNotes = rawAdminNotes.adminNotes || '';
+    }
+  }
+
+  // Parse attachments
+  let attachments: any[] = [];
+  const rawAttachments = row.attachments;
+  if (Array.isArray(rawAttachments)) {
+    attachments = rawAttachments.map((a: any) => ({
+      id: a.id || `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      name: a.name || 'ملف مرفق',
+      size: typeof a.size === 'number' ? a.size : 0,
+      type: a.type || 'application/octet-stream',
+      url: a.url || '',
+      b2FileId: a.b2FileId || a.b2_file_id || undefined
+    }));
+  } else if (typeof rawAttachments === 'string' && rawAttachments.trim()) {
+    try {
+      const parsed = JSON.parse(rawAttachments);
+      if (Array.isArray(parsed)) {
+        attachments = parsed.map((a: any) => ({
+          id: a.id || `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          name: a.name || 'ملف مرفق',
+          size: typeof a.size === 'number' ? a.size : 0,
+          type: a.type || 'application/octet-stream',
+          url: a.url || '',
+          b2FileId: a.b2FileId || a.b2_file_id || undefined
+        }));
+      }
+    } catch {}
+  } else if (row.attachment_url) {
+    attachments = [{
+      id: `${Date.now()}`,
+      name: 'مرفق',
+      size: 0,
+      type: 'image/jpeg',
+      url: row.attachment_url
+    }];
+  }
+
+  // Ensure type is valid
+  const validTypes = ['suggestion', 'complaint', 'bug', 'inquiry', 'other'];
+  const rowType = row.type && validTypes.includes(row.type) ? row.type : 'suggestion';
+
+  // Ensure status is valid
+  const validStatuses = ['new', 'reviewed', 'resolved'];
+  const rowStatus = row.status && validStatuses.includes(row.status) ? row.status : 'new';
+
+  return {
+    id: String(row.id || ''),
+    userId: String(row.user_id || row.userId || ''),
+    userEmail: String(row.user_email || row.userEmail || ''),
+    userName: row.user_name || row.userName || undefined,
+    type: rowType as FeedbackSuggestion['type'],
+    title: String(row.title || ''),
+    content: String(row.content || ''),
+    attachments,
+    createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+    status: rowStatus as FeedbackSuggestion['status'],
+    messages,
+    closedAt,
+    closedBy,
+    adminNotes
   };
 }
