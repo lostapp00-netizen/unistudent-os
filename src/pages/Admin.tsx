@@ -616,7 +616,7 @@ export function Admin() {
 
   const handleAdminSendReply = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedFeedback || (!adminReplyText.trim() && adminReplyAttachments.length === 0)) return;
+    if (!selectedFeedback || selectedFeedback.status === 'resolved' || (!adminReplyText.trim() && adminReplyAttachments.length === 0)) return;
 
     try {
       setAdminSendingReply(true);
@@ -2165,66 +2165,70 @@ export function Admin() {
             <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
               
               {/* Modal Header */}
-              <div className="p-4 sm:p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-start justify-between gap-3 bg-zinc-50/50 dark:bg-zinc-800/30 shrink-0">
-                <div className="space-y-2 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {/* Category Selector */}
-                    <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-xl border border-zinc-200/60 dark:border-zinc-700/60">
-                      <span className="text-[10px] font-bold text-zinc-400 px-1.5">{isAr ? 'التصنيف:' : 'Type:'}</span>
-                      {(['complaint', 'suggestion', 'inquiry', 'bug', 'other'] as const).map((tType) => (
-                        <button
-                          key={tType}
-                          type="button"
-                          onClick={() => handleUpdateFeedbackType(selectedFeedback.id, tType)}
-                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                            selectedFeedback.type === tType
-                              ? (tType === 'complaint' 
-                                  ? 'bg-rose-600 text-white shadow-xs' 
-                                  : tType === 'bug' 
-                                  ? 'bg-amber-600 text-white shadow-xs' 
-                                  : tType === 'inquiry' 
-                                  ? 'bg-cyan-600 text-white shadow-xs' 
-                                  : tType === 'suggestion' 
-                                  ? 'bg-indigo-600 text-white shadow-xs' 
-                                  : 'bg-zinc-700 text-white shadow-xs')
-                              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                          }`}
-                        >
-                          {tType === 'complaint' ? (isAr ? 'شكوى' : 'Complaint') : tType === 'bug' ? (isAr ? 'عطل تقني' : 'Bug') : tType === 'inquiry' ? (isAr ? 'استفسار' : 'Inquiry') : tType === 'suggestion' ? (isAr ? 'اقتراح' : 'Suggestion') : (isAr ? 'أخرى' : 'Other')}
-                        </button>
-                      ))}
-                    </div>
-
-                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase flex items-center gap-1 ${
-                      isResolved
-                        ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                        : selectedFeedback.status === 'reviewed'
-                        ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-800'
-                        : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 animate-pulse'
-                    }`}>
-                      {isResolved && <CheckCircle2 size={12} />}
-                      {selectedFeedback.status === 'reviewed' && <Clock size={12} />}
-                      {selectedFeedback.status === 'new' && <Inbox size={12} />}
-                      <span>{isResolved ? (isAr ? 'تم الرد والإنهاء' : 'Resolved') : selectedFeedback.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد (الوارد)' : 'New')}</span>
-                    </span>
-
-                    <span className="text-xs text-zinc-400">
-                      {formatDateTime(selectedFeedback.closedAt || selectedFeedback.createdAt, isAr)}
-                    </span>
-                  </div>
-
-                  <h3 className="font-black text-base sm:text-xl text-zinc-900 dark:text-white truncate">
+              <div className="p-4 sm:p-5 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-800/40 shrink-0 space-y-3">
+                {/* Top Row: Title + Close Button ('X') with ample space */}
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="font-black text-base sm:text-lg text-zinc-900 dark:text-white leading-snug line-clamp-2">
                     {selectedFeedback.title}
                   </h3>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFeedback(null)}
+                    className="p-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer shrink-0 shadow-2xs"
+                    title={isAr ? 'إغلاق' : 'Close'}
+                  >
+                    <X size={18} />
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setSelectedFeedback(null)}
-                  className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 transition-colors cursor-pointer shrink-0"
-                >
-                  <X size={18} />
-                </button>
+                {/* Second Row: Category Selector + Status Badge + Date Badge (positioned neatly below) */}
+                <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                  {/* Category Selector */}
+                  <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/90 p-0.5 rounded-xl border border-zinc-200/60 dark:border-zinc-700/60 flex-wrap sm:flex-nowrap">
+                    <span className="text-[10px] font-bold text-zinc-400 px-1.5">{isAr ? 'التصنيف:' : 'Type:'}</span>
+                    {(['complaint', 'suggestion', 'inquiry', 'bug', 'other'] as const).map((tType) => (
+                      <button
+                        key={tType}
+                        type="button"
+                        onClick={() => handleUpdateFeedbackType(selectedFeedback.id, tType)}
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                          selectedFeedback.type === tType
+                            ? (tType === 'complaint' 
+                                ? 'bg-rose-600 text-white shadow-xs' 
+                                : tType === 'bug' 
+                                ? 'bg-amber-600 text-white shadow-xs' 
+                                : tType === 'inquiry' 
+                                ? 'bg-cyan-600 text-white shadow-xs' 
+                                : tType === 'suggestion' 
+                                ? 'bg-indigo-600 text-white shadow-xs' 
+                                : 'bg-zinc-700 text-white shadow-xs')
+                            : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                        }`}
+                      >
+                        {tType === 'complaint' ? (isAr ? 'شكوى' : 'Complaint') : tType === 'bug' ? (isAr ? 'عطل تقني' : 'Bug') : tType === 'inquiry' ? (isAr ? 'استفسار' : 'Inquiry') : tType === 'suggestion' ? (isAr ? 'اقتراح' : 'Suggestion') : (isAr ? 'أخرى' : 'Other')}
+                      </button>
+                    ))}
+                  </div>
+
+                  <span className={`px-2.5 py-1 rounded-xl text-[11px] font-black uppercase flex items-center gap-1.5 border ${
+                    isResolved
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                      : selectedFeedback.status === 'reviewed'
+                      ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                      : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 animate-pulse'
+                  }`}>
+                    {isResolved && <CheckCircle2 size={12} />}
+                    {selectedFeedback.status === 'reviewed' && <Clock size={12} />}
+                    {selectedFeedback.status === 'new' && <Inbox size={12} />}
+                    <span>{isResolved ? (isAr ? 'تم الرد والإنهاء' : 'Resolved') : selectedFeedback.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد (الوارد)' : 'New')}</span>
+                  </span>
+
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-100/80 dark:bg-zinc-800/80 px-2.5 py-1 rounded-xl border border-zinc-200/60 dark:border-zinc-700/60">
+                    <Calendar size={12} className="text-zinc-400 shrink-0" />
+                    <span>{formatDateTime(selectedFeedback.closedAt || selectedFeedback.createdAt, isAr)}</span>
+                  </div>
+                </div>
               </div>
 
               {/* Modal Body - Scrollable */}
@@ -2408,64 +2412,93 @@ export function Admin() {
                     <div ref={adminChatEndRef} />
                   </div>
 
-                  {/* Live Admin Reply Composer */}
-                  <form onSubmit={handleAdminSendReply} className="space-y-2.5 pt-1">
-                    <div className="relative">
-                      <textarea
-                        rows={3}
-                        value={adminReplyText}
-                        onChange={(e) => setAdminReplyText(e.target.value)}
-                        placeholder={isAr ? 'اكتب ردك الرسمي على الطالب هنا...' : 'Type your official response to student...'}
-                        className="w-full px-4 py-3 rounded-2xl border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white text-xs sm:text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none shadow-2xs"
-                      />
-                    </div>
-
-                    {/* Admin Reply Attachments */}
-                    {adminReplyAttachments.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {adminReplyAttachments.map((att) => (
-                          <div
-                            key={att.id}
-                            className="flex items-center gap-2 px-3 py-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-medium"
-                          >
-                            <FileText size={13} className="text-indigo-500" />
-                            <span className="max-w-[130px] truncate text-zinc-800 dark:text-zinc-200">{att.name}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleAdminRemoveAttachment(att.id)}
-                              className="p-0.5 text-zinc-400 hover:text-rose-500 cursor-pointer"
-                            >
-                              <X size={13} />
-                            </button>
-                          </div>
-                        ))}
+                  {/* Live Admin Reply Composer or Closed Banner */}
+                  {isResolved ? (
+                    <div className="p-4 sm:p-5 rounded-2xl bg-zinc-100/90 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/80 space-y-3 text-center">
+                      <div className="flex items-center justify-center gap-2 text-zinc-700 dark:text-zinc-200 font-bold text-xs sm:text-sm">
+                        <Lock size={16} className="text-rose-500 shrink-0" />
+                        <span>
+                          {isAr 
+                            ? 'هذه المحادثة مغلقة ومُنتهية (تم الحل). لا يمكن إرسال رسائل جديدة إلا بعد إعادة فتحها.' 
+                            : 'This conversation is closed/resolved. You cannot send replies unless you reopen it.'}
+                        </span>
                       </div>
-                    )}
-
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="cursor-pointer px-3.5 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5">
-                        {adminReplyUploading ? <Loader2 size={13} className="animate-spin text-indigo-500" /> : <Paperclip size={13} className="text-indigo-500" />}
-                        <span>{adminReplyUploading ? (isAr ? 'جاري الرفع...' : 'Uploading...') : (isAr ? 'إرفاق صورة / ملف' : 'Attach File')}</span>
-                        <input
-                          type="file"
-                          multiple
-                          accept="image/*,.pdf,.doc,.docx,.txt"
-                          onChange={handleAdminFileUpload}
-                          disabled={adminReplyUploading}
-                          className="hidden"
-                        />
-                      </label>
-
-                      <button
-                        type="submit"
-                        disabled={adminSendingReply || (!adminReplyText.trim() && adminReplyAttachments.length === 0)}
-                        className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
-                      >
-                        {adminSendingReply ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                        <span>{isAr ? 'إرسال الرد للطالب فوراً' : 'Send Reply Now'}</span>
-                      </button>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">
+                        {isAr 
+                          ? 'إذا رغبت في متابعة الردود مع الطالب، اضغط على زر "إعادة فتح المحادثة" أدناه لاستئناف إمكانية المراسلة الفورية.' 
+                          : 'If you want to continue chatting with the student, click "Reopen Conversation" below to enable live messaging.'}
+                      </p>
+                      <div className="flex justify-center pt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleAdminReopenConversation(selectedFeedback.id)}
+                          disabled={adminActionLoading}
+                          className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+                        >
+                          {adminActionLoading ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                          <span>{isAr ? 'إعادة فتح المحادثة للمراسلة' : 'Reopen Conversation to Reply'}</span>
+                        </button>
+                      </div>
                     </div>
-                  </form>
+                  ) : (
+                    <form onSubmit={handleAdminSendReply} className="space-y-2.5 pt-1">
+                      <div className="relative">
+                        <textarea
+                          rows={3}
+                          value={adminReplyText}
+                          onChange={(e) => setAdminReplyText(e.target.value)}
+                          placeholder={isAr ? 'اكتب ردك الرسمي على الطالب هنا...' : 'Type your official response to student...'}
+                          className="w-full px-4 py-3 rounded-2xl border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white text-xs sm:text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none shadow-2xs"
+                        />
+                      </div>
+
+                      {/* Admin Reply Attachments */}
+                      {adminReplyAttachments.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {adminReplyAttachments.map((att) => (
+                            <div
+                              key={att.id}
+                              className="flex items-center gap-2 px-3 py-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-medium"
+                            >
+                              <FileText size={13} className="text-indigo-500" />
+                              <span className="max-w-[130px] truncate text-zinc-800 dark:text-zinc-200">{att.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleAdminRemoveAttachment(att.id)}
+                                className="p-0.5 text-zinc-400 hover:text-rose-500 cursor-pointer"
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="cursor-pointer px-3.5 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5">
+                          {adminReplyUploading ? <Loader2 size={13} className="animate-spin text-indigo-500" /> : <Paperclip size={13} className="text-indigo-500" />}
+                          <span>{adminReplyUploading ? (isAr ? 'جاري الرفع...' : 'Uploading...') : (isAr ? 'إرفاق صورة / ملف' : 'Attach File')}</span>
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*,.pdf,.doc,.docx,.txt"
+                            onChange={handleAdminFileUpload}
+                            disabled={adminReplyUploading}
+                            className="hidden"
+                          />
+                        </label>
+
+                        <button
+                          type="submit"
+                          disabled={adminSendingReply || (!adminReplyText.trim() && adminReplyAttachments.length === 0)}
+                          className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+                        >
+                          {adminSendingReply ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                          <span>{isAr ? 'إرسال الرد للطالب فوراً' : 'Send Reply Now'}</span>
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </div>
               </div>
 
