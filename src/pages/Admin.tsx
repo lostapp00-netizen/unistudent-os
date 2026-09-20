@@ -4,11 +4,14 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import { 
   ShieldCheck, 
   Users, 
+  User,
+  Bug,
   Award, 
   AlertTriangle, 
   HardDrive, 
   Database, 
   MessageSquare, 
+  MessageCircle, 
   Download, 
   Upload, 
   Mail, 
@@ -1589,53 +1592,55 @@ export function Admin() {
                       }`}
                     >
                       <div className="space-y-3.5">
-                        {/* Header Badges with Interactive Category and Status Switcher */}
-                        <div className="flex items-start justify-between gap-2 border-b border-zinc-100 dark:border-zinc-800 pb-3" onClick={(e) => e.stopPropagation()}>
+                        {/* Header Badges with Automatic Category, Status, and Clean Contained Date */}
+                        <div className="flex items-center justify-between gap-2.5 flex-wrap border-b border-zinc-100 dark:border-zinc-800 pb-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-2 flex-wrap">
-                            {/* Interactive Category Selector Pills */}
-                            <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/80 p-0.5 rounded-xl border border-zinc-200/50 dark:border-zinc-700/50">
-                              {(['complaint', 'suggestion', 'inquiry', 'bug', 'other'] as const).map((tType) => (
-                                <button
-                                  key={tType}
-                                  type="button"
-                                  onClick={() => handleUpdateFeedbackType(fb.id, tType)}
-                                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                                    fb.type === tType
-                                      ? (tType === 'complaint'
-                                          ? 'bg-rose-600 text-white shadow-2xs'
-                                          : tType === 'bug'
-                                          ? 'bg-amber-600 text-white shadow-2xs'
-                                          : tType === 'inquiry'
-                                          ? 'bg-cyan-600 text-white shadow-2xs'
-                                          : tType === 'suggestion'
-                                          ? 'bg-indigo-600 text-white shadow-2xs'
-                                          : 'bg-zinc-700 text-white shadow-2xs')
-                                      : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
-                                  }`}
-                                  title={isAr ? 'تغيير التصنيف فوراً' : 'Change category'}
-                                >
-                                  {tType === 'complaint' ? (isAr ? 'شكوى' : 'Complaint') : tType === 'bug' ? (isAr ? 'عطل' : 'Bug') : tType === 'inquiry' ? (isAr ? 'استفسار' : 'Inquiry') : tType === 'suggestion' ? (isAr ? 'اقتراح' : 'Suggestion') : (isAr ? 'أخرى' : 'Other')}
-                                </button>
-                              ))}
-                            </div>
-
-                            <span className={`px-2.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1 ${
-                              fb.status === 'resolved' 
-                                ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800' 
-                                : fb.status === 'reviewed' 
-                                ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-800' 
-                                : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 animate-pulse'
+                            {/* Automatic Category Badge from Student Submission */}
+                            <span className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1.5 shadow-2xs border ${
+                              fb.type === 'complaint'
+                                ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60'
+                                : fb.type === 'bug'
+                                ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
+                                : fb.type === 'inquiry'
+                                ? 'bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800/60'
+                                : fb.type === 'suggestion'
+                                ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800/60'
+                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
                             }`}>
-                              {fb.status === 'resolved' && <CheckCircle2 size={12} />}
-                              {fb.status === 'reviewed' && <Clock size={12} />}
-                              {fb.status === 'new' && <Inbox size={12} />}
+                              {fb.type === 'complaint' && <AlertTriangle size={12} className="text-rose-500 shrink-0" />}
+                              {fb.type === 'bug' && <Bug size={12} className="text-amber-500 shrink-0" />}
+                              {fb.type === 'inquiry' && <HelpCircle size={12} className="text-cyan-500 shrink-0" />}
+                              {fb.type === 'suggestion' && <Sparkles size={12} className="text-indigo-500 shrink-0" />}
+                              {fb.type === 'other' && <Info size={12} className="text-zinc-400 shrink-0" />}
+                              <span>
+                                {fb.type === 'complaint' ? (isAr ? 'شكوى ومشاكل' : 'Complaint') :
+                                 fb.type === 'bug' ? (isAr ? 'عطل تقني' : 'Bug Report') :
+                                 fb.type === 'inquiry' ? (isAr ? 'استفسار ومساعدة' : 'Inquiry') :
+                                 fb.type === 'suggestion' ? (isAr ? 'اقتراح وتطوير' : 'Suggestion') :
+                                 (isAr ? 'أخرى' : 'Other')}
+                              </span>
+                            </span>
+
+                            {/* Status Badge */}
+                            <span className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1.5 border ${
+                              fb.status === 'resolved' 
+                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60' 
+                                : fb.status === 'reviewed' 
+                                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800/60' 
+                                : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60 animate-pulse'
+                            }`}>
+                              {fb.status === 'resolved' && <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />}
+                              {fb.status === 'reviewed' && <Clock size={12} className="text-blue-500 shrink-0" />}
+                              {fb.status === 'new' && <Inbox size={12} className="text-amber-500 shrink-0" />}
                               <span>{fb.status === 'resolved' ? (isAr ? 'تم الرد والإنهاء' : 'Resolved') : fb.status === 'reviewed' ? (isAr ? 'قيد المراجعة' : 'Under Review') : (isAr ? 'جديد (الوارد)' : 'New')}</span>
                             </span>
                           </div>
 
-                          <span className="text-[11px] text-zinc-400 font-medium shrink-0">
-                            {formatDateTime(fb.closedAt || fb.createdAt, isAr)}
-                          </span>
+                          {/* Date Display (Neat & Contained) */}
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-100/80 dark:bg-zinc-800/80 px-2.5 py-1 rounded-xl border border-zinc-200/60 dark:border-zinc-700/60 shrink-0">
+                            <Calendar size={12} className="text-zinc-400 shrink-0" />
+                            <span>{formatDateTime(fb.closedAt || fb.createdAt, isAr)}</span>
+                          </div>
                         </div>
 
                         {/* Student Profile Card Header */}
