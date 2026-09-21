@@ -129,6 +129,7 @@ export function DriveTab() {
   const { t, i18n } = useTranslation();
   const isAr = i18n.language === 'ar';
   const files = useAppStore(state => state.files);
+  const subjects = useAppStore(state => state.subjects);
   const settings = useAppStore(state => state.settings);
   const addFile = useAppStore(state => state.addFile);
   const updateFile = useAppStore(state => state.updateFile);
@@ -136,9 +137,9 @@ export function DriveTab() {
 
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
-  // Folder creation form: name + academic phase. Anything created inside a
-  // folder (subfolder or uploaded file) inherits the folder's phase by default.
-  const [folderForm, setFolderForm] = useState({ name: '', yearIndex: '1', semesterIndex: '1' });
+  // Folder creation form: name + academic phase + linked subject. Anything created inside a
+  // folder (subfolder or uploaded file) inherits the folder's phase and subject by default.
+  const [folderForm, setFolderForm] = useState({ name: '', yearIndex: '1', semesterIndex: '1', subjectId: '' });
   const [fileToDelete, setFileToDelete] = useState<DriveFile | null>(null);
   const [fileToMove, setFileToMove] = useState<DriveFile | null>(null);
   const [selectedDestinationFolderId, setSelectedDestinationFolderId] = useState<string | null>(null);
@@ -169,12 +170,13 @@ export function DriveTab() {
     return ids;
   };
 
-  // Opens the folder modal pre-filled with the parent folder's year/semester
+  // Opens the folder modal pre-filled with the parent folder's year/semester/subject
   const openFolderModal = () => {
     setFolderForm({
       name: '',
       yearIndex: String(Number(currentFolder?.yearIndex) || currentSemesterInfo?.yearIndex || 1),
-      semesterIndex: String(Number(currentFolder?.semesterIndex) || currentSemesterInfo?.semesterIndex || 1)
+      semesterIndex: String(Number(currentFolder?.semesterIndex) || currentSemesterInfo?.semesterIndex || 1),
+      subjectId: currentFolder?.subjectId || ''
     });
     setIsFolderModalOpen(true);
   };
@@ -189,7 +191,8 @@ export function DriveTab() {
       parentId: currentFolderId,
       createdAt: new Date().toISOString().split('T')[0],
       yearIndex: Number(folderForm.yearIndex) || 1,
-      semesterIndex: Number(folderForm.semesterIndex) || 1
+      semesterIndex: Number(folderForm.semesterIndex) || 1,
+      subjectId: folderForm.subjectId || currentFolder?.subjectId || undefined
     });
     setIsFolderModalOpen(false);
   };
@@ -197,9 +200,9 @@ export function DriveTab() {
   const [isUploading, setIsUploading] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [uploadFileSelected, setUploadFileSelected] = useState<File | null>(null);
-  const [uploadForm, setUploadForm] = useState({ name: '', yearIndex: '1', semesterIndex: '1' });
+  const [uploadForm, setUploadForm] = useState({ name: '', yearIndex: '1', semesterIndex: '1', subjectId: '' });
   // When set, the upload modal renders in EDIT mode: the file is already
-  // uploaded — only name / year / semester are editable, no re-upload.
+  // uploaded — only name / year / semester / subject are editable, no re-upload.
   const [editingFile, setEditingFile] = useState<DriveFile | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
@@ -211,11 +214,12 @@ export function DriveTab() {
   const openUploadModal = () => {
     setUploadFileSelected(null);
     setEditingFile(null);
-    // Default phase: the parent folder's — falling back to the current semester
+    // Default phase: the parent folder's — falling back to the current semester & subject
     setUploadForm({
       name: '',
       yearIndex: String(Number(currentFolder?.yearIndex) || currentSemesterInfo?.yearIndex || 1),
-      semesterIndex: String(Number(currentFolder?.semesterIndex) || currentSemesterInfo?.semesterIndex || 1)
+      semesterIndex: String(Number(currentFolder?.semesterIndex) || currentSemesterInfo?.semesterIndex || 1),
+      subjectId: currentFolder?.subjectId || ''
     });
     setIsUploadModalOpen(true);
   };
@@ -226,7 +230,8 @@ export function DriveTab() {
     setUploadForm({
       name: file.name,
       yearIndex: String(Number(file.yearIndex) || 1),
-      semesterIndex: String(Number(file.semesterIndex) || 1)
+      semesterIndex: String(Number(file.semesterIndex) || 1),
+      subjectId: file.subjectId || ''
     });
     setIsUploadModalOpen(true);
   };
@@ -234,11 +239,24 @@ export function DriveTab() {
   const confirmEdit = () => {
     if (!editingFile) return;
     const displayName = uploadForm.name.trim() || editingFile.name;
+    const newSubjectId = uploadForm.subjectId || undefined;
     updateFile(editingFile.id, {
       name: displayName,
       yearIndex: Number(uploadForm.yearIndex) || 1,
-      semesterIndex: Number(uploadForm.semesterIndex) || 1
+      semesterIndex: Number(uploadForm.semesterIndex) || 1,
+      subjectId: newSubjectId
     });
+
+    // If editing a folder and its subject is changed, automatically propagate to all its descendants
+    if (editingFile.type === 'folder') {
+      const descendantIds = getAllDescendantIds(editingFile.id, files);
+      for (const dId of descendantIds) {
+        updateFile(dId, {
+          subjectId: newSubjectId
+        });
+      }
+    }
+
     setIsUploadModalOpen(false);
     setEditingFile(null);
   };
@@ -277,7 +295,8 @@ export function DriveTab() {
         url: publicUrl,
         b2FileId: b2Path,
         yearIndex: yearIdx,
-        semesterIndex: semIdx
+        semesterIndex: semIdx,
+        subjectId: uploadForm.subjectId || currentFolder?.subjectId || undefined
       });
       setIsUploadModalOpen(false);
     } catch (err: any) {
@@ -295,7 +314,8 @@ export function DriveTab() {
           createdAt: new Date().toISOString().split('T')[0],
           url: base64Url,
           yearIndex: yearIdx,
-          semesterIndex: semIdx
+          semesterIndex: semIdx,
+          subjectId: uploadForm.subjectId || currentFolder?.subjectId || undefined
         });
       };
       reader.readAsDataURL(uploadedFile);
@@ -530,9 +550,17 @@ export function DriveTab() {
                     <p className="font-bold text-sm text-zinc-900 dark:text-white whitespace-normal break-words line-clamp-3 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors cursor-pointer">
                       {file.name}
                     </p>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      {file.createdAt} {file.type === 'file' && `• ${formatSize(file.size)}`}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <span className="text-xs text-zinc-400">
+                        {file.createdAt} {file.type === 'file' && `• ${formatSize(file.size)}`}
+                      </span>
+                      {file.subjectId && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold border border-indigo-200/50 dark:border-indigo-800/40">
+                          <BookOpen size={10} />
+                          <span>{subjects.find(s => s.id === file.subjectId)?.name || (isAr ? 'مادة مرتبطة' : 'Linked Subject')}</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -817,6 +845,24 @@ export function DriveTab() {
                   </select>
                 </div>
               </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 mb-1.5">
+                  {isAr ? 'المادة الدراسية المرتبطة (اختياري)' : 'Linked Subject (Optional)'}
+                </label>
+                <select
+                  value={uploadForm.subjectId}
+                  onChange={(e) => setUploadForm(prev => ({ ...prev, subjectId: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
+                >
+                  <option value="">{isAr ? 'عام (غير مرتبط بمادة محددة)' : 'General (Not linked to specific subject)'}</option>
+                  {subjects.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.code || (isAr ? `سنة ${s.yearIndex} ترم ${s.semesterIndex}` : `Y${s.yearIndex} T${s.semesterIndex}`)})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-100 dark:border-zinc-800">
@@ -850,7 +896,7 @@ export function DriveTab() {
         </div>
       )}
 
-      {/* Create Folder Modal: name + academic phase (children inherit it) */}
+      {/* Create Folder Modal: name + academic phase + subject (children inherit it) */}
       {isFolderModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-md w-full shadow-2xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4 animate-in zoom-in-95 duration-200">
@@ -914,10 +960,28 @@ export function DriveTab() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 mb-1.5">
+                  {isAr ? 'المادة الدراسية المرتبطة (اختياري)' : 'Linked Subject (Optional)'}
+                </label>
+                <select
+                  value={folderForm.subjectId}
+                  onChange={(e) => setFolderForm(prev => ({ ...prev, subjectId: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
+                >
+                  <option value="">{isAr ? 'عام (غير مرتبط بمادة محددة)' : 'General (Not linked to specific subject)'}</option>
+                  {subjects.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.code || (isAr ? `سنة ${s.yearIndex} ترم ${s.semesterIndex}` : `Y${s.yearIndex} T${s.semesterIndex}`)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <p className="text-[11px] text-zinc-400">
                 {isAr
-                  ? 'أي ملف أو مجلد فرعي يُنشأ أو يُرفع داخل هذا المجلد سيأخذ نفس السنة والفصل تلقائيًا (ويمكن تعديلها لاحقًا).'
-                  : 'Files or subfolders added inside this folder inherit its year & semester automatically (editable later).'}
+                  ? 'أي ملف أو مجلد فرعي يُنشأ أو يُرفع داخل هذا المجلد سيأخذ نفس المادة والسنة والفصل تلقائيًا (ويمكن تعديلها لاحقًا).'
+                  : 'Files or subfolders added inside this folder inherit its subject, year & semester automatically (editable later).'}
               </p>
             </div>
 

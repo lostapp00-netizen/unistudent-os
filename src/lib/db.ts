@@ -950,7 +950,8 @@ export const db = {
     const phaseRow = {
       ...baseRow,
       year_index: file.yearIndex ?? null,
-      semester_index: file.semesterIndex ?? null
+      semester_index: file.semesterIndex ?? null,
+      subject_id: file.subjectId ?? null
     };
 
     // Primary insert includes the phase columns. If the database schema predates
@@ -978,6 +979,7 @@ export const db = {
     if (file.url !== undefined) payload.url = file.url;
     if (file.yearIndex !== undefined) payload.year_index = file.yearIndex;
     if (file.semesterIndex !== undefined) payload.semester_index = file.semesterIndex;
+    if (file.subjectId !== undefined) payload.subject_id = file.subjectId;
 
     await resilientWrite('updateDriveFile', () =>
       supabase.from('drive_files').update(payload).eq('id', id).eq('user_id', userId),
@@ -3716,7 +3718,8 @@ function mapDriveFileFromDB(row: any): DriveFile {
     parentId: row.parent_id,
     b2FileId: row.b2_file_id,
     yearIndex: row.year_index ?? undefined,
-    semesterIndex: row.semester_index ?? undefined
+    semesterIndex: row.semester_index ?? undefined,
+    subjectId: row.subject_id ?? row.subjectId ?? undefined
   };
 }
 
@@ -3798,7 +3801,8 @@ function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
       url: f.url || '',
       b2FileId: f.b2FileId || f.b2_file_id,
       yearIndex: f.yearIndex ?? f.year_index ?? undefined,
-      semesterIndex: f.semesterIndex ?? f.semester_index ?? undefined
+      semesterIndex: f.semesterIndex ?? f.semester_index ?? undefined,
+      subjectId: f.subjectId ?? f.subject_id ?? undefined
     })),
     gradingScale: cleanGradingScale,
     createdAt: row.created_at || new Date().toISOString(),

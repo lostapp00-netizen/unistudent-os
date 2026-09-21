@@ -67,6 +67,7 @@ export type DriveFile = {
   // Academic phase this file belongs to (drives general-vs-spec routing)
   yearIndex?: number;
   semesterIndex?: number;
+  subjectId?: string;
 };
 
 export type Note = {
