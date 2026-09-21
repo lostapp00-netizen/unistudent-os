@@ -2085,11 +2085,37 @@ export const db = {
     }
 
     // Smart Slicing: Only subjects from specializationStartYear & specializationStartSemester onward
-    const filteredSubjects = (rawSubjects || []).filter(s => {
+    const rawFilteredSubjects = (rawSubjects || []).filter(s => {
       const y = Number(s.yearIndex || 1);
       const sem = Number(s.semesterIndex || 1);
       return y > params.specializationStartYear ||
              (y === params.specializationStartYear && sem >= params.specializationStartSemester);
+    });
+
+    const clonedSubjects: Subject[] = rawFilteredSubjects.map((s: any) => ({
+      id: crypto.randomUUID(),
+      code: (s.code || '').trim(),
+      name: s.name,
+      creditHours: Number(s.creditHours || s.credit_hours || 3),
+      totalMarks: Number(s.totalMarks || s.total_marks || 100),
+      yearIndex: Number(s.yearIndex || s.year_index || 1),
+      semesterIndex: Number(s.semesterIndex || s.semester_index || 1),
+      distributions: (s.distributions || []).map((d: any) => ({
+        id: crypto.randomUUID(),
+        name: d.name,
+        maxMarks: Number(d.maxMarks || d.max_marks || 0),
+        achievedMarks: null,
+        status: 'current' as const
+      })),
+      status: 'current' as const,
+      includeInGpa: s.includeInGpa !== false && s.include_in_gpa !== false
+    }));
+
+    const subjectIdMap = new Map<string, string>();
+    rawFilteredSubjects.forEach((s: any, idx: number) => {
+      if (s.id && clonedSubjects[idx]) {
+        subjectIdMap.set(s.id, clonedSubjects[idx].id);
+      }
     });
 
     const filteredFiles = selectAcademicDriveFiles(rawFiles || [], {
@@ -2097,7 +2123,7 @@ export const db = {
       semestersPerYear: parentDb.semestersPerYear,
       specializationStartYear: params.specializationStartYear,
       specializationStartSemester: params.specializationStartSemester
-    }, true);
+    }, true, () => crypto.randomUUID(), subjectIdMap);
 
     const specId = crypto.randomUUID();
     const defaultSpecYears: number[] = [];
@@ -2120,7 +2146,7 @@ export const db = {
       totalYears: parentDb.totalYears,
       semestersPerYear: parentDb.semestersPerYear,
       availableYears,
-      subjects: filteredSubjects,
+      subjects: clonedSubjects,
       driveFiles: filteredFiles,
       gradingScale: parentDb.gradingScale || [],
       isVisible: true,

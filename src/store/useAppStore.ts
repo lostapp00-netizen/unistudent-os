@@ -523,10 +523,30 @@ export const useAppStore = create<AppState>((set, get) => ({
     checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'add_file', `رفع ملف إلى الدرايف: ${file.name}`, { ...file, parentName });
   },
   updateFile: (id, updatedFields) => {
-    const { userId } = get();
+    const { userId, userEmail, settings, files } = get();
     if (!userId) return;
+    const oldFile = files.find(f => f.id === id);
     set((state) => ({ files: state.files.map(f => f.id === id ? { ...f, ...updatedFields } : f) }));
     db.updateDriveFile(userId, id, updatedFields);
+
+    if (oldFile) {
+      const mergedFile = { ...oldFile, ...updatedFields };
+      const parentName = mergedFile.parentId
+        ? (files.find(f => f.id === mergedFile.parentId)?.name || '')
+        : '';
+      const subjects = get().subjects || [];
+      const subName = mergedFile.subjectId ? subjects.find(s => s.id === mergedFile.subjectId)?.name : '';
+      const itemKind = mergedFile.type === 'folder' ? 'مجلد' : 'ملف';
+      checkAndNotifySourceUpdate(
+        userId,
+        userEmail,
+        settings.name,
+        'update_file',
+        `تعديل ${itemKind}: ${mergedFile.name}`,
+        { ...mergedFile, parentName, subjectName: subName },
+        updatedFields
+      );
+    }
   },
   deleteFile: (id) => {
     const { userId, files, userEmail, settings } = get();
@@ -1095,6 +1115,28 @@ export const useAppStore = create<AppState>((set, get) => ({
             const newId = uuidv4();
             idMap.set(file.id, newId);
 
+            // Map template subject ID to corresponding local restored subject ID
+            let mappedSubjectId: string | undefined = undefined;
+            if (file.subjectId) {
+              const currentSubs = get().subjects || [];
+              const matchingSub = currentSubs.find(s =>
+                s.universityTemplateId === file.subjectId ||
+                s.id === file.subjectId
+              ) || currentSubs.find(s => {
+                const allTemplateSubs = (mainCollegeDb.subjects || []).concat(specDb?.subjects || []);
+                const templateSub = allTemplateSubs.find(ts => ts.id === file.subjectId);
+                if (templateSub) {
+                  return normalizeSubjectName(s.name) === normalizeSubjectName(templateSub.name) &&
+                         Number(s.yearIndex || 1) === Number(templateSub.yearIndex || 1) &&
+                         Number(s.semesterIndex || 1) === Number(templateSub.semesterIndex || 1);
+                }
+                return false;
+              });
+              if (matchingSub) {
+                mappedSubjectId = matchingSub.id;
+              }
+            }
+
             const cloned: DriveFile = {
               id: newId,
               universityTemplateId: file.id,
@@ -1102,11 +1144,12 @@ export const useAppStore = create<AppState>((set, get) => ({
               size: file.size,
               type: file.type,
               parentId: newParentId,
-              createdAt: new Date().toISOString(),
+              createdAt: file.createdAt || new Date().toISOString(),
               url: file.url,
               b2FileId: file.b2FileId,
               yearIndex: file.yearIndex,
-              semesterIndex: file.semesterIndex
+              semesterIndex: file.semesterIndex,
+              subjectId: mappedSubjectId || file.subjectId
             };
             clonedFiles.push(cloned);
             currentDriveSnapshot.push(cloned);
@@ -1970,9 +2013,18 @@ export async function checkAndNotifySourceUpdate(
     } else if (type === 'delete_subject' && data?.name) {
       finalDescription = `حذف مادة: ${data.name} (سنة ${data.yearIndex || 1} - ترم ${data.semesterIndex || 1}) • ${cohortName ? `${cohortName} • ` : ''}${scopeLabel}`;
     } else if (type === 'add_file' && data?.name) {
-      finalDescription = `رفع ملف للدرايف: ${data.name} • ${cohortName ? `${cohortName} • ` : ''}${scopeLabel}`;
+      const itemKind = data.type === 'folder' ? 'مجلد' : 'ملف';
+      const yearTerm = (data.yearIndex && data.semesterIndex) ? ` (سنة ${data.yearIndex} - ترم ${data.semesterIndex})` : '';
+      const subInfo = data.subjectName ? ` • مادة: ${data.subjectName}` : '';
+      finalDescription = `إضافة ${itemKind} بالدرايف: ${data.name}${yearTerm}${subInfo} • ${cohortName ? `${cohortName} • ` : ''}${scopeLabel}`;
+    } else if (type === 'update_file' && data?.name) {
+      const itemKind = data.type === 'folder' ? 'مجلد' : 'ملف';
+      const yearTerm = (data.yearIndex && data.semesterIndex) ? ` (سنة ${data.yearIndex} - ترم ${data.semesterIndex})` : '';
+      const subInfo = data.subjectName ? ` • مادة: ${data.subjectName}` : '';
+      finalDescription = `تعديل ${itemKind} بالدرايف: ${data.name}${yearTerm}${subInfo} • ${cohortName ? `${cohortName} • ` : ''}${scopeLabel}`;
     } else if (type === 'delete_file' && data?.name) {
-      finalDescription = `حذف ملف من الدرايف: ${data.name} • ${cohortName ? `${cohortName} • ` : ''}${scopeLabel}`;
+      const itemKind = data.type === 'folder' ? 'مجلد' : 'ملف';
+      finalDescription = `حذف ${itemKind} من الدرايف: ${data.name} • ${cohortName ? `${cohortName} • ` : ''}${scopeLabel}`;
     } else if (type === 'update_grading_scale') {
       const rulesCount = (data?.gradingScale && Array.isArray(data.gradingScale)) ? data.gradingScale.length : 0;
       finalDescription = `تعديل جدول التقديرات (${rulesCount} تقدير) • ${cohortName ? `${cohortName} • ` : ''}${scopeLabel}`;

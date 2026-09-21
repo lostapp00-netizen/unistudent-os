@@ -326,13 +326,15 @@ export function AdminUniversitiesTab({
     parentId: string | null;
     yearIndex: string;
     semesterIndex: string;
+    subjectId: string;
   }>({
     name: '',
     type: 'folder',
     url: '',
     parentId: null,
     yearIndex: '1',
-    semesterIndex: '1'
+    semesterIndex: '1',
+    subjectId: ''
   });
   const [driveFileToUpload, setDriveFileToUpload] = useState<File | null>(null);
   const [isUploadingDriveFile, setIsUploadingDriveFile] = useState(false);
@@ -1008,12 +1010,19 @@ export function AdminUniversitiesTab({
         includeInGpa: s.includeInGpa !== false && s.include_in_gpa !== false
       }));
 
+      const subjectIdMap = new Map<string, string>();
+      foundationSubjs.forEach((s: any, idx: number) => {
+        if (s.id && clonedSubjects[idx]) {
+          subjectIdMap.set(s.id, clonedSubjects[idx].id);
+        }
+      });
+
       const clonedDrive = selectAcademicDriveFiles(studentFiles, {
         totalYears: structureSource?.totalYears || selectedCohortSource.totalYears || 4,
         semestersPerYear: structureSource?.semestersPerYear || selectedCohortSource.semestersPerYear || 2,
         specializationStartYear: startYear,
         specializationStartSemester: startSem
-      }, false, uuidv4);
+      }, false, uuidv4, subjectIdMap);
 
       const newDb: UniversityDatabase = {
         id: uuidv4(),
@@ -1267,11 +1276,18 @@ export function AdminUniversitiesTab({
         includeInGpa: s.includeInGpa !== false && s.include_in_gpa !== false
       }));
 
+      const subjectIdMap = new Map<string, string>();
+      foundationSubjs.forEach((s: any, idx: number) => {
+        if (s.id && clonedSubjects[idx]) {
+          subjectIdMap.set(s.id, clonedSubjects[idx].id);
+        }
+      });
+
       const clonedDrive = selectAcademicDriveFiles(studentFiles, {
         ...selectedCollegeDb,
         totalYears: newStudent.totalYears || selectedCollegeDb.totalYears || 4,
         semestersPerYear: newStudent.semestersPerYear || selectedCollegeDb.semestersPerYear || 2
-      }, Boolean(selectedCollegeDb.isSpecialization), uuidv4);
+      }, Boolean(selectedCollegeDb.isSpecialization), uuidv4, subjectIdMap);
 
       const cleanOverwriteData: Partial<UniversityDatabase> = {
         sourceUserId: newStudent.id,
@@ -1607,8 +1623,8 @@ export function AdminUniversitiesTab({
     }
   };
 
-  // Opens the drive modal pre-filled with the parent folder's year/semester —
-  // anything created inside a folder inherits its academic phase by default.
+  // Opens the drive modal pre-filled with the parent folder's year/semester/subject —
+  // anything created inside a folder inherits its academic phase and subject by default.
   const openDriveModalFor = (type: 'folder' | 'file') => {
     setEditingDriveItem(null);
     setDriveForm({
@@ -1617,7 +1633,8 @@ export function AdminUniversitiesTab({
       url: '',
       parentId: currentDriveFolderId,
       yearIndex: String(Number(currentFolderObject?.yearIndex) || 1),
-      semesterIndex: String(Number(currentFolderObject?.semesterIndex) || 1)
+      semesterIndex: String(Number(currentFolderObject?.semesterIndex) || 1),
+      subjectId: currentFolderObject?.subjectId || ''
     });
     setIsDriveModalOpen(true);
   };
@@ -1631,7 +1648,8 @@ export function AdminUniversitiesTab({
       url: file.url || '',
       parentId: file.parentId,
       yearIndex: String(Number(file.yearIndex) || 1),
-      semesterIndex: String(Number(file.semesterIndex) || 1)
+      semesterIndex: String(Number(file.semesterIndex) || 1),
+      subjectId: file.subjectId || ''
     });
     setIsDriveModalOpen(true);
   };
@@ -1649,14 +1667,15 @@ export function AdminUniversitiesTab({
               ...f,
               name: driveForm.name.trim(),
               yearIndex: Number(driveForm.yearIndex) || 1,
-              semesterIndex: Number(driveForm.semesterIndex) || 1
+              semesterIndex: Number(driveForm.semesterIndex) || 1,
+              subjectId: driveForm.subjectId || undefined
             }
           : f
       );
       await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
       setIsDriveModalOpen(false);
       setEditingDriveItem(null);
-      setDriveForm({ name: '', type: 'folder', url: '', parentId: null, yearIndex: '1', semesterIndex: '1' });
+      setDriveForm({ name: '', type: 'folder', url: '', parentId: null, yearIndex: '1', semesterIndex: '1', subjectId: '' });
       await loadUniData();
     } catch (e) {
       console.error('Error updating drive item:', e);
@@ -1682,12 +1701,13 @@ export function AdminUniversitiesTab({
           createdAt: new Date().toISOString().split('T')[0],
           url: '',
           yearIndex: Number(driveForm.yearIndex) || 1,
-          semesterIndex: Number(driveForm.semesterIndex) || 1
+          semesterIndex: Number(driveForm.semesterIndex) || 1,
+          subjectId: driveForm.subjectId || undefined
         };
         const updatedFiles = [...(selectedCollegeDb.driveFiles || []), newFolder];
         await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
         setIsDriveModalOpen(false);
-        setDriveForm({ name: '', type: 'folder', url: '', parentId: null, yearIndex: '1', semesterIndex: '1' });
+        setDriveForm({ name: '', type: 'folder', url: '', parentId: null, yearIndex: '1', semesterIndex: '1', subjectId: '' });
         setDriveFileToUpload(null);
         await loadUniData();
       } catch (e) {
@@ -1740,13 +1760,14 @@ export function AdminUniversitiesTab({
         url: publicUrl,
         b2FileId: b2Path,
         yearIndex: Number(driveForm.yearIndex) || 1,
-        semesterIndex: Number(driveForm.semesterIndex) || 1
+        semesterIndex: Number(driveForm.semesterIndex) || 1,
+        subjectId: driveForm.subjectId || undefined
       };
 
       const updatedFiles = [...(selectedCollegeDb.driveFiles || []), newFile];
       await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
       setIsDriveModalOpen(false);
-      setDriveForm({ name: '', type: 'folder', url: '', parentId: null, yearIndex: '1', semesterIndex: '1' });
+      setDriveForm({ name: '', type: 'folder', url: '', parentId: null, yearIndex: '1', semesterIndex: '1', subjectId: '' });
       setDriveFileToUpload(null);
       await loadUniData();
     } catch (e) {
@@ -1959,7 +1980,8 @@ export function AdminUniversitiesTab({
               url: file.url || '',
               b2FileId: file.b2FileId || file.b2_file_id,
               yearIndex: file.yearIndex !== undefined ? Number(file.yearIndex) : undefined,
-              semesterIndex: file.semesterIndex !== undefined ? Number(file.semesterIndex) : undefined
+              semesterIndex: file.semesterIndex !== undefined ? Number(file.semesterIndex) : undefined,
+              subjectId: file.subjectId || file.subject_id || undefined
             };
             // Parent resolution: try the original parentId first, then fall
             // back to the source folder NAME (ids differ between the student's
@@ -1982,11 +2004,16 @@ export function AdminUniversitiesTab({
             return {
               ...targetDb,
               driveFiles: (targetDb.driveFiles || []).map(file =>
-                file.id === updatedFile.id
+                (file.id === updatedFile.id || (file.universityTemplateId && file.universityTemplateId === updatedFile.id) || file.name === updatedFile.name)
                   ? {
                       ...file,
                       ...updatedFile,
-                      parentId: updatedFile.parentId !== undefined ? updatedFile.parentId : file.parentId
+                      name: (updatedFile.name || file.name || '').trim(),
+                      parentId: updatedFile.parentId !== undefined ? updatedFile.parentId : file.parentId,
+                      subjectId: updatedFile.subjectId !== undefined ? updatedFile.subjectId : file.subjectId,
+                      yearIndex: updatedFile.yearIndex !== undefined ? Number(updatedFile.yearIndex) : file.yearIndex,
+                      semesterIndex: updatedFile.semesterIndex !== undefined ? Number(updatedFile.semesterIndex) : file.semesterIndex,
+                      createdAt: updatedFile.createdAt || file.createdAt
                     }
                   : file
               )
@@ -2037,6 +2064,21 @@ export function AdminUniversitiesTab({
               return {
                 ...d,
                 subjects: (d.subjects || []).filter(s => s.id !== update.data.id && s.name !== update.data.name)
+              };
+            } else if (update.type === 'add_file' && update.data) {
+              const file = update.data;
+              const filteredFiles = (d.driveFiles || []).filter(f => f.id !== file.id && f.name !== file.name);
+              return { ...d, driveFiles: [...filteredFiles, file] };
+            } else if (update.type === 'update_file' && update.data) {
+              const upd = update.data;
+              return {
+                ...d,
+                driveFiles: (d.driveFiles || []).map(f => (f.id === upd.id || f.name === upd.name) ? { ...f, ...upd } : f)
+              };
+            } else if (update.type === 'delete_file' && update.data) {
+              return {
+                ...d,
+                driveFiles: (d.driveFiles || []).filter(f => f.id !== update.data.id && f.name !== update.data.name)
               };
             } else if (update.type === 'update_grading_scale' && update.data) {
               const newScale = update.data.gradingScale || update.data;
@@ -2452,6 +2494,12 @@ export function AdminUniversitiesTab({
                               {update.data && (
                                 <div className="space-y-2 pt-0.5">
                                   <div className="flex flex-wrap items-center gap-1.5">
+                                    {update.data.type && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
+                                        {update.data.type === 'folder' ? <Folder size={11} className="text-amber-500" /> : <FileText size={11} className="text-blue-500" />}
+                                        <span>{update.data.type === 'folder' ? (isAr ? 'مجلد' : 'Folder') : (isAr ? 'ملف' : 'File')}</span>
+                                      </span>
+                                    )}
                                     {update.data.yearIndex !== undefined && (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-black">
                                         <Calendar size={11} />
@@ -2464,6 +2512,12 @@ export function AdminUniversitiesTab({
                                         <span>{isAr ? `ترم ${update.data.semesterIndex}` : `Term ${update.data.semesterIndex}`}</span>
                                       </span>
                                     )}
+                                    {(update.data.subjectName || update.data.subjectId) && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-black border border-indigo-200/50 dark:border-indigo-800/40">
+                                        <BookOpen size={11} />
+                                        <span>{update.data.subjectName || (group.collegeDb?.subjects || []).find(s => s.id === update.data.subjectId)?.name || (isAr ? 'مادة مرتبطة' : 'Linked Subject')}</span>
+                                      </span>
+                                    )}
                                     {update.data.creditHours !== undefined && (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
                                         <Clock size={11} />
@@ -2474,6 +2528,12 @@ export function AdminUniversitiesTab({
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold">
                                         <Award size={11} />
                                         <span>{update.data.totalMarks} {isAr ? 'درجة' : 'marks'}</span>
+                                      </span>
+                                    )}
+                                    {update.data.createdAt && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-400 text-[10px]">
+                                        <Clock size={10} />
+                                        <span>{update.data.createdAt}</span>
                                       </span>
                                     )}
                                   </div>
@@ -3914,9 +3974,17 @@ export function AdminUniversitiesTab({
                                 <p className="font-bold text-sm text-zinc-900 dark:text-white whitespace-normal break-words line-clamp-3 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                                   {file.name}
                                 </p>
-                                <p className="text-xs text-zinc-400 mt-0.5">
-                                  {file.type === 'folder' ? (isAr ? 'مجلد درايف' : 'Folder') : `${formatSize(file.size)} • ${file.createdAt}`}
-                                </p>
+                                <div className="flex flex-wrap items-center gap-2 mt-1">
+                                  <span className="text-xs text-zinc-400">
+                                    {file.type === 'folder' ? (isAr ? 'مجلد درايف' : 'Folder') : `${formatSize(file.size)} • ${file.createdAt}`}
+                                  </span>
+                                  {file.subjectId && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold border border-indigo-200/50 dark:border-indigo-800/40">
+                                      <BookOpen size={10} />
+                                      <span>{(selectedCollegeDb.subjects || []).find(s => s.id === file.subjectId)?.name || (isAr ? 'مادة مرتبطة' : 'Linked Subject')}</span>
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
 
@@ -5576,6 +5644,48 @@ export function AdminUniversitiesTab({
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Linked Subject Selection */}
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <BookOpen size={13} className="text-indigo-600 dark:text-indigo-400" />
+                    <span>{isAr ? 'المادة الدراسية المرتبطة (اختياري)' : 'Linked Subject (Optional)'}</span>
+                  </span>
+                  {driveForm.subjectId && (
+                    <button
+                      type="button"
+                      onClick={() => setDriveForm(prev => ({ ...prev, subjectId: '' }))}
+                      className="text-[11px] text-red-500 hover:underline font-normal cursor-pointer"
+                    >
+                      {isAr ? 'إلغاء الربط' : 'Unlink'}
+                    </button>
+                  )}
+                </label>
+                <select
+                  value={driveForm.subjectId}
+                  onChange={(e) => {
+                    const subId = e.target.value;
+                    const matchedSub = (selectedCollegeDb.subjects || []).find(s => s.id === subId);
+                    setDriveForm(prev => ({
+                      ...prev,
+                      subjectId: subId,
+                      ...(matchedSub ? {
+                        yearIndex: String(matchedSub.yearIndex),
+                        semesterIndex: String(matchedSub.semesterIndex)
+                      } : {})
+                    }));
+                  }}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-bold text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value="">{isAr ? 'عام (غير مرتبط بمادة محددة)' : 'General (Not linked to specific subject)'}</option>
+                  {(selectedCollegeDb.subjects || []).map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.code || (isAr ? `سنة ${s.yearIndex} ترم ${s.semesterIndex}` : `Y${s.yearIndex} T${s.semesterIndex}`)})
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 

@@ -6,7 +6,8 @@ export function selectAcademicDriveFiles(
   files: Array<DriveFile | Record<string, any>>,
   structure: { specializationStartYear?: number; specializationStartSemester?: number; totalYears?: number; semestersPerYear?: number },
   isSpecialization: boolean,
-  createId: () => string = () => crypto.randomUUID()
+  createId: () => string = () => crypto.randomUUID(),
+  subjectIdMap?: Map<string, string>
 ): DriveFile[] {
   const normalized: DriveFile[] = files.filter(Boolean).map(f => ({
     id: String(f.id),
@@ -18,7 +19,8 @@ export function selectAcademicDriveFiles(
     url: f.url || '',
     b2FileId: f.b2FileId || ('b2_file_id' in f ? f.b2_file_id : undefined),
     yearIndex: Number(f.yearIndex ?? ('year_index' in f ? f.year_index : undefined)),
-    semesterIndex: Number(f.semesterIndex ?? ('semester_index' in f ? f.semester_index : undefined))
+    semesterIndex: Number(f.semesterIndex ?? ('semester_index' in f ? f.semester_index : undefined)),
+    subjectId: f.subjectId || ('subject_id' in f ? f.subject_id : undefined)
   }));
   const startYear = Number(structure.specializationStartYear || 2);
   const startSemester = Number(structure.specializationStartSemester || 1);
@@ -56,12 +58,14 @@ export function selectAcademicDriveFiles(
       visited.add(ancestorId);
       ancestorId = included.get(ancestorId)?.parentId || null;
     }
+    const mappedSubjectId = f.subjectId ? (subjectIdMap?.get(f.subjectId) || f.subjectId) : undefined;
     return {
       ...f,
       id: idMap.get(f.id)!,
       parentId: parentId ? idMap.get(parentId)! : null,
       yearIndex: Number.isInteger(f.yearIndex) && f.yearIndex > 0 ? f.yearIndex : undefined,
-      semesterIndex: Number.isInteger(f.semesterIndex) && f.semesterIndex > 0 ? f.semesterIndex : undefined
+      semesterIndex: Number.isInteger(f.semesterIndex) && f.semesterIndex > 0 ? f.semesterIndex : undefined,
+      subjectId: mappedSubjectId
     };
   });
 }
