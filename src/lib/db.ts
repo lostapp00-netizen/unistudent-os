@@ -1931,9 +1931,26 @@ export const db = {
     totalYears?: number;
     semestersPerYear?: number;
   }>> {
-    const norm = (str?: string) => normalizeSubjectName(str);
-    const targetUni = norm(universityName);
-    const targetCol = norm(collegeName);
+    const cleanUni = (str?: string) => {
+      if (!str) return '';
+      return normalizeSubjectName(str)
+        .replace(/^(جامعة|جامعه)\s+/, '')
+        .replace(/\s+(university|univ)$/i, '')
+        .replace(/^university\s+of\s+/i, '')
+        .trim();
+    };
+
+    const cleanCol = (str?: string) => {
+      if (!str) return '';
+      return normalizeSubjectName(str)
+        .replace(/^(كلية|كليه|معهد)\s+/, '')
+        .replace(/\s+(faculty|college|institute)$/i, '')
+        .replace(/^(faculty|college|institute)\s+of\s+/i, '')
+        .trim();
+    };
+
+    const targetUni = cleanUni(universityName);
+    const targetCol = cleanCol(collegeName);
 
     const settingsMap = new Map<string, any>();
 
@@ -1949,7 +1966,10 @@ export const db = {
             university: st.university,
             college: st.college,
             specialization: st.specialization,
+            universityDatabaseId: st.universityDatabaseId || st.university_database_id || '',
+            specializationDatabaseId: st.specializationDatabaseId || st.specialization_database_id || '',
             subjects: st.subjects || st.raw?.subjects || [],
+            files: st.files || st.raw?.files || [],
             gradingScale: st.gradingScale || st.raw?.settings?.grading_scale || [],
             totalYears: st.totalYears,
             semestersPerYear: st.semestersPerYear
@@ -1964,6 +1984,9 @@ export const db = {
         dbSettings.forEach(s => {
           if (s.user_id) {
             const existing = settingsMap.get(s.user_id) || {};
+            const specMeta = Array.isArray(s.grading_scale)
+              ? s.grading_scale.find((g: any) => g && g.id === '__student_spec_meta__')
+              : null;
             settingsMap.set(s.user_id, {
               ...existing,
               ...s,
@@ -1971,8 +1994,11 @@ export const db = {
               email: s.email || existing.email || '',
               university: s.university || existing.university || '',
               college: s.college || existing.college || '',
-              specialization: s.specialization || existing.specialization || '',
-              subjects: (existing.subjects && existing.subjects.length > 0) ? existing.subjects : []
+              specialization: s.specialization || existing.specialization || specMeta?.specialization || '',
+              universityDatabaseId: s.university_database_id || existing.universityDatabaseId || specMeta?.universityDatabaseId || '',
+              specializationDatabaseId: s.specialization_database_id || existing.specializationDatabaseId || specMeta?.specializationDatabaseId || '',
+              subjects: (existing.subjects && existing.subjects.length > 0) ? existing.subjects : [],
+              files: (existing.files && existing.files.length > 0) ? existing.files : []
             });
           }
         });
@@ -1993,7 +2019,9 @@ export const db = {
               user_id: uid,
               university: st.university || existing.university || '',
               college: st.college || existing.college || '',
-              specialization: st.specialization || existing.specialization || ''
+              specialization: st.specialization || existing.specialization || '',
+              universityDatabaseId: st.universityDatabaseId || existing.universityDatabaseId || '',
+              specializationDatabaseId: st.specializationDatabaseId || existing.specializationDatabaseId || ''
             });
           }
         } catch {}
@@ -2002,11 +2030,13 @@ export const db = {
 
     const matchingStudents: any[] = [];
     for (const [uid, s] of settingsMap.entries()) {
-      const studentUni = norm(s.university);
-      const studentCol = norm(s.college);
+      const studentUni = cleanUni(s.university);
+      const studentCol = cleanCol(s.college);
 
-      const uniMatch = !targetUni || (studentUni && (studentUni === targetUni || studentUni.includes(targetUni) || targetUni.includes(studentUni)));
-      const colMatch = !targetCol || (studentCol && (studentCol === targetCol || studentCol.includes(targetCol) || targetCol.includes(studentCol)));
+      const uniMatch = !targetUni || !studentUni || (studentUni === targetUni || studentUni.includes(targetUni) || targetUni.includes(studentUni));
+      const colMatch = !targetCol || !studentCol || (studentCol === targetCol || studentCol.includes(targetCol) || targetCol.includes(studentCol));
+      
+      // If student is not matched by name, check if they have any database ID linked
       if (!uniMatch || !colMatch) continue;
 
       let studentSubjects: Subject[] = Array.isArray(s.subjects) && s.subjects.length > 0 ? s.subjects : [];
@@ -2016,10 +2046,12 @@ export const db = {
         } catch {}
       }
 
-      let studentFiles: DriveFile[] = [];
-      try {
-        studentFiles = await this.getDriveFiles(uid);
-      } catch {}
+      let studentFiles: DriveFile[] = Array.isArray(s.files) && s.files.length > 0 ? s.files : [];
+      if (studentFiles.length === 0) {
+        try {
+          studentFiles = await this.getDriveFiles(uid);
+        } catch {}
+      }
 
       // Strip internal meta rows from the student's grading scale
       const rawScale = Array.isArray(s.grading_scale) ? s.grading_scale : (Array.isArray(s.gradingScale) ? s.gradingScale : []);
@@ -2869,98 +2901,142 @@ export const db = {
       console.warn('Direct Supabase query warning:', e);
     }
 
-    // 2. If RLS filtered out rows or returned empty, query through Edge Function (which has service_role permissions)
-    if (rawSettings.length === 0 || rawSubjects.length === 0) {
-      try {
-        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('send-database-backup', {
-          body: { targetEmail: 'admin@gmail.com' }
-        });
+    // 2. Authoritative Service-Role Data Fetch via Edge Function
+    // (Bypasses client-side RLS and retrieves all registered auth.users and all platform rows)
+    try {
+      const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('send-database-backup', {
+        body: { targetEmail: 'admin@gmail.com' }
+      });
 
-        if (!edgeErr && edgeData?.backup?.data) {
-          const bData = edgeData.backup.data;
-          if (bData.settings && bData.settings.length > 0) rawSettings = bData.settings;
-          if (bData.subjects && bData.subjects.length > 0) rawSubjects = bData.subjects;
-          if (bData.tasks && bData.tasks.length > 0) rawTasks = bData.tasks;
-          if (bData.notes && bData.notes.length > 0) rawNotes = bData.notes;
-          if (bData.appointments && bData.appointments.length > 0) rawAppointments = bData.appointments;
-          if (bData.schedule_items && bData.schedule_items.length > 0) rawSchedule = bData.schedule_items;
-          if (bData.groups && bData.groups.length > 0) rawGroups = bData.groups;
-          if (bData.drive_files && bData.drive_files.length > 0) rawFiles = bData.drive_files;
-          if (bData.suggestions && bData.suggestions.length > 0) {
-            feedbacks = bData.suggestions.map(mapFeedbackFromRow);
-          }
-
-          if (bData.auth_users && Array.isArray(bData.auth_users)) {
-            bData.auth_users.forEach((au: any) => {
-              if (au.id) {
-                const existing = rawSettings.find(s => s.user_id === au.id);
-                if (existing) {
-                  if (!existing.email || existing.email === '') existing.email = au.email;
-                } else {
-                  rawSettings.push({
-                    user_id: au.id,
-                    name: au.email ? au.email.split('@')[0] : 'طالب مسجل',
-                    email: au.email || '',
-                    university: '',
-                    college: '',
-                    grading_scale: [],
-                    semesters: []
-                  });
-                }
-              }
-            });
-          }
+      if (!edgeErr && edgeData?.backup?.data) {
+        const bData = edgeData.backup.data;
+        
+        // Merge Settings
+        if (Array.isArray(bData.settings) && bData.settings.length > 0) {
+          bData.settings.forEach((bs: any) => {
+            if (!bs.user_id) return;
+            const existing = rawSettings.find(s => s.user_id === bs.user_id);
+            if (existing) {
+              if (!existing.name && bs.name) existing.name = bs.name;
+              if (!existing.email && bs.email) existing.email = bs.email;
+              if (!existing.university && bs.university) existing.university = bs.university;
+              if (!existing.college && bs.college) existing.college = bs.college;
+              if (!existing.specialization && bs.specialization) existing.specialization = bs.specialization;
+              if (!existing.specialization_start_year && bs.specialization_start_year) existing.specialization_start_year = bs.specialization_start_year;
+              if (!existing.specialization_start_semester && bs.specialization_start_semester) existing.specialization_start_semester = bs.specialization_start_semester;
+              if (!existing.specialization_database_id && bs.specialization_database_id) existing.specialization_database_id = bs.specialization_database_id;
+              if (!existing.university_database_id && bs.university_database_id) existing.university_database_id = bs.university_database_id;
+              if ((!existing.grading_scale || existing.grading_scale.length === 0) && bs.grading_scale) existing.grading_scale = bs.grading_scale;
+              if ((!existing.semesters || existing.semesters.length === 0) && bs.semesters) existing.semesters = bs.semesters;
+            } else {
+              rawSettings.push({ ...bs });
+            }
+          });
         }
-      } catch (err) {
-        console.warn('Edge function service_role fetch fallback error:', err);
+
+        // Merge Subjects
+        if (Array.isArray(bData.subjects) && bData.subjects.length > 0) {
+          bData.subjects.forEach((bs: any) => {
+            if (!bs.id) return;
+            if (!rawSubjects.some(s => s.id === bs.id)) {
+              rawSubjects.push(bs);
+            }
+          });
+        }
+
+        // Merge Tasks
+        if (Array.isArray(bData.tasks) && bData.tasks.length > 0) {
+          bData.tasks.forEach((bt: any) => {
+            if (!bt.id) return;
+            if (!rawTasks.some(t => t.id === bt.id)) {
+              rawTasks.push(bt);
+            }
+          });
+        }
+
+        // Merge Notes
+        if (Array.isArray(bData.notes) && bData.notes.length > 0) {
+          bData.notes.forEach((bn: any) => {
+            if (!bn.id) return;
+            if (!rawNotes.some(n => n.id === bn.id)) {
+              rawNotes.push(bn);
+            }
+          });
+        }
+
+        // Merge Appointments
+        if (Array.isArray(bData.appointments) && bData.appointments.length > 0) {
+          bData.appointments.forEach((ba: any) => {
+            if (!ba.id) return;
+            if (!rawAppointments.some(a => a.id === ba.id)) {
+              rawAppointments.push(ba);
+            }
+          });
+        }
+
+        // Merge Schedule Items
+        if (Array.isArray(bData.schedule_items) && bData.schedule_items.length > 0) {
+          bData.schedule_items.forEach((bsc: any) => {
+            if (!bsc.id) return;
+            if (!rawSchedule.some(sc => sc.id === bsc.id)) {
+              rawSchedule.push(bsc);
+            }
+          });
+        }
+
+        // Merge Drive Files
+        if (Array.isArray(bData.drive_files) && bData.drive_files.length > 0) {
+          bData.drive_files.forEach((bf: any) => {
+            if (!bf.id) return;
+            if (!rawFiles.some(f => f.id === bf.id)) {
+              rawFiles.push(bf);
+            }
+          });
+        }
+
+        // Merge Suggestions
+        if (Array.isArray(bData.suggestions) && bData.suggestions.length > 0) {
+          const edgeFeedbacks = bData.suggestions.map(mapFeedbackFromRow);
+          const fbMap = new Map<string, FeedbackSuggestion>();
+          feedbacks.forEach(f => fbMap.set(f.id, f));
+          edgeFeedbacks.forEach((f: any) => {
+            if (!fbMap.has(f.id)) fbMap.set(f.id, f);
+          });
+          feedbacks = Array.from(fbMap.values());
+        }
+
+        // Merge Auth Users
+        if (Array.isArray(bData.auth_users) && bData.auth_users.length > 0) {
+          bData.auth_users.forEach((au: any) => {
+            if (!au.id) return;
+            const existing = rawSettings.find(s => s.user_id === au.id);
+            if (existing) {
+              if (!existing.email || existing.email === '') existing.email = au.email || existing.email;
+              if ((!existing.name || existing.name === '') && au.email) existing.name = au.email.split('@')[0];
+            } else {
+              rawSettings.push({
+                user_id: au.id,
+                name: au.email ? au.email.split('@')[0] : 'طالب مسجل',
+                email: au.email || '',
+                university: '',
+                college: '',
+                specialization: '',
+                specialization_start_year: 2,
+                specialization_start_semester: 1,
+                specialization_database_id: '',
+                university_database_id: '',
+                grading_scale: [],
+                semesters: []
+              });
+            }
+          });
+        }
       }
+    } catch (err) {
+      console.warn('Edge function service_role fetch fallback error:', err);
     }
 
-    // 3. Email enrichment: any student/settings row without an email gets its
-    // REAL email from auth.users (via the service-role edge function).
-    // Registration always requires an email, so a "no email" student in the
-    // admin panel is always a display gap — never a real ghost account.
-    const needsEmailEnrichment =
-      rawSettings.some(s => !s.email) ||
-      (rawSettings.length === 0 && (rawSubjects.length > 0 || rawFiles.length > 0));
-    if (needsEmailEnrichment) {
-      try {
-        const { data: emailEdgeData, error: emailEdgeErr } = await supabase.functions.invoke('send-database-backup', {
-          body: { targetEmail: 'admin@gmail.com' }
-        });
-        if (!emailEdgeErr && emailEdgeData?.backup?.data) {
-          const authUsers = emailEdgeData.backup.data.auth_users;
-          if (Array.isArray(authUsers)) {
-            authUsers.forEach((au: any) => {
-              if (!au.id) return;
-              const existing = rawSettings.find(s => s.user_id === au.id);
-              if (existing) {
-                if (!existing.email || existing.email === '') existing.email = au.email || existing.email;
-                if ((!existing.name || existing.name === '') && au.email) existing.name = au.email.split('@')[0];
-              } else {
-                rawSettings.push({
-                  user_id: au.id,
-                  name: au.email ? au.email.split('@')[0] : 'طالب مسجل',
-                  email: au.email || '',
-                  university: '',
-                  college: '',
-                  grading_scale: [],
-                  semesters: []
-                });
-              }
-            });
-          }
-
-          if (feedbacks.length === 0 && Array.isArray(emailEdgeData.backup.data.suggestions) && emailEdgeData.backup.data.suggestions.length > 0) {
-            feedbacks = emailEdgeData.backup.data.suggestions.map(mapFeedbackFromRow);
-          }
-        }
-      } catch (err) {
-        console.warn('Email enrichment via edge function failed:', err);
-      }
-    }
-
-    // Decode student specialization metadata from grading_scale if present
+    // 3. Decode student specialization & database metadata from grading_scale if present
     rawSettings.forEach(s => {
       const specMeta = Array.isArray(s.grading_scale)
         ? s.grading_scale.find((g: any) => g && g.id === '__student_spec_meta__')
@@ -2969,7 +3045,12 @@ export const db = {
         if (!s.specialization && specMeta.specialization) s.specialization = specMeta.specialization;
         if (!s.specialization_start_year && specMeta.specializationStartYear) s.specialization_start_year = specMeta.specializationStartYear;
         if (!s.specialization_start_semester && specMeta.specializationStartSemester) s.specialization_start_semester = specMeta.specializationStartSemester;
-        if (!s.specialization_database_id && specMeta.specializationDatabaseId) s.specialization_database_id = specMeta.specializationDatabaseId;
+        if (!s.specialization_database_id && (specMeta.specializationDatabaseId || specMeta.specialization_database_id)) {
+          s.specialization_database_id = specMeta.specializationDatabaseId || specMeta.specialization_database_id;
+        }
+        if (!s.university_database_id && (specMeta.universityDatabaseId || specMeta.university_database_id)) {
+          s.university_database_id = specMeta.universityDatabaseId || specMeta.university_database_id;
+        }
       }
     });
 
@@ -3005,14 +3086,19 @@ export const db = {
                   specialization_start_year: u.specializationStartYear || 2,
                   specialization_start_semester: u.specializationStartSemester || 1,
                   specialization_database_id: u.specializationDatabaseId || '',
+                  university_database_id: u.universityDatabaseId || '',
                   grading_scale: u.gradingScale || [],
                   semesters: u.semesters || []
                 });
               } else {
+                if (!existing.email && u.email) existing.email = u.email;
+                if (!existing.university && u.university) existing.university = u.university;
+                if (!existing.college && u.college) existing.college = u.college;
                 if (!existing.specialization && u.specialization) existing.specialization = u.specialization;
                 if (!existing.specialization_start_year && u.specializationStartYear) existing.specialization_start_year = u.specializationStartYear;
                 if (!existing.specialization_start_semester && u.specializationStartSemester) existing.specialization_start_semester = u.specializationStartSemester;
                 if (!existing.specialization_database_id && u.specializationDatabaseId) existing.specialization_database_id = u.specializationDatabaseId;
+                if (!existing.university_database_id && u.universityDatabaseId) existing.university_database_id = u.universityDatabaseId;
               }
             }
           });
@@ -3041,15 +3127,19 @@ export const db = {
                   specialization_start_year: st.specializationStartYear || 2,
                   specialization_start_semester: st.specializationStartSemester || 1,
                   specialization_database_id: st.specializationDatabaseId || '',
+                  university_database_id: st.universityDatabaseId || '',
                   grading_scale: st.gradingScale || [],
                   semesters: st.semesters || []
                 });
               } else {
                 if (!existing.email && (savedEmail || st.email)) existing.email = savedEmail || st.email;
+                if (!existing.university && st.university) existing.university = st.university;
+                if (!existing.college && st.college) existing.college = st.college;
                 if (!existing.specialization && st.specialization) existing.specialization = st.specialization;
                 if (!existing.specialization_start_year && st.specializationStartYear) existing.specialization_start_year = st.specializationStartYear;
                 if (!existing.specialization_start_semester && st.specializationStartSemester) existing.specialization_start_semester = st.specializationStartSemester;
                 if (!existing.specialization_database_id && st.specializationDatabaseId) existing.specialization_database_id = st.specializationDatabaseId;
+                if (!existing.university_database_id && st.universityDatabaseId) existing.university_database_id = st.universityDatabaseId;
               }
             } catch {}
           }
@@ -3085,6 +3175,11 @@ export const db = {
             email: curUser.email || '',
             university: '',
             college: '',
+            specialization: '',
+            specialization_start_year: 2,
+            specialization_start_semester: 1,
+            specialization_database_id: '',
+            university_database_id: '',
             grading_scale: [],
             semesters: []
           });
@@ -3092,7 +3187,7 @@ export const db = {
       }
     } catch {}
 
-    // 3. For all user IDs, merge cached subjects & files if missing from Supabase response
+    // 4. For all user IDs, merge cached subjects & files if missing from Supabase response
     userIds.forEach(uid => {
       try {
         const cachedSubjs = localStorage.getItem(`unistudent_subjects_${uid}`);
@@ -3146,7 +3241,7 @@ export const db = {
       } catch {}
     });
 
-    // 4. Merge any localStorage feedback/suggestions so nothing is missed
+    // 5. Merge any localStorage feedback/suggestions so nothing is missed
     try {
       const cachedAll = localStorage.getItem('unistudent_all_suggestions');
       if (cachedAll) {
@@ -3176,7 +3271,7 @@ export const db = {
       console.warn('LocalStorage feedback merge in getAdminAllData:', err);
     }
 
-    // 5. Enrich each feedback row with accurate student name and email
+    // 6. Enrich each feedback row with accurate student name and email
     feedbacks = feedbacks.map(fb => {
       const student = rawSettings.find(s => s.user_id === fb.userId);
       let resolvedEmail = fb.userEmail;

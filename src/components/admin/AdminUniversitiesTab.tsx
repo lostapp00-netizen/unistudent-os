@@ -514,13 +514,16 @@ export function AdminUniversitiesTab({
       map[key].totalSubjects += (dbItem.subjects?.length || 0);
       map[key].totalDriveFiles += (dbItem.driveFiles?.length || 0);
 
-      // Enrolled students in this college — explicit-ID linking ONLY.
-      // Students who merely typed the college name are never counted.
-      const childSpecIds = databases.filter(d => d.isSpecialization && d.parentDatabaseId === dbItem.id).map(d => d.id);
+      // Enrolled students in this college — explicit-ID linking + cohorts + child specializations
+      const collegeCohorts = databases.filter(d => !d.isSpecialization && (d.id === dbItem.id || collegeGroupKey(d.universityNameAr, d.universityNameEn, d.collegeNameAr, d.collegeNameEn) === collegeGroupKey(dbItem.universityNameAr, dbItem.universityNameEn, dbItem.collegeNameAr, dbItem.collegeNameEn)));
+      const allCollegeIds = collegeCohorts.map(c => c.id);
+      if (!allCollegeIds.includes(dbItem.id)) allCollegeIds.push(dbItem.id);
+      const childSpecIds = databases.filter(d => d.isSpecialization && (d.id === dbItem.id || allCollegeIds.includes(d.parentDatabaseId || ''))).map(d => d.id);
+      
       const enrolled = studentsList.filter(
         s => dbItem.isSpecialization
-          ? s.specializationDatabaseId === dbItem.id
-          : (s.universityDatabaseId === dbItem.id || childSpecIds.includes(s.specializationDatabaseId))
+          ? (s.specializationDatabaseId === dbItem.id || s.universityDatabaseId === dbItem.id)
+          : (allCollegeIds.includes(s.universityDatabaseId) || childSpecIds.includes(s.specializationDatabaseId))
       ).length;
       map[key].totalStudents += enrolled;
 
@@ -626,8 +629,14 @@ export function AdminUniversitiesTab({
       });
 
       const cohortIds = cohortDbs.map(c => c.id);
-      const specDbs = databases.filter(d => d.isSpecialization && cohortIds.includes(d.parentDatabaseId || ''));
+      if (group.anchor && !cohortIds.includes(group.anchor.id)) {
+        cohortIds.push(group.anchor.id);
+      }
+      const allCollegeDbIds = cohortIds;
+      const specDbs = databases.filter(d => d.isSpecialization && allCollegeDbIds.includes(d.parentDatabaseId || ''));
       const specIds = specDbs.map(s => s.id);
+      const allCollegeIdsSet = new Set(allCollegeDbIds);
+      const allSpecIdsSet = new Set(specIds);
 
       return {
         ...group,
@@ -637,7 +646,8 @@ export function AdminUniversitiesTab({
         totalFoundationSubjects: cohortDbs.reduce((sum, c) => sum + foundationSubjectsCount(c), 0),
         totalDriveFiles: cohortDbs.reduce((sum, c) => sum + (c.driveFiles?.length || 0), 0),
         totalStudents: studentsList.filter(
-          s => cohortIds.includes(s.universityDatabaseId) || specIds.includes(s.specializationDatabaseId)
+          s => (s.universityDatabaseId && allCollegeIdsSet.has(s.universityDatabaseId)) ||
+               (s.specializationDatabaseId && allSpecIdsSet.has(s.specializationDatabaseId))
         ).length,
         totalSpecs: specDbs.length,
         pendingUpdatesCount: pendingUpdates.filter(p => cohortIds.includes(p.universityDatabaseId) && p.status === 'pending').length,
@@ -2225,17 +2235,34 @@ export function AdminUniversitiesTab({
   };
 
   // Students explicitly linked to this college (or one of its child
-  // specializations) — name-matching is never used.
+  // specializations / cohorts)
   const enrolledCollegeStudents = useMemo(() => {
     if (!selectedCollegeDb) return [];
-    const childSpecIds = databases
-      .filter(d => d.isSpecialization && d.parentDatabaseId === selectedCollegeDb.id)
-      .map(d => d.id);
-    return studentsList.filter(st =>
-      st.universityDatabaseId === selectedCollegeDb.id ||
-      childSpecIds.includes(st.specializationDatabaseId)
+    
+    // Find all database IDs belonging to this college group
+    const relatedCohorts = databases.filter(d => 
+      !d.isSpecialization && 
+      (d.id === selectedCollegeDb.id || 
+       (selectedCollegeGroup && collegeGroupKey(d.universityNameAr, d.universityNameEn, d.collegeNameAr, d.collegeNameEn) === selectedCollegeGroup.key))
     );
-  }, [selectedCollegeDb, databases, studentsList]);
+    const relatedDbIds = relatedCohorts.map(c => c.id);
+    if (!relatedDbIds.includes(selectedCollegeDb.id)) relatedDbIds.push(selectedCollegeDb.id);
+    
+    const childSpecIds = databases
+      .filter(d => d.isSpecialization && (d.id === selectedCollegeDb.id || relatedDbIds.includes(d.parentDatabaseId || '')))
+      .map(d => d.id);
+
+    const relatedDbIdsSet = new Set(relatedDbIds);
+    const childSpecIdsSet = new Set(childSpecIds);
+
+    return studentsList.filter(st => {
+      if (selectedCollegeDb.isSpecialization) {
+        return st.specializationDatabaseId === selectedCollegeDb.id || st.universityDatabaseId === selectedCollegeDb.id;
+      }
+      return (st.universityDatabaseId && relatedDbIdsSet.has(st.universityDatabaseId)) ||
+             (st.specializationDatabaseId && childSpecIdsSet.has(st.specializationDatabaseId));
+    });
+  }, [selectedCollegeDb, selectedCollegeGroup, databases, studentsList]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-150">
