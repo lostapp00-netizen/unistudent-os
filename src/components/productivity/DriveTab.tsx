@@ -19,12 +19,15 @@ import {
   Check,
   X,
   Loader2,
-  Pencil
+  Pencil,
+  BookOpen,
+  Layers
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { DriveFile } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
 import { ConfirmModal } from '../ui/CustomModal';
+import { SubjectPickerModal } from '../ui/SubjectPickerModal';
 
 // Recursive Tree Node for Destination Folders
 export function FolderTreeItem({
@@ -204,6 +207,8 @@ export function DriveTab() {
   // When set, the upload modal renders in EDIT mode: the file is already
   // uploaded — only name / year / semester / subject are editable, no re-upload.
   const [editingFile, setEditingFile] = useState<DriveFile | null>(null);
+  const [isUploadSubjectPickerOpen, setIsUploadSubjectPickerOpen] = useState(false);
+  const [isFolderSubjectPickerOpen, setIsFolderSubjectPickerOpen] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
   // Current year/semester marked in Settings (Semesters Manager)
@@ -847,21 +852,60 @@ export function DriveTab() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-zinc-500 mb-1.5">
-                  {isAr ? 'المادة الدراسية المرتبطة (اختياري)' : 'Linked Subject (Optional)'}
+                <label className="block text-xs font-bold text-zinc-500 mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <BookOpen size={13} className="text-indigo-600 dark:text-indigo-400" />
+                    <span>{isAr ? 'المادة الدراسية المرتبطة (اختياري)' : 'Linked Subject (Optional)'}</span>
+                  </span>
+                  {uploadForm.subjectId && (
+                    <button
+                      type="button"
+                      onClick={() => setUploadForm(prev => ({ ...prev, subjectId: '' }))}
+                      className="text-[11px] text-red-500 hover:underline font-normal cursor-pointer"
+                    >
+                      {isAr ? 'إلغاء الربط بمادة' : 'Unlink subject'}
+                    </button>
+                  )}
                 </label>
-                <select
-                  value={uploadForm.subjectId}
-                  onChange={(e) => setUploadForm(prev => ({ ...prev, subjectId: e.target.value }))}
-                  className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
-                >
-                  <option value="">{isAr ? 'عام (غير مرتبط بمادة محددة)' : 'General (Not linked to specific subject)'}</option>
-                  {subjects.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.code || (isAr ? `سنة ${s.yearIndex} ترم ${s.semesterIndex}` : `Y${s.yearIndex} T${s.semesterIndex}`)})
-                    </option>
-                  ))}
-                </select>
+                
+                {(() => {
+                  const selectedSub = subjects.find(s => s.id === uploadForm.subjectId);
+                  return (
+                    <div 
+                      onClick={() => setIsUploadSubjectPickerOpen(true)}
+                      className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                        selectedSub
+                          ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700/80 hover:border-indigo-400'
+                          : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div className={`p-2 rounded-xl shrink-0 ${
+                          selectedSub
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
+                        }`}>
+                          {selectedSub ? <BookOpen size={16} /> : <Layers size={16} />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-black text-zinc-900 dark:text-white truncate">
+                            {selectedSub ? selectedSub.name : (isAr ? 'عام (غير مرتبط بمادة محددة)' : 'General (Not linked to specific subject)')}
+                          </p>
+                          {selectedSub && (
+                            <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold mt-0.5 truncate">
+                              {selectedSub.code ? `${selectedSub.code} • ` : ''}
+                              {isAr ? `سنة ${selectedSub.yearIndex} • ترم ${selectedSub.semesterIndex}` : `Y${selectedSub.yearIndex} • T${selectedSub.semesterIndex}`}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 px-2.5 py-1 bg-white dark:bg-zinc-900 rounded-xl border border-indigo-200 dark:border-indigo-800 shrink-0 shadow-2xs">
+                        {selectedSub ? (isAr ? 'تغيير' : 'Change') : (isAr ? 'اختيار مادة' : 'Select Subject')}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -961,21 +1005,60 @@ export function DriveTab() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-zinc-500 mb-1.5">
-                  {isAr ? 'المادة الدراسية المرتبطة (اختياري)' : 'Linked Subject (Optional)'}
+                <label className="block text-xs font-bold text-zinc-500 mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <BookOpen size={13} className="text-indigo-600 dark:text-indigo-400" />
+                    <span>{isAr ? 'المادة الدراسية المرتبطة (اختياري)' : 'Linked Subject (Optional)'}</span>
+                  </span>
+                  {folderForm.subjectId && (
+                    <button
+                      type="button"
+                      onClick={() => setFolderForm(prev => ({ ...prev, subjectId: '' }))}
+                      className="text-[11px] text-red-500 hover:underline font-normal cursor-pointer"
+                    >
+                      {isAr ? 'إلغاء الربط بمادة' : 'Unlink subject'}
+                    </button>
+                  )}
                 </label>
-                <select
-                  value={folderForm.subjectId}
-                  onChange={(e) => setFolderForm(prev => ({ ...prev, subjectId: e.target.value }))}
-                  className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
-                >
-                  <option value="">{isAr ? 'عام (غير مرتبط بمادة محددة)' : 'General (Not linked to specific subject)'}</option>
-                  {subjects.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.code || (isAr ? `سنة ${s.yearIndex} ترم ${s.semesterIndex}` : `Y${s.yearIndex} T${s.semesterIndex}`)})
-                    </option>
-                  ))}
-                </select>
+
+                {(() => {
+                  const selectedSub = subjects.find(s => s.id === folderForm.subjectId);
+                  return (
+                    <div 
+                      onClick={() => setIsFolderSubjectPickerOpen(true)}
+                      className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                        selectedSub
+                          ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700/80 hover:border-indigo-400'
+                          : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div className={`p-2 rounded-xl shrink-0 ${
+                          selectedSub
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
+                        }`}>
+                          {selectedSub ? <BookOpen size={16} /> : <Layers size={16} />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-black text-zinc-900 dark:text-white truncate">
+                            {selectedSub ? selectedSub.name : (isAr ? 'عام (غير مرتبط بمادة محددة)' : 'General (Not linked to specific subject)')}
+                          </p>
+                          {selectedSub && (
+                            <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold mt-0.5 truncate">
+                              {selectedSub.code ? `${selectedSub.code} • ` : ''}
+                              {isAr ? `سنة ${selectedSub.yearIndex} • ترم ${selectedSub.semesterIndex}` : `Y${selectedSub.yearIndex} • T${selectedSub.semesterIndex}`}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 px-2.5 py-1 bg-white dark:bg-zinc-900 rounded-xl border border-indigo-200 dark:border-indigo-800 shrink-0 shadow-2xs">
+                        {selectedSub ? (isAr ? 'تغيير' : 'Change') : (isAr ? 'اختيار مادة' : 'Select Subject')}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
 
               <p className="text-[11px] text-zinc-400">
@@ -1017,6 +1100,46 @@ export function DriveTab() {
         variant="danger"
         onConfirm={handleConfirmDelete}
         onCancel={() => setFileToDelete(null)}
+      />
+
+      {/* Subject Picker Modal for Upload / Edit File */}
+      <SubjectPickerModal
+        isOpen={isUploadSubjectPickerOpen}
+        onClose={() => setIsUploadSubjectPickerOpen(false)}
+        selectedSubjectId={uploadForm.subjectId}
+        defaultYearIndex={Number(uploadForm.yearIndex) || undefined}
+        defaultSemesterIndex={Number(uploadForm.semesterIndex) || undefined}
+        onSelectSubject={(subjectId) => {
+          const matchedSub = subjects.find(s => s.id === subjectId);
+          setUploadForm(prev => ({
+            ...prev,
+            subjectId: subjectId || '',
+            ...(matchedSub ? {
+              yearIndex: String(matchedSub.yearIndex),
+              semesterIndex: String(matchedSub.semesterIndex)
+            } : {})
+          }));
+        }}
+      />
+
+      {/* Subject Picker Modal for Create Folder */}
+      <SubjectPickerModal
+        isOpen={isFolderSubjectPickerOpen}
+        onClose={() => setIsFolderSubjectPickerOpen(false)}
+        selectedSubjectId={folderForm.subjectId}
+        defaultYearIndex={Number(folderForm.yearIndex) || undefined}
+        defaultSemesterIndex={Number(folderForm.semesterIndex) || undefined}
+        onSelectSubject={(subjectId) => {
+          const matchedSub = subjects.find(s => s.id === subjectId);
+          setFolderForm(prev => ({
+            ...prev,
+            subjectId: subjectId || '',
+            ...(matchedSub ? {
+              yearIndex: String(matchedSub.yearIndex),
+              semesterIndex: String(matchedSub.semesterIndex)
+            } : {})
+          }));
+        }}
       />
     </div>
   );
