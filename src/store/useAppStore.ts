@@ -1925,12 +1925,31 @@ export async function checkAndNotifySourceUpdate(
   changedFields?: Record<string, any>
 ) {
   try {
-    if (!userId && !userEmail) return;
+    const storeState = useAppStore.getState();
+    const effectiveUserId = (userId || storeState.userId || '').trim();
+    let effectiveEmail = (userEmail || storeState.userEmail || storeState.settings?.email || '').trim().toLowerCase();
+    if (!effectiveEmail && effectiveUserId) {
+      try {
+        effectiveEmail = (localStorage.getItem(`unistudent_user_email_${effectiveUserId}`) || '').trim().toLowerCase();
+      } catch {}
+    }
+    const effectiveUserName = (userName || storeState.settings?.name || '').trim();
+
+    if (!effectiveUserId && !effectiveEmail) return;
 
     // Only curriculum-relevant edits deserve an admin review. Personal study
     // data (achieved marks, study status, notes...) never generates updates.
     if (type === 'update_subject') {
-      const CURRICULUM_FIELDS = ['name', 'code', 'creditHours', 'totalMarks', 'distributions'];
+      const CURRICULUM_FIELDS = [
+        'name',
+        'code',
+        'creditHours',
+        'totalMarks',
+        'yearIndex',
+        'semesterIndex',
+        'distributions',
+        'includeInGpa'
+      ];
       const changedKeys = Object.keys(changedFields || data || {}).filter(k => k !== 'id');
       const hasCurriculumChange = changedKeys.some(k => CURRICULUM_FIELDS.includes(k));
       if (!hasCurriculumChange) {
@@ -1939,16 +1958,28 @@ export async function checkAndNotifySourceUpdate(
     }
 
     const uniDbs = await db.getUniversityDatabases();
+    if (!uniDbs || uniDbs.length === 0) return;
     
     // Find all databases where this student is the registered source user
-    const sourceDbs = uniDbs.filter(u => 
-      (u.sourceUserId && u.sourceUserId === userId) ||
-      (userEmail && u.sourceUserEmail && u.sourceUserEmail.toLowerCase() === userEmail.toLowerCase())
-    );
+    // or actively enrolled and designated as source
+    const sourceDbs = uniDbs.filter(u => {
+      const sId = (u.sourceUserId || '').trim();
+      const sEmail = (u.sourceUserEmail || '').trim().toLowerCase();
+
+      const isIdMatch = Boolean(effectiveUserId && sId && sId === effectiveUserId);
+      const isEmailMatch = Boolean(effectiveEmail && sEmail && sEmail === effectiveEmail);
+      
+      const isLinkedAsSource = Boolean(
+        (u.id === storeState.settings.universityDatabaseId || u.id === storeState.settings.specializationDatabaseId) &&
+        (isIdMatch || isEmailMatch || (!sId && !sEmail))
+      );
+
+      return isIdMatch || isEmailMatch || isLinkedAsSource;
+    });
 
     if (sourceDbs.length === 0) return;
 
-    // Separate into specialization and cohort/college databases
+    // Separate into specialization, cohort, and college shell databases
     const specDb = sourceDbs.find(d => d.isSpecialization);
     const cohortDbs = sourceDbs.filter(d => !d.isSpecialization && d.cohortName && d.cohortName.trim() !== '');
     const collegeShellDbs = sourceDbs.filter(d => !d.isSpecialization && (!d.cohortName || d.cohortName.trim() === ''));
@@ -1984,8 +2015,8 @@ export async function checkAndNotifySourceUpdate(
 
     if (!targetDb) return;
 
-    const uniName = targetDb.universityNameAr || targetDb.universityNameEn || '';
-    const colName = targetDb.collegeNameAr || targetDb.collegeNameEn || '';
+    const uniName = targetDb.universityNameAr || targetDb.universityNameEn || storeState.settings.university || '';
+    const colName = targetDb.collegeNameAr || targetDb.collegeNameEn || storeState.settings.college || '';
     
     // Resolve cohort name accurately (even if targetDb is a specialization)
     let cohortName = targetDb.cohortName ? targetDb.cohortName.trim() : '';
@@ -1994,7 +2025,9 @@ export async function checkAndNotifySourceUpdate(
         !d.isSpecialization && 
         d.cohortName && 
         d.cohortName.trim() !== '' &&
-        ((d.sourceUserId && d.sourceUserId === userId) || (userEmail && d.sourceUserEmail === userEmail) || (targetDb && d.id === targetDb.parentDatabaseId))
+        ((d.sourceUserId && d.sourceUserId === effectiveUserId) || 
+         (effectiveEmail && d.sourceUserEmail && d.sourceUserEmail.toLowerCase() === effectiveEmail) || 
+         (targetDb && d.id === targetDb.parentDatabaseId))
       );
       if (parentCohort?.cohortName) {
         cohortName = parentCohort.cohortName.trim();
@@ -2002,7 +2035,7 @@ export async function checkAndNotifySourceUpdate(
     }
 
     const isSpec = Boolean(targetDb.isSpecialization);
-    const specName = targetDb.specializationNameAr || targetDb.specializationNameEn || '';
+    const specName = targetDb.specializationNameAr || targetDb.specializationNameEn || (isSpec ? storeState.settings.specialization : '') || '';
     const scopeLabel = isSpec ? `تخصص: ${specName}` : 'عام';
 
     let finalDescription = description;
@@ -2040,9 +2073,9 @@ export async function checkAndNotifySourceUpdate(
       specializationName: specName,
       parentCollegeName: colName,
       scopeType: isSpec ? 'specialization' : 'general',
-      sourceUserId: userId,
-      sourceUserEmail: userEmail || targetDb.sourceUserEmail || '',
-      sourceUserName: userName || targetDb.sourceUserName || '',
+      sourceUserId: effectiveUserId,
+      sourceUserEmail: effectiveEmail || targetDb.sourceUserEmail || '',
+      sourceUserName: effectiveUserName || targetDb.sourceUserName || '',
       type,
       description: finalDescription,
       data,

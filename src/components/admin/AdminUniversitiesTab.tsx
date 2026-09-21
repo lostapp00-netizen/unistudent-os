@@ -444,6 +444,37 @@ export function AdminUniversitiesTab({
 
   useEffect(() => {
     loadUniData();
+
+    // Subscribe to realtime changes on university_pending_updates & university_databases
+    const channel = supabase
+      .channel('admin-uni-tab-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'university_pending_updates' },
+        () => {
+          loadUniData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'university_databases' },
+        () => {
+          loadUniData();
+        }
+      )
+      .subscribe();
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'unistudent_pending_updates' || e.key === 'unistudent_university_databases') {
+        loadUniData();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   useEffect(() => {
@@ -514,28 +545,35 @@ export function AdminUniversitiesTab({
       map[key].totalSubjects += (dbItem.subjects?.length || 0);
       map[key].totalDriveFiles += (dbItem.driveFiles?.length || 0);
 
-      // Enrolled students in this college — explicit-ID linking + cohorts + child specializations
-      const collegeCohorts = databases.filter(d => !d.isSpecialization && (d.id === dbItem.id || collegeGroupKey(d.universityNameAr, d.universityNameEn, d.collegeNameAr, d.collegeNameEn) === collegeGroupKey(dbItem.universityNameAr, dbItem.universityNameEn, dbItem.collegeNameAr, dbItem.collegeNameEn)));
-      const allCollegeIds = collegeCohorts.map(c => c.id);
-      if (!allCollegeIds.includes(dbItem.id)) allCollegeIds.push(dbItem.id);
-      const childSpecIds = databases.filter(d => d.isSpecialization && (d.id === dbItem.id || allCollegeIds.includes(d.parentDatabaseId || ''))).map(d => d.id);
-      
-      const enrolled = studentsList.filter(
-        s => dbItem.isSpecialization
-          ? (s.specializationDatabaseId === dbItem.id || s.universityDatabaseId === dbItem.id)
-          : (allCollegeIds.includes(s.universityDatabaseId) || childSpecIds.includes(s.specializationDatabaseId))
-      ).length;
-      map[key].totalStudents += enrolled;
-
-      // Pending updates in this college
+      // Pending updates in this database
       const colUpdates = pendingUpdates.filter(
         p => p.universityDatabaseId === dbItem.id && p.status === 'pending'
       ).length;
       map[key].pendingUpdatesCount += colUpdates;
     });
 
-    // 3. Count distinct colleges (each college = a group of cohort databases)
+    // 3. Count distinct students and distinct colleges per university group (No double counting)
     Object.values(map).forEach(u => {
+      const allUniDbIds = new Set(
+        databases
+          .filter(d => (d.universityNameAr || d.universityNameEn || 'جامعة أخرى').trim() === u.key)
+          .map(d => d.id)
+      );
+
+      // Also include any specialization databases whose parent is in allUniDbIds
+      const childSpecIds = new Set(
+        databases
+          .filter(d => d.isSpecialization && allUniDbIds.has(d.parentDatabaseId || ''))
+          .map(d => d.id)
+      );
+
+      const enrolledCount = studentsList.filter(s => 
+        (s.universityDatabaseId && (allUniDbIds.has(s.universityDatabaseId) || childSpecIds.has(s.universityDatabaseId))) ||
+        (s.specializationDatabaseId && (allUniDbIds.has(s.specializationDatabaseId) || childSpecIds.has(s.specializationDatabaseId)))
+      ).length;
+
+      u.totalStudents = enrolledCount;
+
       const groupKeys = new Set(
         u.colleges.map(c => collegeGroupKey(c.universityNameAr, c.universityNameEn, c.collegeNameAr, c.collegeNameEn))
       );

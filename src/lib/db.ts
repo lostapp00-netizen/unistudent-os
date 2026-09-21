@@ -2046,12 +2046,42 @@ export const db = {
         } catch {}
       }
 
+      // Deduplicate subjects by (normalized name, yearIndex, semesterIndex)
+      const dedupSubjMap = new Map<string, Subject>();
+      (studentSubjects || []).forEach(sub => {
+        const norm = normalizeSubjectName(sub.name || '');
+        const y = Number(sub.yearIndex !== undefined ? sub.yearIndex : (sub as any).year_index || 1);
+        const sem = Number(sub.semesterIndex !== undefined ? sub.semesterIndex : (sub as any).semester_index || 1);
+        const key = norm ? `${norm}_${y}_${sem}` : (sub.id || String(Math.random()));
+        if (!dedupSubjMap.has(key)) {
+          dedupSubjMap.set(key, sub);
+        } else {
+          const ex = dedupSubjMap.get(key)!;
+          const sDist = Array.isArray(sub.distributions) ? sub.distributions.length : 0;
+          const exDist = Array.isArray(ex.distributions) ? ex.distributions.length : 0;
+          if (sDist > exDist) {
+            dedupSubjMap.set(key, sub);
+          }
+        }
+      });
+      const cleanStudentSubjects = Array.from(dedupSubjMap.values());
+
       let studentFiles: DriveFile[] = Array.isArray(s.files) && s.files.length > 0 ? s.files : [];
       if (studentFiles.length === 0) {
         try {
           studentFiles = await this.getDriveFiles(uid);
         } catch {}
       }
+
+      // Deduplicate files by id / (name, parentId)
+      const dedupFileMap = new Map<string, DriveFile>();
+      (studentFiles || []).forEach(f => {
+        const key = f.id ? `id_${f.id}` : `${(f.name || '').trim()}_${f.parentId || ''}`;
+        if (!dedupFileMap.has(key)) {
+          dedupFileMap.set(key, f);
+        }
+      });
+      const cleanStudentFiles = Array.from(dedupFileMap.values());
 
       // Strip internal meta rows from the student's grading scale
       const rawScale = Array.isArray(s.grading_scale) ? s.grading_scale : (Array.isArray(s.gradingScale) ? s.gradingScale : []);
@@ -2067,10 +2097,10 @@ export const db = {
         university: s.university || '',
         college: s.college || '',
         specialization: s.specialization || '',
-        subjectsCount: (studentSubjects || []).length,
-        subjects: studentSubjects || [],
-        filesCount: (studentFiles || []).length,
-        files: studentFiles || [],
+        subjectsCount: cleanStudentSubjects.length,
+        subjects: cleanStudentSubjects,
+        filesCount: cleanStudentFiles.length,
+        files: cleanStudentFiles,
         gradingScale: studentGrading,
         totalYears: s.totalYears || s.total_years,
         semestersPerYear: s.semestersPerYear || s.semesters_per_year
@@ -2209,13 +2239,34 @@ export const db = {
     } catch {}
 
     try {
-      let query = supabase.from('university_pending_updates').select('*').order('created_at', { ascending: true });
+      let query = supabase.from('university_pending_updates').select('*').order('created_at', { ascending: false });
       if (universityDbId) {
         query = query.eq('university_database_id', universityDbId);
       }
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
         const remoteList = data.map(d => mapPendingUpdateFromDB(d));
+        
+        // Enrich any records that may have missing university or college names
+        try {
+          const uniDbs = await this.getUniversityDatabases().catch(() => []);
+          const uniMap = new Map(uniDbs.map(u => [u.id, u]));
+          remoteList.forEach(r => {
+            if (r.universityDatabaseId && (!r.universityName || !r.collegeName || !r.cohortName)) {
+              const matchedDb = uniMap.get(r.universityDatabaseId);
+              if (matchedDb) {
+                if (!r.universityName) r.universityName = matchedDb.universityNameAr || matchedDb.universityNameEn || '';
+                if (!r.collegeName) r.collegeName = matchedDb.collegeNameAr || matchedDb.collegeNameEn || '';
+                if (!r.cohortName && matchedDb.cohortName) r.cohortName = matchedDb.cohortName;
+                if (r.isSpecialization === undefined && matchedDb.isSpecialization) {
+                  r.isSpecialization = true;
+                  r.specializationName = matchedDb.specializationNameAr || matchedDb.specializationNameEn || '';
+                }
+              }
+            }
+          });
+        } catch {}
+
         // Merge remote and local: if local is already approved/rejected, preserve resolved status
         const mergedMap = new Map<string, UniversityPendingUpdate>();
         remoteList.forEach(r => mergedMap.set(r.id, r));
@@ -2231,9 +2282,9 @@ export const db = {
           }
         });
         const merged = Array.from(mergedMap.values());
-        merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         try {
-          localStorage.setItem('unistudent_pending_updates', JSON.stringify(merged.slice(0, 100)));
+          localStorage.setItem('unistudent_pending_updates', JSON.stringify(merged.slice(0, 150)));
         } catch {}
         return universityDbId ? merged.filter(p => p.universityDatabaseId === universityDbId) : merged;
       }
@@ -2241,7 +2292,7 @@ export const db = {
       console.warn('Supabase getPendingUpdates warning:', e);
     }
 
-    localList.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    localList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     return universityDbId ? localList.filter(p => p.universityDatabaseId === universityDbId) : localList;
   },
 
@@ -2325,73 +2376,106 @@ export const db = {
   },
 
   async recordPendingUpdate(update: UniversityPendingUpdate): Promise<void> {
+    const timestamp = update.createdAt || new Date().toISOString();
+    const cleanUpdate: UniversityPendingUpdate = {
+      ...update,
+      id: update.id || uuidv4(),
+      status: update.status || 'pending',
+      createdAt: timestamp
+    };
+
+    // 1. Update local storage cache
     try {
-      // Check if target database already contains this subject (for add_subject)
-      if (update.type === 'add_subject' && update.data?.name && update.universityDatabaseId) {
-        const udb = await this.getUniversityDatabase(update.universityDatabaseId);
-        if (udb && Array.isArray(udb.subjects)) {
-          const normName = normalizeSubjectName(update.data.name);
-          const y = Number(update.data.yearIndex || 1);
-          const sem = Number(update.data.semesterIndex || 1);
-          const alreadyExists = udb.subjects.some(s => 
-            (update.data.id && s.id === update.data.id) ||
-            (normalizeSubjectName(s.name) === normName && Number(s.yearIndex || 1) === y && Number(s.semesterIndex || 1) === sem)
-          );
-          if (alreadyExists) {
-            return;
-          }
-        }
+      const current = await this.getPendingUpdates();
+      // Look for an existing 'pending' item for the exact same target entity
+      const existingPendingIdx = current.findIndex(p => 
+        p.universityDatabaseId === cleanUpdate.universityDatabaseId &&
+        p.type === cleanUpdate.type &&
+        p.status === 'pending' &&
+        (
+          (cleanUpdate.data?.id && p.data?.id && cleanUpdate.data.id === p.data.id) ||
+          (cleanUpdate.type === 'update_grading_scale') ||
+          (cleanUpdate.data?.name && p.data?.name && cleanUpdate.data.name === p.data.name && cleanUpdate.data.yearIndex === p.data.yearIndex && cleanUpdate.data.semesterIndex === p.data.semesterIndex)
+        )
+      );
+
+      let updatedList: UniversityPendingUpdate[];
+      if (existingPendingIdx >= 0) {
+        // Reuse existing record's ID and update its contents
+        cleanUpdate.id = current[existingPendingIdx].id;
+        updatedList = current.map((p, i) => i === existingPendingIdx ? cleanUpdate : p);
+      } else {
+        updatedList = [cleanUpdate, ...current.filter(u => u.id !== cleanUpdate.id)];
       }
 
-      const current = await this.getPendingUpdates();
-      const isDuplicate = current.some(p => 
-        p.universityDatabaseId === update.universityDatabaseId &&
-        p.type === update.type &&
-        (p.status === 'pending' || (p.status === 'approved' && update.type === 'add_subject')) &&
-        ((p.data?.id && p.data?.id === update.data?.id) || 
-         (p.data?.name && p.data?.name === update.data?.name && p.data?.yearIndex === update.data?.yearIndex && p.data?.semesterIndex === update.data?.semesterIndex))
-      );
-      if (isDuplicate) {
-        return;
-      }
-      const updated = [update, ...current.filter(u => u.id !== update.id)];
-      localStorage.setItem('unistudent_pending_updates', JSON.stringify(updated.slice(0, 100)));
+      localStorage.setItem('unistudent_pending_updates', JSON.stringify(updatedList.slice(0, 150)));
     } catch {}
 
+    // 2. Persist to Supabase university_pending_updates
     try {
-      const { data: existing } = await supabase
+      // Check if there is an existing pending update in Supabase to update in-place
+      const { data: existingRows } = await supabase
         .from('university_pending_updates')
         .select('id, data, status')
-        .eq('university_database_id', update.universityDatabaseId)
-        .eq('type', update.type);
+        .eq('university_database_id', cleanUpdate.universityDatabaseId)
+        .eq('type', cleanUpdate.type)
+        .eq('status', 'pending');
 
-      if (existing && existing.length > 0) {
-        const hasDup = existing.some(e => {
-          if (e.status !== 'pending' && !(e.status === 'approved' && update.type === 'add_subject')) return false;
+      if (existingRows && existingRows.length > 0) {
+        const matched = existingRows.find(e => {
           const d = e.data;
-          return (d?.id && d?.id === update.data?.id) ||
-                 (d?.name && d?.name === update.data?.name && d?.yearIndex === update.data?.yearIndex && d?.semesterIndex === update.data?.semesterIndex);
+          return (cleanUpdate.data?.id && d?.id && cleanUpdate.data.id === d.id) ||
+                 (cleanUpdate.type === 'update_grading_scale') ||
+                 (cleanUpdate.data?.name && d?.name && cleanUpdate.data.name === d.name && cleanUpdate.data.yearIndex === d.yearIndex && cleanUpdate.data.semesterIndex === d.semesterIndex);
         });
-        if (hasDup) {
-          return;
+        if (matched) {
+          cleanUpdate.id = matched.id;
         }
       }
 
-      const payload = {
-        id: update.id,
-        university_database_id: update.universityDatabaseId,
-        source_user_id: update.sourceUserId,
-        source_user_email: update.sourceUserEmail || '',
-        source_user_name: update.sourceUserName || '',
-        type: update.type,
-        description: update.description,
-        data: update.data,
-        status: update.status,
-        created_at: update.createdAt
+      const fullPayload: any = {
+        id: cleanUpdate.id,
+        university_database_id: cleanUpdate.universityDatabaseId,
+        university_name: cleanUpdate.universityName || '',
+        college_name: cleanUpdate.collegeName || '',
+        cohort_name: cleanUpdate.cohortName || '',
+        is_specialization: Boolean(cleanUpdate.isSpecialization),
+        specialization_name: cleanUpdate.specializationName || '',
+        scope_type: cleanUpdate.scopeType || (cleanUpdate.isSpecialization ? 'specialization' : 'general'),
+        source_user_id: cleanUpdate.sourceUserId,
+        source_user_email: cleanUpdate.sourceUserEmail || '',
+        source_user_name: cleanUpdate.sourceUserName || '',
+        type: cleanUpdate.type,
+        description: cleanUpdate.description,
+        data: cleanUpdate.data,
+        status: cleanUpdate.status,
+        created_at: cleanUpdate.createdAt,
+        resolved_at: cleanUpdate.resolvedAt || null
       };
-      await supabase.from('university_pending_updates').upsert(payload);
+
+      const { error: upsertErr } = await supabase.from('university_pending_updates').upsert(fullPayload);
+      if (upsertErr) {
+        console.warn('Supabase recordPendingUpdate full upsert error, attempting schema fallback:', upsertErr);
+        // Fallback: exclude optional metadata columns if table lacks them
+        const fallbackPayload = {
+          id: cleanUpdate.id,
+          university_database_id: cleanUpdate.universityDatabaseId,
+          source_user_id: cleanUpdate.sourceUserId,
+          source_user_email: cleanUpdate.sourceUserEmail || '',
+          source_user_name: cleanUpdate.sourceUserName || '',
+          type: cleanUpdate.type,
+          description: cleanUpdate.description,
+          data: cleanUpdate.data,
+          status: cleanUpdate.status,
+          created_at: cleanUpdate.createdAt
+        };
+        const { error: fallbackErr } = await supabase.from('university_pending_updates').upsert(fallbackPayload);
+        if (fallbackErr) {
+          console.warn('Supabase recordPendingUpdate fallback failed:', fallbackErr);
+        }
+      }
     } catch (e) {
-      console.warn('Supabase recordPendingUpdate error:', e);
+      console.warn('Supabase recordPendingUpdate exception:', e);
     }
   },
 
@@ -3195,20 +3279,27 @@ export const db = {
           const parsed = JSON.parse(cachedSubjs);
           if (Array.isArray(parsed) && parsed.length > 0) {
             parsed.forEach(s => {
-              if (!rawSubjects.some(rs => rs.id === s.id)) {
+              const normName = normalizeSubjectName(s.name || '');
+              const y = Number(s.yearIndex !== undefined ? s.yearIndex : s.year_index || 1);
+              const sem = Number(s.semesterIndex !== undefined ? s.semesterIndex : s.semester_index || 1);
+              const alreadyInRaw = rawSubjects.some(rs => 
+                rs.user_id === uid && 
+                (rs.id === s.id || (normName && normalizeSubjectName(rs.name || '') === normName && Number(rs.year_index || rs.yearIndex || 1) === y && Number(rs.semester_index || rs.semesterIndex || 1) === sem))
+              );
+              if (!alreadyInRaw) {
                 rawSubjects.push({
                   id: s.id,
                   user_id: uid,
                   code: s.code || '',
                   name: s.name || '',
-                  credit_hours: s.creditHours || 3,
-                  total_marks: s.totalMarks || 100,
-                  year_index: s.yearIndex || 1,
-                  semester_index: s.semesterIndex || 1,
+                  credit_hours: s.creditHours || s.credit_hours || 3,
+                  total_marks: s.totalMarks || s.total_marks || 100,
+                  year_index: y,
+                  semester_index: sem,
                   status: s.status || 'current',
                   distributions: s.distributions || [],
-                  final_grade_letter: s.finalGradeLetter,
-                  include_in_gpa: s.includeInGpa !== false
+                  final_grade_letter: s.finalGradeLetter || s.final_grade_letter,
+                  include_in_gpa: s.includeInGpa !== false && s.include_in_gpa !== false
                 });
               }
             });
@@ -3222,7 +3313,11 @@ export const db = {
           const parsed = JSON.parse(cachedFiles);
           if (Array.isArray(parsed) && parsed.length > 0) {
             parsed.forEach(f => {
-              if (!rawFiles.some(rf => rf.id === f.id)) {
+              const alreadyInRaw = rawFiles.some(rf => 
+                rf.user_id === uid && 
+                (rf.id === f.id || ((rf.name || '').trim() === (f.name || '').trim() && (rf.parent_id || null) === (f.parentId || null)))
+              );
+              if (!alreadyInRaw) {
                 rawFiles.push({
                   id: f.id,
                   user_id: uid,
@@ -3230,9 +3325,9 @@ export const db = {
                   size: f.size || 0,
                   type: f.type || 'file',
                   url: f.url || '',
-                  upload_date: f.createdAt || new Date().toISOString(),
-                  parent_id: f.parentId || null,
-                  b2_file_id: f.b2FileId
+                  upload_date: f.createdAt || f.upload_date || new Date().toISOString(),
+                  parent_id: f.parentId || f.parent_id || null,
+                  b2_file_id: f.b2FileId || f.b2_file_id
                 });
               }
             });
@@ -3240,6 +3335,38 @@ export const db = {
         }
       } catch {}
     });
+
+    // Deduplicate rawSubjects per student to guarantee clean, exact counts
+    const cleanSubjectsMap = new Map<string, any>();
+    rawSubjects.forEach(s => {
+      if (!s.user_id) return;
+      const norm = normalizeSubjectName(s.name || '');
+      const y = Number(s.year_index || s.yearIndex || 1);
+      const sem = Number(s.semester_index || s.semesterIndex || 1);
+      const key = norm ? `${s.user_id}_${norm}_${y}_${sem}` : `${s.user_id}_${s.id}`;
+      if (!cleanSubjectsMap.has(key)) {
+        cleanSubjectsMap.set(key, s);
+      } else {
+        const existing = cleanSubjectsMap.get(key);
+        const sDist = Array.isArray(s.distributions) ? s.distributions.length : 0;
+        const exDist = Array.isArray(existing.distributions) ? existing.distributions.length : 0;
+        if (sDist > exDist) {
+          cleanSubjectsMap.set(key, s);
+        }
+      }
+    });
+    rawSubjects = Array.from(cleanSubjectsMap.values());
+
+    // Deduplicate rawFiles per student
+    const cleanFilesMap = new Map<string, any>();
+    rawFiles.forEach(f => {
+      if (!f.user_id) return;
+      const key = f.id ? `${f.user_id}_id_${f.id}` : `${f.user_id}_${(f.name || '').trim()}_${f.parent_id || ''}`;
+      if (!cleanFilesMap.has(key)) {
+        cleanFilesMap.set(key, f);
+      }
+    });
+    rawFiles = Array.from(cleanFilesMap.values());
 
     // 5. Merge any localStorage feedback/suggestions so nothing is missed
     try {
@@ -3935,15 +4062,15 @@ function mapPendingUpdateFromDB(row: any): UniversityPendingUpdate {
   return {
     id: row.id,
     universityDatabaseId: row.university_database_id,
-    universityName: row.university_name,
-    collegeName: row.college_name,
+    universityName: row.university_name || row.data?.universityName || '',
+    collegeName: row.college_name || row.data?.collegeName || '',
     cohortName: row.cohort_name || row.data?.cohortName || row.data?.cohort_name || '',
-    isSpecialization: row.is_specialization || false,
-    specializationName: row.specialization_name,
+    isSpecialization: Boolean(row.is_specialization || row.data?.isSpecialization),
+    specializationName: row.specialization_name || row.data?.specializationName || '',
     scopeType: row.scope_type || (row.is_specialization ? 'specialization' : 'general'),
-    sourceUserId: row.source_user_id,
-    sourceUserEmail: row.source_user_email || '',
-    sourceUserName: row.source_user_name || '',
+    sourceUserId: row.source_user_id || row.data?.sourceUserId || '',
+    sourceUserEmail: row.source_user_email || row.data?.sourceUserEmail || '',
+    sourceUserName: row.source_user_name || row.data?.sourceUserName || '',
     type: row.type,
     description: row.description || '',
     data: row.data || {},

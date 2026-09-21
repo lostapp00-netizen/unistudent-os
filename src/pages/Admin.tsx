@@ -69,6 +69,7 @@ import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWa
 import { FeedbackSuggestion, FeedbackMessage, EmailBackupConfig, DatabaseBackup } from '../types';
 import { ConfirmModal } from '../components/ui/CustomModal';
 import { formatDateTime, getAcademicEvaluation } from '../lib/utils';
+import { normalizeSubjectName } from '../lib/academicTranslation';
 import { AdminUniversitiesTab } from '../components/admin/AdminUniversitiesTab';
 
 export function Admin() {
@@ -277,7 +278,25 @@ export function Admin() {
 
     return adminData.userIds.map((uid) => {
       const userSettingsRow = adminData.rawSettings.find(s => s.user_id === uid) || {};
-      const userSubjects = adminData.rawSubjects.filter(s => s.user_id === uid);
+      const rawUserSubjects = adminData.rawSubjects.filter(s => s.user_id === uid);
+      const dedupMap = new Map<string, any>();
+      rawUserSubjects.forEach(s => {
+        const normName = normalizeSubjectName(s.name || '');
+        const y = Number(s.year_index || s.yearIndex || 1);
+        const sem = Number(s.semester_index || s.semesterIndex || 1);
+        const key = normName ? `${normName}_${y}_${sem}` : s.id;
+        if (!dedupMap.has(key)) {
+          dedupMap.set(key, s);
+        } else {
+          const existing = dedupMap.get(key);
+          const sDist = Array.isArray(s.distributions) ? s.distributions.length : 0;
+          const exDist = Array.isArray(existing.distributions) ? existing.distributions.length : 0;
+          if (sDist > exDist) {
+            dedupMap.set(key, s);
+          }
+        }
+      });
+      const userSubjects = Array.from(dedupMap.values());
       const userTasks = adminData.rawTasks.filter(t => t.user_id === uid);
       const userNotes = adminData.rawNotes.filter(n => n.user_id === uid);
       const userAppointments = adminData.rawAppointments.filter(a => a.user_id === uid);
