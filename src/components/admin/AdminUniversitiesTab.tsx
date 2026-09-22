@@ -1996,16 +1996,14 @@ export function AdminUniversitiesTab({
   const handleResolvePendingUpdate = async (update: UniversityPendingUpdate, status: 'approved' | 'rejected' | 'pending') => {
     setResolvingUpdateIds(prev => ({ ...prev, [update.id]: true }));
 
-    // Optimistic immediate update of local state
-    setPendingUpdates(prev => {
-      const next = prev.map(p => p.id === update.id ? { ...p, status } : p);
-      const remainingCount = next.filter(p => p.status === 'pending').length;
-      onPendingCountChange?.(remainingCount);
-      return next;
-    });
-
     try {
       await db.batchRespondToPendingUpdates([update], status);
+      setPendingUpdates(prev => {
+        const next = prev.map(p => p.id === update.id ? { ...p, status } : p);
+        const remainingCount = next.filter(p => p.status === 'pending').length;
+        onPendingCountChange?.(remainingCount);
+        return next;
+      });
       await loadUniData();
       await onRefreshAllData();
     } catch (e) {
@@ -2019,64 +2017,74 @@ export function AdminUniversitiesTab({
     }
   };
 
-  // Grouped Bulk Resolution (Approve / Reject all pending in group in a single atomic batch)
+  // Grouped Bulk Resolution (Approve / Reject all pending in group sequentially with real-time visual progress)
   const handleResolveGroup = async (groupUpdates: UniversityPendingUpdate[], status: 'approved' | 'rejected') => {
     const pendingInGroup = groupUpdates.filter(u => u.status === 'pending');
     if (pendingInGroup.length === 0) return;
 
-    const pendingIds = pendingInGroup.map(u => u.id);
-    setResolvingUpdateIds(prev => {
-      const next = { ...prev };
-      pendingIds.forEach(id => { next[id] = true; });
-      return next;
-    });
-
-    // Optimistic update of local state
-    const pendingSet = new Set(pendingIds);
-    setPendingUpdates(prev => {
-      const next = prev.map(p => pendingSet.has(p.id) ? { ...p, status } : p);
-      const remainingCount = next.filter(p => p.status === 'pending').length;
-      onPendingCountChange?.(remainingCount);
-      return next;
-    });
+    for (const update of pendingInGroup) {
+      setResolvingUpdateIds(prev => ({ ...prev, [update.id]: true }));
+      try {
+        await db.batchRespondToPendingUpdates([update], status);
+        setPendingUpdates(prev => {
+          const next = prev.map(p => p.id === update.id ? { ...p, status } : p);
+          const remainingCount = next.filter(p => p.status === 'pending').length;
+          onPendingCountChange?.(remainingCount);
+          return next;
+        });
+      } catch (e) {
+        console.error('Error resolving group pending update:', e);
+      } finally {
+        setResolvingUpdateIds(prev => {
+          const next = { ...prev };
+          delete next[update.id];
+          return next;
+        });
+      }
+      await new Promise(r => setTimeout(r, 60));
+    }
 
     try {
-      await db.batchRespondToPendingUpdates(pendingInGroup, status);
       await loadUniData();
       await onRefreshAllData();
     } catch (e) {
-      console.error('Error resolving group pending updates:', e);
-    } finally {
-      setResolvingUpdateIds(prev => {
-        const next = { ...prev };
-        pendingIds.forEach(id => { delete next[id]; });
-        return next;
-      });
+      console.error('Error refreshing after group pending updates:', e);
     }
   };
 
-  // Global Bulk Resolution (Approve / Reject ALL pending updates across all students)
+  // Global Bulk Resolution (Approve / Reject ALL pending updates across all students sequentially with real-time visual progress)
   const handleResolveAllPending = async (status: 'approved' | 'rejected') => {
     const allPending = pendingUpdates.filter(u => u.status === 'pending');
     if (allPending.length === 0) return;
 
     setIsResolvingAll(true);
-    const pendingIds = allPending.map(u => u.id);
-    const pendingSet = new Set(pendingIds);
-
-    // Optimistic update of local state
-    setPendingUpdates(prev => {
-      const next = prev.map(p => pendingSet.has(p.id) ? { ...p, status } : p);
-      onPendingCountChange?.(0);
-      return next;
-    });
+    for (const update of allPending) {
+      setResolvingUpdateIds(prev => ({ ...prev, [update.id]: true }));
+      try {
+        await db.batchRespondToPendingUpdates([update], status);
+        setPendingUpdates(prev => {
+          const next = prev.map(p => p.id === update.id ? { ...p, status } : p);
+          const remainingCount = next.filter(p => p.status === 'pending').length;
+          onPendingCountChange?.(remainingCount);
+          return next;
+        });
+      } catch (e) {
+        console.error('Error resolving all pending update:', e);
+      } finally {
+        setResolvingUpdateIds(prev => {
+          const next = { ...prev };
+          delete next[update.id];
+          return next;
+        });
+      }
+      await new Promise(r => setTimeout(r, 60));
+    }
 
     try {
-      await db.batchRespondToPendingUpdates(allPending, status);
       await loadUniData();
       await onRefreshAllData();
     } catch (e) {
-      console.error('Error resolving all pending updates:', e);
+      console.error('Error refreshing after resolving all pending updates:', e);
     } finally {
       setIsResolvingAll(false);
     }
@@ -2127,7 +2135,7 @@ export function AdminUniversitiesTab({
   // Current drive files in the active folder
   const currentDriveFiles = useMemo(() => {
     if (!selectedCollegeDb) return [];
-    return (selectedCollegeDb.driveFiles || []).filter(f => f.parentId === currentDriveFolderId);
+    return (selectedCollegeDb.driveFiles || []).filter(f => (f.parentId || null) === (currentDriveFolderId || null));
   }, [selectedCollegeDb, currentDriveFolderId]);
 
   // Current folder breadcrumbs
@@ -2145,7 +2153,7 @@ export function AdminUniversitiesTab({
     let curr = currentDriveFolderId ? all.find(f => f.id === currentDriveFolderId) : null;
     while (curr) {
       crumbs.unshift(curr);
-      curr = curr.parentId ? all.find(f => f.id === curr!.parentId) : null;
+      curr = (curr.parentId || null) ? all.find(f => f.id === curr!.parentId) : null;
     }
     return crumbs;
   }, [selectedCollegeDb, currentDriveFolderId]);
@@ -2153,7 +2161,7 @@ export function AdminUniversitiesTab({
   // All descendant ids of a folder — used to forbid moving a folder into itself
   // or one of its own children.
   const getDriveDescendantIds = (folderId: string, all: DriveFile[]): string[] => {
-    const children = all.filter(f => f.parentId === folderId);
+    const children = all.filter(f => (f.parentId || null) === (folderId || null));
     let ids = children.map(c => c.id);
     children.filter(c => c.type === 'folder').forEach(c => {
       ids = [...ids, ...getDriveDescendantIds(c.id, all)];
@@ -2172,7 +2180,7 @@ export function AdminUniversitiesTab({
     return (selectedCollegeDb.driveFiles || []).filter(f => f.type === 'folder' && !driveMoveInvalidIds.has(f.id));
   }, [selectedCollegeDb, driveMoveInvalidIds]);
 
-  const driveRootFolders = useMemo(() => driveAvailableFolders.filter(f => !f.parentId), [driveAvailableFolders]);
+  const driveRootFolders = useMemo(() => driveAvailableFolders.filter(f => !(f.parentId || null)), [driveAvailableFolders]);
 
   const openDriveMoveModal = (file: DriveFile) => {
     setMovingFile(file);

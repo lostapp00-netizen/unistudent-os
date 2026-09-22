@@ -2609,6 +2609,10 @@ export const db = {
             }
 
             await this.updateUniversityDatabase(currentDb.id, currentDb);
+            await this.syncUniversityDatabaseChangesToStudents(currentDb.id, {
+              type: 'full_sync',
+              updatedDb: currentDb
+            }).catch(() => {});
           }
         } catch (dbErr) {
           console.warn(`Error applying batch pending updates to database ${dbId}:`, dbErr);
@@ -4417,6 +4421,7 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
 
     // Resolve parent folder in template
     let resolvedParentId: string | null = null;
+    let parentFound = false;
     const targetParentId = upd.parentId !== undefined ? upd.parentId : prev.parentId;
     const targetParentName = (upd.parentName !== undefined ? upd.parentName : prev.parentName || '').trim().toLowerCase();
 
@@ -4424,17 +4429,28 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
       const parentById = driveFiles.find(f => f.id === targetParentId && f.type === 'folder');
       if (parentById) {
         resolvedParentId = parentById.id;
+        parentFound = true;
       } else if (targetParentName) {
         const parentByName = driveFiles.find(f => f.type === 'folder' && f.name.trim().toLowerCase() === targetParentName);
-        resolvedParentId = parentByName ? parentByName.id : null;
+        if (parentByName) {
+          resolvedParentId = parentByName.id;
+          parentFound = true;
+        }
       }
     } else if (targetParentName) {
       const parentByName = driveFiles.find(f => f.type === 'folder' && f.name.trim().toLowerCase() === targetParentName);
-      resolvedParentId = parentByName ? parentByName.id : null;
+      if (parentByName) {
+        resolvedParentId = parentByName.id;
+        parentFound = true;
+      }
+    } else if (targetParentId === null || targetParentId === '') {
+      resolvedParentId = null;
+      parentFound = true;
     }
 
     // Resolve linked subject in template
     let resolvedSubjectId: string | undefined = undefined;
+    let subjectFound = false;
     const targetSubjId = upd.subjectId !== undefined ? upd.subjectId : prev.subjectId;
     const targetSubjName = (upd.subjectName !== undefined ? upd.subjectName : prev.subjectName || '').trim();
     if (targetSubjId || targetSubjName) {
@@ -4443,7 +4459,13 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
         (targetSubjId && s.id === targetSubjId) || 
         (subNameNorm && normalizeSubjectName(s.name) === subNameNorm)
       );
-      resolvedSubjectId = matchedSubj ? matchedSubj.id : undefined;
+      if (matchedSubj) {
+        resolvedSubjectId = matchedSubj.id;
+        subjectFound = true;
+      }
+    } else if (targetSubjId === null || targetSubjId === '') {
+      resolvedSubjectId = undefined;
+      subjectFound = true;
     }
 
     let matched = false;
@@ -4456,12 +4478,15 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
 
       if (isIdMatch || isPrevNameMatch || isTargetNameMatch || isUrlMatch || isB2Match) {
         matched = true;
+        const finalParentId = parentFound ? resolvedParentId : (f.parentId !== undefined ? f.parentId : null);
+        const finalSubjectId = subjectFound ? resolvedSubjectId : f.subjectId;
+
         return {
           ...f,
           name: targetName || f.name,
           type: itemType || f.type,
-          parentId: (upd.parentId !== undefined || upd.parentName !== undefined) ? resolvedParentId : f.parentId,
-          subjectId: (upd.subjectId !== undefined || upd.subjectName !== undefined) ? resolvedSubjectId : f.subjectId,
+          parentId: finalParentId,
+          subjectId: finalSubjectId,
           yearIndex: upd.yearIndex !== undefined ? Number(upd.yearIndex) : f.yearIndex,
           semesterIndex: upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : f.semesterIndex,
           url: upd.url || f.url || prev.url || '',

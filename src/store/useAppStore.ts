@@ -2102,12 +2102,15 @@ export async function checkAndNotifySourceUpdate(
     if (sourceDbs.length === 0) return;
 
     // Separate into specialization, cohort, and college shell databases
-    const specDb = sourceDbs.find(d => d.isSpecialization);
+    const enrolledCohortDb = sourceDbs.find(d => d.id === storeState.settings.universityDatabaseId);
+    const enrolledSpecDb = sourceDbs.find(d => d.id === storeState.settings.specializationDatabaseId);
+
+    const specDb = enrolledSpecDb || sourceDbs.find(d => d.isSpecialization);
     const cohortDbs = sourceDbs.filter(d => !d.isSpecialization && d.cohortName && d.cohortName.trim() !== '');
     const collegeShellDbs = sourceDbs.filter(d => !d.isSpecialization && (!d.cohortName || d.cohortName.trim() === ''));
 
-    // The primary general cohort database (prefer cohort DB over empty college container)
-    const primaryGeneralDb = cohortDbs.length > 0 ? cohortDbs[0] : (collegeShellDbs.length > 0 ? collegeShellDbs[0] : null);
+    // The primary general cohort database (prefer enrolled DB, then cohort DB over empty college container)
+    const primaryGeneralDb = enrolledCohortDb || (cohortDbs.length > 0 ? cohortDbs[0] : (collegeShellDbs.length > 0 ? collegeShellDbs[0] : null));
 
     // Get specialization milestone
     const startYr = Number(
