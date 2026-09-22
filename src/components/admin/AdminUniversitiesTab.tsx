@@ -1028,8 +1028,23 @@ export function AdminUniversitiesTab({
       const startYear = Number(structureSource?.specializationStartYear || 2);
       const startSem = Number(structureSource?.specializationStartSemester || 1);
 
-      const studentSubjs = selectedCohortSource.subjects || [];
-      const studentFiles = selectedCohortSource.files || [];
+      let studentSubjs = selectedCohortSource.subjects || [];
+      if ((!studentSubjs || studentSubjs.length === 0) && selectedCohortSource.userId) {
+        try {
+          studentSubjs = await db.getSubjects(selectedCohortSource.userId);
+        } catch (err) {
+          console.error('Error fetching student subjects for cohort:', err);
+        }
+      }
+
+      let studentFiles = selectedCohortSource.files || [];
+      if ((!studentFiles || studentFiles.length === 0) && selectedCohortSource.userId) {
+        try {
+          studentFiles = await db.getDriveFiles(selectedCohortSource.userId);
+        } catch (err) {
+          console.error('Error fetching student drive files for cohort:', err);
+        }
+      }
 
       // Smart Foundation Slicing: only the general foundation subjects prior to
       // the specialization milestone become the cohort's own subjects.
@@ -1287,8 +1302,24 @@ export function AdminUniversitiesTab({
   const handleSwitchSourceStudent = async (newStudent: any) => {
     if (!selectedCollegeDb) return;
     try {
-      const studentSubjs = newStudent?.subjects || newStudent?.raw?.subjects || [];
-      const studentFiles = newStudent?.files || newStudent?.raw?.files || [];
+      const newStudentId = newStudent?.id || newStudent?.userId;
+      let studentSubjs = newStudent?.subjects || newStudent?.raw?.subjects || [];
+      if ((!studentSubjs || studentSubjs.length === 0) && newStudentId) {
+        try {
+          studentSubjs = await db.getSubjects(newStudentId);
+        } catch (err) {
+          console.error('Error fetching student subjects on switch:', err);
+        }
+      }
+
+      let studentFiles = newStudent?.files || newStudent?.raw?.files || [];
+      if ((!studentFiles || studentFiles.length === 0) && newStudentId) {
+        try {
+          studentFiles = await db.getDriveFiles(newStudentId);
+        } catch (err) {
+          console.error('Error fetching student drive files on switch:', err);
+        }
+      }
       const studentGrading = (newStudent?.gradingScale && newStudent.gradingScale.length > 0)
         ? newStudent.gradingScale
         : (newStudent?.raw?.settings?.grading_scale || selectedCollegeDb.gradingScale || []);
@@ -6828,18 +6859,4 @@ export function AdminUniversitiesTab({
               </button>
               <button
                 type="button"
-                onClick={handleSaveAnchorStructure}
-                disabled={savingAnchorStructure}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-xl text-sm font-black shadow-sm transition-all cursor-pointer flex items-center gap-2"
-              >
-                {savingAnchorStructure ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-                <span>{isAr ? 'حفظ الهيكل' : 'Save Structure'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-    </div>
-  );
-}
+   

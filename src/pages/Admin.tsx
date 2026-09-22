@@ -411,7 +411,10 @@ export function Admin() {
           url: f.url || '',
           createdAt: f.upload_date || f.created_at || new Date().toISOString(),
           parentId: f.parent_id || f.parentId || null,
-          b2FileId: f.b2_file_id || f.b2FileId
+          b2FileId: f.b2_file_id || f.b2FileId,
+          yearIndex: f.year_index !== undefined ? Number(f.year_index) : (f.yearIndex !== undefined ? Number(f.yearIndex) : undefined),
+          semesterIndex: f.semester_index !== undefined ? Number(f.semester_index) : (f.semesterIndex !== undefined ? Number(f.semesterIndex) : undefined),
+          subjectId: f.subject_id || f.subjectId || undefined
         })),
         raw: {
           settings: userSettingsRow,

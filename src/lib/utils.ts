@@ -9,8 +9,16 @@ export function selectAcademicDriveFiles(
   createId: () => string = () => crypto.randomUUID(),
   subjectIdMap?: Map<string, string>
 ): DriveFile[] {
+  if (!files || !Array.isArray(files) || files.length === 0) return [];
+
+  const parseNum = (val: any): number | undefined => {
+    if (val === undefined || val === null || val === '') return undefined;
+    const n = Number(val);
+    return !isNaN(n) && n > 0 ? n : undefined;
+  };
+
   const normalized: DriveFile[] = files.filter(Boolean).map(f => ({
-    id: String(f.id),
+    id: String(f.id || createId()),
     name: f.name || '',
     size: Number(f.size || 0),
     type: f.type || 'file',
@@ -18,53 +26,86 @@ export function selectAcademicDriveFiles(
     createdAt: f.createdAt || ('upload_date' in f ? f.upload_date : '') || new Date().toISOString(),
     url: f.url || '',
     b2FileId: f.b2FileId || ('b2_file_id' in f ? f.b2_file_id : undefined),
-    yearIndex: Number(f.yearIndex ?? ('year_index' in f ? f.year_index : undefined)),
-    semesterIndex: Number(f.semesterIndex ?? ('semester_index' in f ? f.semester_index : undefined)),
+    yearIndex: parseNum(f.yearIndex !== undefined ? f.yearIndex : ('year_index' in f ? f.year_index : undefined)),
+    semesterIndex: parseNum(f.semesterIndex !== undefined ? f.semesterIndex : ('semester_index' in f ? f.semester_index : undefined)),
     subjectId: f.subjectId || ('subject_id' in f ? f.subject_id : undefined)
   }));
+
   const startYear = Number(structure.specializationStartYear || 2);
   const startSemester = Number(structure.specializationStartSemester || 1);
-  const selected = normalized.filter(f => {
-    const year = f.yearIndex;
-    const semester = f.semesterIndex;
-    if (!Number.isInteger(year) || year < 1 || year > (structure.totalYears || 4) ||
-        !Number.isInteger(semester) || semester < 1 || semester > (structure.semestersPerYear || 2)) return false;
-    const inSpecialization = year > startYear || (year === startYear && semester >= startSemester);
-    return inSpecialization === isSpecialization;
-  });
+
+  // Determine if a file or folder belongs to the specialization phase
+  const isSpecializationItem = (f: DriveFile): boolean => {
+    // 1. If linked to a subject mapped in the current pull map
+    if (f.subjectId && subjectIdMap && subjectIdMap.has(f.subjectId)) {
+      return isSpecialization;
+    }
+    // 2. If year and semester are explicitly set
+    if (f.yearIndex !== undefined && f.yearIndex > 0) {
+      const y = f.yearIndex;
+      const sem = f.semesterIndex || 1;
+      return y > startYear || (y === startYear && sem >= startSemester);
+    }
+    // 3. Unassigned / general files belong to general cohort database
+    return false;
+  };
+
   const byId = new Map(normalized.map(f => [f.id, f]));
-  const included = new Map(selected.map(f => [f.id, f]));
-  for (const file of selected) {
-    const visited = new Set([file.id]);
-    let parentId = file.parentId;
+  const included = new Map<string, DriveFile>();
+
+  // 1. Add matching files
+  normalized.forEach(f => {
+    if (f.type === 'file') {
+      const itemIsSpec = isSpecializationItem(f);
+      if (isSpecialization ? itemIsSpec : !itemIsSpec) {
+        included.set(f.id, f);
+      }
+    }
+  });
+
+  // 2. Add matching folders or general folders
+  normalized.forEach(f => {
+    if (f.type === 'folder') {
+      if (f.yearIndex !== undefined && f.yearIndex > 0) {
+        const folderIsSpec = (f.yearIndex > startYear || (f.yearIndex === startYear && (f.semesterIndex || 1) >= startSemester));
+        if (folderIsSpec === isSpecialization) {
+          included.set(f.id, f);
+        }
+      } else if (!isSpecialization) {
+        // General unassigned folders belong to general cohort database
+        included.set(f.id, f);
+      }
+    }
+  });
+
+  // 3. Ensure all parent ancestor folders of included items are also included
+  for (const item of Array.from(included.values())) {
+    let parentId = item.parentId;
+    const visited = new Set<string>([item.id]);
     while (parentId && !visited.has(parentId)) {
       visited.add(parentId);
       const parent = byId.get(parentId);
-      if (!parent || parent.type !== 'folder') break;
+      if (!parent) break;
       included.set(parent.id, parent);
       parentId = parent.parentId;
     }
   }
+
+  // 4. Map IDs to fresh IDs and remap parentId & subjectId
   const idMap = new Map(Array.from(included.keys(), id => [id, createId()]));
+
   return Array.from(included.values(), f => {
     let parentId = f.parentId;
-    const visited = new Set([f.id]);
-    let ancestorId = parentId;
-    while (ancestorId) {
-      if (visited.has(ancestorId) || included.get(ancestorId)?.type !== 'folder') {
-        parentId = null;
-        break;
-      }
-      visited.add(ancestorId);
-      ancestorId = included.get(ancestorId)?.parentId || null;
+    if (parentId && !included.has(parentId)) {
+      parentId = null;
     }
     const mappedSubjectId = f.subjectId ? (subjectIdMap?.get(f.subjectId) || f.subjectId) : undefined;
     return {
       ...f,
-      id: idMap.get(f.id)!,
-      parentId: parentId ? idMap.get(parentId)! : null,
-      yearIndex: Number.isInteger(f.yearIndex) && f.yearIndex > 0 ? f.yearIndex : undefined,
-      semesterIndex: Number.isInteger(f.semesterIndex) && f.semesterIndex > 0 ? f.semesterIndex : undefined,
+      id: idMap.get(f.id) || createId(),
+      parentId: parentId ? (idMap.get(parentId) || null) : null,
+      yearIndex: f.yearIndex,
+      semesterIndex: f.semesterIndex,
       subjectId: mappedSubjectId
     };
   });

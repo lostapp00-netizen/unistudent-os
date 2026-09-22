@@ -3327,7 +3327,10 @@ export const db = {
                   url: f.url || '',
                   upload_date: f.createdAt || f.upload_date || new Date().toISOString(),
                   parent_id: f.parentId || f.parent_id || null,
-                  b2_file_id: f.b2FileId || f.b2_file_id
+                  b2_file_id: f.b2FileId || f.b2_file_id,
+                  year_index: f.yearIndex !== undefined ? f.yearIndex : f.year_index,
+                  semester_index: f.semesterIndex !== undefined ? f.semesterIndex : f.semester_index,
+                  subject_id: f.subjectId || f.subject_id
                 });
               }
             });
