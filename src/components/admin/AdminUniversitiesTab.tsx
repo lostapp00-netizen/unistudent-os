@@ -1085,7 +1085,7 @@ export function AdminUniversitiesTab({
         semestersPerYear: structureSource?.semestersPerYear || selectedCohortSource.semestersPerYear || 2,
         specializationStartYear: startYear,
         specializationStartSemester: startSem
-      }, false, uuidv4, subjectIdMap);
+      }, false, uuidv4, subjectIdMap, studentSubjs);
 
       const newDb: UniversityDatabase = {
         id: uuidv4(),
@@ -1238,6 +1238,24 @@ export function AdminUniversitiesTab({
     if (!selectedCollegeDb || !specForm.specializationNameAr.trim() || !specForm.sourceUserId) return;
     setCreatingSpec(true);
     try {
+      let studentSubjs = selectedStudentForSpec?.subjects || [];
+      if ((!studentSubjs || studentSubjs.length === 0) && specForm.sourceUserId) {
+        try {
+          studentSubjs = await db.getSubjects(specForm.sourceUserId);
+        } catch (err) {
+          console.error('Error fetching student subjects for spec:', err);
+        }
+      }
+
+      let studentFiles = selectedStudentForSpec?.files || [];
+      if ((!studentFiles || studentFiles.length === 0) && specForm.sourceUserId) {
+        try {
+          studentFiles = await db.getDriveFiles(specForm.sourceUserId);
+        } catch (err) {
+          console.error('Error fetching student drive files for spec:', err);
+        }
+      }
+
       await db.createSpecializationDatabase({
         parentCollegeDbId: selectedCollegeDb.id,
         specializationNameAr: specForm.specializationNameAr.trim(),
@@ -1247,8 +1265,8 @@ export function AdminUniversitiesTab({
         sourceUserId: specForm.sourceUserId,
         sourceUserName: specForm.sourceUserName,
         sourceUserEmail: specForm.sourceUserEmail,
-        subjects: selectedStudentForSpec?.subjects || [],
-        driveFiles: selectedStudentForSpec?.files || []
+        subjects: studentSubjs,
+        driveFiles: studentFiles
       });
       await loadUniData();
       await onRefreshAllData();
@@ -1366,7 +1384,7 @@ export function AdminUniversitiesTab({
         ...selectedCollegeDb,
         totalYears: newStudent.totalYears || selectedCollegeDb.totalYears || 4,
         semestersPerYear: newStudent.semestersPerYear || selectedCollegeDb.semestersPerYear || 2
-      }, Boolean(selectedCollegeDb.isSpecialization), uuidv4, subjectIdMap);
+      }, Boolean(selectedCollegeDb.isSpecialization), uuidv4, subjectIdMap, studentSubjs);
 
       const cleanOverwriteData: Partial<UniversityDatabase> = {
         sourceUserId: newStudent.id,
@@ -6859,4 +6877,17 @@ export function AdminUniversitiesTab({
               </button>
               <button
                 type="button"
-   
+                onClick={handleSaveAnchorStructure}
+                disabled={savingAnchorStructure}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-xl text-sm font-black shadow-sm transition-all cursor-pointer flex items-center gap-2"
+              >
+                {savingAnchorStructure ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                <span>{isAr ? 'حفظ التعديلات' : 'Save Changes'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

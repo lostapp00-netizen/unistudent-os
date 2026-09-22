@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { v4 as uuidv4 } from 'uuid';
 import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, FeedbackMessage, DatabaseBackup, EmailBackupConfig, UniversityDatabase, UniversityPendingUpdate, GradeRule, GradeDistributionItem } from '../types';
 import { normalizeSubjectName } from './academicTranslation';
 import { selectAcademicDriveFiles } from './utils';
@@ -929,12 +930,44 @@ export const db = {
   },
 
   // --- Drive Files ---
-  async getDriveFiles(userId: string) {
-    const { data, error } = await supabase.from('drive_files').select('*').eq('user_id', userId);
-    if (error) console.error('Error fetching drive_files:', error);
-    return (data || []).map(mapDriveFileFromDB);
+  async getDriveFiles(userId: string): Promise<DriveFile[]> {
+    let dbFiles: DriveFile[] = [];
+    let fetchedFromSupabase = false;
+    try {
+      const { data, error } = await supabase.from('drive_files').select('*').eq('user_id', userId);
+      if (error) console.error('Error fetching drive_files:', error);
+      if (!error && data) {
+        dbFiles = data.map(mapDriveFileFromDB);
+        fetchedFromSupabase = true;
+      }
+    } catch (e) {
+      console.warn('Supabase fetch drive_files failed, checking cache:', e);
+    }
+
+    try {
+      const cacheKey = `unistudent_drive_files_${userId}`;
+      if (fetchedFromSupabase) {
+        localStorage.setItem(cacheKey, JSON.stringify(dbFiles));
+        return dbFiles;
+      }
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(mapDriveFileFromDB);
+        }
+      }
+    } catch {}
+
+    return dbFiles;
   },
   async addDriveFile(userId: string, file: DriveFile & { b2FileId?: string }) {
+    try {
+      const key = `unistudent_drive_files_${userId}`;
+      const list: DriveFile[] = JSON.parse(localStorage.getItem(key) || '[]');
+      localStorage.setItem(key, JSON.stringify([...list.filter(f => f.id !== file.id), file]));
+    } catch {}
+
     const baseRow: any = {
       id: file.id,
       university_template_id: file.universityTemplateId ?? null,
@@ -973,6 +1006,12 @@ export const db = {
     }
   },
   async updateDriveFile(userId: string, id: string, file: Partial<DriveFile>) {
+    try {
+      const key = `unistudent_drive_files_${userId}`;
+      const list: DriveFile[] = JSON.parse(localStorage.getItem(key) || '[]');
+      localStorage.setItem(key, JSON.stringify(list.map(f => f.id === id ? { ...f, ...file } : f)));
+    } catch {}
+
     const payload: any = {};
     if (file.name !== undefined) payload.name = file.name;
     if (file.parentId !== undefined) payload.parent_id = file.parentId;
@@ -987,6 +1026,12 @@ export const db = {
     );
   },
   async deleteDriveFile(userId: string, id: string) {
+    try {
+      const key = `unistudent_drive_files_${userId}`;
+      const list: DriveFile[] = JSON.parse(localStorage.getItem(key) || '[]');
+      localStorage.setItem(key, JSON.stringify(list.filter(f => f.id !== id)));
+    } catch {}
+
     await resilientWrite('deleteDriveFile', () =>
       supabase.from('drive_files').delete().eq('id', id).eq('user_id', userId),
       { userId, table: 'drive_files', op: 'delete', matchId: id }
@@ -2185,7 +2230,7 @@ export const db = {
       semestersPerYear: parentDb.semestersPerYear,
       specializationStartYear: params.specializationStartYear,
       specializationStartSemester: params.specializationStartSemester
-    }, true, () => crypto.randomUUID(), subjectIdMap);
+    }, true, () => crypto.randomUUID(), subjectIdMap, rawSubjects || []);
 
     const specId = crypto.randomUUID();
     const defaultSpecYears: number[] = [];
@@ -2249,8 +2294,8 @@ export const db = {
         
         // Enrich any records that may have missing university or college names
         try {
-          const uniDbs = await this.getUniversityDatabases().catch(() => []);
-          const uniMap = new Map(uniDbs.map(u => [u.id, u]));
+          const uniDbs: UniversityDatabase[] = await this.getUniversityDatabases().catch(() => []);
+          const uniMap = new Map<string, UniversityDatabase>(uniDbs.map(u => [u.id, u]));
           remoteList.forEach(r => {
             if (r.universityDatabaseId && (!r.universityName || !r.collegeName || !r.cohortName)) {
               const matchedDb = uniMap.get(r.universityDatabaseId);
@@ -3958,18 +4003,24 @@ function mapNoteToDB(userId: string, note: Note) {
 }
 
 function mapDriveFileFromDB(row: any): DriveFile {
+  const parseNum = (val: any): number | undefined => {
+    if (val === undefined || val === null || val === '') return undefined;
+    const n = Number(val);
+    return !isNaN(n) && n > 0 ? n : undefined;
+  };
+
   return {
-    id: row.id,
+    id: String(row.id || ''),
     universityTemplateId: row.university_template_id ?? row.universityTemplateId ?? undefined,
-    name: row.name,
-    size: row.size,
-    type: row.type,
-    url: row.url,
-    createdAt: row.upload_date,
-    parentId: row.parent_id,
-    b2FileId: row.b2_file_id,
-    yearIndex: row.year_index ?? undefined,
-    semesterIndex: row.semester_index ?? undefined,
+    name: row.name || '',
+    size: Number(row.size || 0),
+    type: row.type || 'file',
+    url: row.url || '',
+    createdAt: row.upload_date || row.createdAt || row.created_at || new Date().toISOString(),
+    parentId: row.parent_id !== undefined ? (row.parent_id || null) : (row.parentId !== undefined ? (row.parentId || null) : null),
+    b2FileId: row.b2_file_id ?? row.b2FileId,
+    yearIndex: parseNum(row.year_index !== undefined ? row.year_index : row.yearIndex),
+    semesterIndex: parseNum(row.semester_index !== undefined ? row.semester_index : row.semesterIndex),
     subjectId: row.subject_id ?? row.subjectId ?? undefined
   };
 }

@@ -403,19 +403,22 @@ export function Admin() {
           status: s.status || 'current',
           includeInGpa: s.include_in_gpa !== false && s.includeInGpa !== false
         })),
-        files: (adminData.rawFiles.filter(f => f.user_id === uid)).map(f => ({
-          id: f.id,
-          name: f.name,
-          size: Number(f.size || 0),
-          type: f.type || 'file',
-          url: f.url || '',
-          createdAt: f.upload_date || f.created_at || new Date().toISOString(),
-          parentId: f.parent_id || f.parentId || null,
-          b2FileId: f.b2_file_id || f.b2FileId,
-          yearIndex: f.year_index !== undefined ? Number(f.year_index) : (f.yearIndex !== undefined ? Number(f.yearIndex) : undefined),
-          semesterIndex: f.semester_index !== undefined ? Number(f.semester_index) : (f.semesterIndex !== undefined ? Number(f.semesterIndex) : undefined),
-          subjectId: f.subject_id || f.subjectId || undefined
-        })),
+        files: (adminData.rawFiles.filter(f => f.user_id === uid)).map(f => {
+          const parseN = (val: any) => (val !== undefined && val !== null && val !== '' && !isNaN(Number(val)) && Number(val) > 0 ? Number(val) : undefined);
+          return {
+            id: String(f.id || ''),
+            name: f.name || '',
+            size: Number(f.size || 0),
+            type: f.type || 'file',
+            url: f.url || '',
+            createdAt: f.upload_date || f.created_at || new Date().toISOString(),
+            parentId: f.parent_id !== undefined ? (f.parent_id || null) : (f.parentId !== undefined ? (f.parentId || null) : null),
+            b2FileId: f.b2_file_id || f.b2FileId,
+            yearIndex: parseN(f.year_index !== undefined ? f.year_index : f.yearIndex),
+            semesterIndex: parseN(f.semester_index !== undefined ? f.semester_index : f.semesterIndex),
+            subjectId: f.subject_id || f.subjectId || undefined
+          };
+        }),
         raw: {
           settings: userSettingsRow,
           subjects: userSubjects,
@@ -423,7 +426,7 @@ export function Admin() {
           notes: userNotes,
           appointments: userAppointments,
           schedule: userSchedule,
-          files: userFiles,
+          files: (adminData.rawFiles.filter(f => f.user_id === uid)),
           feedbacks: userFeedbacks
         }
       };

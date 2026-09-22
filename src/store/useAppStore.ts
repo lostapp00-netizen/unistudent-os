@@ -1068,8 +1068,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Drive files: Non-destructive append & merge
       if (options?.importDrive !== false) {
         const incomingDriveFiles: DriveFile[] = specDb
-          ? (specDb.driveFiles || [])
-          : (mainCollegeDb.driveFiles || []);
+          ? [...(mainCollegeDb?.driveFiles || []), ...(specDb.driveFiles || [])]
+          : (mainCollegeDb?.driveFiles || []);
 
         if (incomingDriveFiles.length > 0) {
           const clonedFiles: DriveFile[] = [];
@@ -1090,7 +1090,10 @@ export const useAppStore = create<AppState>((set, get) => ({
             inProgress.add(file.id);
 
             if (file.parentId) {
-              await cloneFile(byId.get(file.parentId));
+              const parentObj = byId.get(file.parentId);
+              if (parentObj) {
+                await cloneFile(parentObj);
+              }
             }
 
             clonedTemplateIds.add(file.id);
@@ -1123,7 +1126,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                 s.universityTemplateId === file.subjectId ||
                 s.id === file.subjectId
               ) || currentSubs.find(s => {
-                const allTemplateSubs = (mainCollegeDb.subjects || []).concat(specDb?.subjects || []);
+                const allTemplateSubs = (mainCollegeDb?.subjects || []).concat(specDb?.subjects || []);
                 const templateSub = allTemplateSubs.find(ts => ts.id === file.subjectId);
                 if (templateSub) {
                   return normalizeSubjectName(s.name) === normalizeSubjectName(templateSub.name) &&
@@ -1161,7 +1164,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
 
           if (clonedFiles.length > 0) {
-            set(state => ({ files: [...state.files, ...clonedFiles] }));
+            const updatedDrive = [...get().files, ...clonedFiles];
+            set({ files: updatedDrive });
+            try {
+              localStorage.setItem(`unistudent_drive_files_${userId}`, JSON.stringify(updatedDrive));
+              localStorage.setItem(`unistudent_files_${userId}`, JSON.stringify(updatedDrive));
+            } catch {}
           }
         }
       }
@@ -1794,13 +1802,39 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (deletedTemplateFileIds.has(tFile.id)) return;
 
           if (tFile.parentId) {
-            await importTemplateFile(templateById.get(tFile.parentId));
+            const parentObj = templateById.get(tFile.parentId);
+            if (parentObj) {
+              await importTemplateFile(parentObj);
+            }
           }
 
+          const expectedParentId = tFile.parentId ? (templateToLocalId.get(tFile.parentId) || null) : null;
           const existingFile = currentFiles.find(f =>
             (f.universityTemplateId && f.universityTemplateId === tFile.id) ||
-            (f.name.trim().toLowerCase() === (tFile.name || '').trim().toLowerCase() && f.type === tFile.type)
+            matchesDriveItem(f, tFile, expectedParentId)
           );
+
+          // Map template subject ID to corresponding local subject ID
+          let mappedSubjectId: string | undefined = undefined;
+          if (tFile.subjectId) {
+            const currentSubs = currentSubjects || [];
+            const matchingSub = currentSubs.find(s =>
+              s.universityTemplateId === tFile.subjectId ||
+              s.id === tFile.subjectId
+            ) || currentSubs.find(s => {
+              const allTemplateSubs = (matchedDb?.subjects || []).concat(specDb?.subjects || []);
+              const templateSub = allTemplateSubs.find(ts => ts.id === tFile.subjectId);
+              if (templateSub) {
+                return normalizeSubjectName(s.name) === normalizeSubjectName(templateSub.name) &&
+                       Number(s.yearIndex || 1) === Number(templateSub.yearIndex || 1) &&
+                       Number(s.semesterIndex || 1) === Number(templateSub.semesterIndex || 1);
+              }
+              return false;
+            });
+            if (matchingSub) {
+              mappedSubjectId = matchingSub.id;
+            }
+          }
 
           if (!existingFile) {
             const newF: DriveFile = {
@@ -1809,10 +1843,13 @@ export const useAppStore = create<AppState>((set, get) => ({
               name: tFile.name,
               size: Number(tFile.size || 0),
               type: tFile.type || 'file',
-              parentId: tFile.parentId ? (templateToLocalId.get(tFile.parentId) || null) : null,
+              parentId: expectedParentId,
               createdAt: tFile.createdAt || new Date().toISOString(),
               url: tFile.url || '',
-              b2FileId: tFile.b2FileId
+              b2FileId: tFile.b2FileId,
+              yearIndex: tFile.yearIndex,
+              semesterIndex: tFile.semesterIndex,
+              subjectId: mappedSubjectId || tFile.subjectId
             };
             currentFiles.push(newF);
             templateToLocalId.set(tFile.id, newF.id);
@@ -1821,20 +1858,31 @@ export const useAppStore = create<AppState>((set, get) => ({
           } else {
             templateToLocalId.set(tFile.id, existingFile.id);
 
-            // Heal dangling parents from earlier buggy syncs: recompute the
-            // expected local parent and update if it differs.
-            const expectedParentId = tFile.parentId ? (templateToLocalId.get(tFile.parentId) || null) : null;
-            if ((existingFile.parentId || null) !== expectedParentId) {
+            const needUpdate =
+              (existingFile.parentId || null) !== expectedParentId ||
+              existingFile.url !== tFile.url ||
+              existingFile.name !== tFile.name ||
+              existingFile.universityTemplateId !== tFile.id ||
+              existingFile.yearIndex !== tFile.yearIndex ||
+              existingFile.semesterIndex !== tFile.semesterIndex ||
+              (mappedSubjectId && existingFile.subjectId !== mappedSubjectId);
+
+            if (needUpdate) {
               existingFile.parentId = expectedParentId;
-              await db.updateDriveFile(userId, existingFile.id, { parentId: expectedParentId }).catch(() => {});
-              hasFileChanges = true;
-            } else if (existingFile.url !== tFile.url || existingFile.name !== tFile.name || existingFile.universityTemplateId !== tFile.id) {
-              existingFile.url = tFile.url;
-              existingFile.name = tFile.name;
+              existingFile.url = tFile.url || existingFile.url;
+              existingFile.name = tFile.name || existingFile.name;
               existingFile.universityTemplateId = tFile.id;
+              if (tFile.yearIndex !== undefined) existingFile.yearIndex = tFile.yearIndex;
+              if (tFile.semesterIndex !== undefined) existingFile.semesterIndex = tFile.semesterIndex;
+              if (mappedSubjectId) existingFile.subjectId = mappedSubjectId;
+
               await db.updateDriveFile(userId, existingFile.id, {
-                url: tFile.url,
-                name: tFile.name,
+                parentId: expectedParentId,
+                url: existingFile.url,
+                name: existingFile.name,
+                yearIndex: existingFile.yearIndex,
+                semesterIndex: existingFile.semesterIndex,
+                subjectId: existingFile.subjectId,
                 universityTemplateId: tFile.id
               }).catch(() => {});
               hasFileChanges = true;
@@ -1899,6 +1947,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (hasFileChanges) {
         set({ files: currentFiles });
         try {
+          localStorage.setItem(`unistudent_drive_files_${userId}`, JSON.stringify(currentFiles));
           localStorage.setItem(`unistudent_files_${userId}`, JSON.stringify(currentFiles));
         } catch {}
       }
