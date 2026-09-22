@@ -1485,8 +1485,27 @@ export const db = {
           ...partialData,
           updatedAt
         };
-        localStorage.setItem('unistudent_university_databases', JSON.stringify(cachedDatabases));
+      } else {
+        cachedDatabases.push({
+          id,
+          universityNameAr: '',
+          universityNameEn: '',
+          collegeNameAr: '',
+          collegeNameEn: '',
+          totalYears: 4,
+          semestersPerYear: 2,
+          availableYears: [1],
+          isVisible: true,
+          isSpecialization: false,
+          subjects: [],
+          driveFiles: [],
+          gradingScale: [],
+          createdAt: updatedAt,
+          ...partialData,
+          updatedAt
+        } as UniversityDatabase);
       }
+      localStorage.setItem('unistudent_university_databases', JSON.stringify(cachedDatabases));
     } catch (localErr) {
       console.warn('LocalStorage updateUniversityDatabase warning:', localErr);
     }
@@ -4419,26 +4438,30 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     const prevName = (prev.name || '').trim();
     const itemType = upd.type || prev.type || 'file';
 
+    const normTargetName = normalizeSubjectName(targetName);
+    const normPrevName = normalizeSubjectName(prevName);
+
     // Resolve parent folder in template
     let resolvedParentId: string | null = null;
     let parentFound = false;
     const targetParentId = upd.parentId !== undefined ? upd.parentId : prev.parentId;
-    const targetParentName = (upd.parentName !== undefined ? upd.parentName : prev.parentName || '').trim().toLowerCase();
+    const targetParentName = (upd.parentName !== undefined ? upd.parentName : prev.parentName || '').trim();
+    const normTargetParentName = normalizeSubjectName(targetParentName);
 
     if (targetParentId) {
       const parentById = driveFiles.find(f => f.id === targetParentId && f.type === 'folder');
       if (parentById) {
         resolvedParentId = parentById.id;
         parentFound = true;
-      } else if (targetParentName) {
-        const parentByName = driveFiles.find(f => f.type === 'folder' && f.name.trim().toLowerCase() === targetParentName);
+      } else if (normTargetParentName) {
+        const parentByName = driveFiles.find(f => f.type === 'folder' && normalizeSubjectName(f.name) === normTargetParentName);
         if (parentByName) {
           resolvedParentId = parentByName.id;
           parentFound = true;
         }
       }
-    } else if (targetParentName) {
-      const parentByName = driveFiles.find(f => f.type === 'folder' && f.name.trim().toLowerCase() === targetParentName);
+    } else if (normTargetParentName) {
+      const parentByName = driveFiles.find(f => f.type === 'folder' && normalizeSubjectName(f.name) === normTargetParentName);
       if (parentByName) {
         resolvedParentId = parentByName.id;
         parentFound = true;
@@ -4470,9 +4493,10 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
 
     let matched = false;
     driveFiles = driveFiles.map(f => {
+      const normFName = normalizeSubjectName(f.name || '');
       const isIdMatch = Boolean((templateFileId && f.id === templateFileId) || (upd.id && f.id === upd.id) || (prev.id && f.id === prev.id));
-      const isPrevNameMatch = Boolean(prevName && f.name.trim().toLowerCase() === prevName.toLowerCase() && f.type === itemType);
-      const isTargetNameMatch = Boolean(targetName && f.name.trim().toLowerCase() === targetName.toLowerCase() && f.type === itemType);
+      const isPrevNameMatch = Boolean(normPrevName && normFName === normPrevName && f.type === itemType);
+      const isTargetNameMatch = Boolean(normTargetName && normFName === normTargetName && f.type === itemType);
       const isUrlMatch = Boolean(f.url && ((upd.url && f.url === upd.url) || (prev.url && f.url === prev.url)));
       const isB2Match = Boolean(f.b2FileId && ((upd.b2FileId && f.b2FileId === upd.b2FileId) || (prev.b2FileId && f.b2FileId === prev.b2FileId)));
 
@@ -4516,7 +4540,8 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     const delData = update.data;
     const targetId = delData.id;
     const templateFileId = delData.universityTemplateId || delData.university_template_id;
-    const targetName = (delData.name || '').trim().toLowerCase();
+    const targetName = (delData.name || '').trim();
+    const normTargetName = normalizeSubjectName(targetName);
     const targetType = delData.type;
     const targetUrl = delData.url;
     const targetB2 = delData.b2FileId || delData.b2_file_id;
@@ -4526,13 +4551,14 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     const deletedFolderIds = new Set<string>();
 
     driveFiles = driveFiles.filter(f => {
+      const normFName = normalizeSubjectName(f.name || '');
       const isIdMatch = Boolean((templateFileId && f.id === templateFileId) || (targetId && f.id === targetId));
       const isUrlMatch = Boolean((targetUrl && f.url === targetUrl) || (targetB2 && f.b2FileId === targetB2));
       const isNameMatch = Boolean(
-        targetName && f.name.trim().toLowerCase() === targetName &&
+        normTargetName && normFName === normTargetName &&
         (targetType === undefined || f.type === targetType) &&
-        (targetYear === undefined || f.yearIndex === targetYear) &&
-        (targetSem === undefined || f.semesterIndex === targetSem)
+        (targetYear === undefined || Number(f.yearIndex || 1) === targetYear) &&
+        (targetSem === undefined || Number(f.semesterIndex || 1) === targetSem)
       );
 
       if (isIdMatch || isUrlMatch || isNameMatch) {

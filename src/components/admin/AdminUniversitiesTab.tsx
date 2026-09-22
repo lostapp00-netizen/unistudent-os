@@ -196,7 +196,7 @@ export function AdminUniversitiesTab({
     return databases.filter(d => d.isSpecialization && d.parentDatabaseId === selectedCollegeDb.id);
   }, [databases, selectedCollegeDb]);
 
-  // Dynamically slice visible years: Foundation only for College, Spec years only for Specialization
+  // Dynamically slice visible years: Foundation only for College if specializations exist, Spec years only for Specialization, all years if no specializations exist
   const visibleYearsForSelectedCollege = useMemo(() => {
     if (!selectedCollegeDb) return [1];
     const totalYears = Number(selectedCollegeDb.totalYears || 4);
@@ -211,16 +211,26 @@ export function AdminUniversitiesTab({
       }
       return years.length > 0 ? years : [specStartYr];
     } else {
-      // General College (Foundation): from Year 1 up to maxFoundationYear
-      const maxFoundationYear = Math.max(1, specStartSem === 1 ? specStartYr - 1 : specStartYr);
-      const limit = Math.min(totalYears, maxFoundationYear);
-      const years: number[] = [];
-      for (let y = 1; y <= limit; y++) {
-        years.push(y);
+      const hasSpecs = collegeSpecializations.length > 0;
+      if (hasSpecs) {
+        // General College (Foundation): from Year 1 up to maxFoundationYear
+        const maxFoundationYear = Math.max(1, specStartSem === 1 ? specStartYr - 1 : specStartYr);
+        const limit = Math.min(totalYears, maxFoundationYear);
+        const years: number[] = [];
+        for (let y = 1; y <= limit; y++) {
+          years.push(y);
+        }
+        return years.length > 0 ? years : [1];
+      } else {
+        // No specializations exist yet: show all academic years up to totalYears
+        const years: number[] = [];
+        for (let y = 1; y <= totalYears; y++) {
+          years.push(y);
+        }
+        return years.length > 0 ? years : [1];
       }
-      return years.length > 0 ? years : [1];
     }
-  }, [selectedCollegeDb]);
+  }, [selectedCollegeDb, collegeSpecializations]);
   
   // Studio Navigation inside a College
   const [selectedYearIndex, setSelectedYearIndex] = useState<number>(1);
@@ -3644,7 +3654,7 @@ export function AdminUniversitiesTab({
                   {/* Subjects List in Active (Year, Semester) */}
                   {(() => {
                     const currentSemesterSubjects = (selectedCollegeDb.subjects || []).filter(
-                      s => s.yearIndex === selectedYearIndex && s.semesterIndex === selectedSemesterIndex
+                      s => Number(s.yearIndex || 1) === Number(selectedYearIndex) && Number(s.semesterIndex || 1) === Number(selectedSemesterIndex)
                     );
 
                     return (
