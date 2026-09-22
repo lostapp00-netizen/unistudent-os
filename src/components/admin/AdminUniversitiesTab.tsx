@@ -124,6 +124,8 @@ export function AdminUniversitiesTab({
 
   // Grouped Pending Updates State
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<Record<string, boolean>>({});
+  const [resolvingUpdateIds, setResolvingUpdateIds] = useState<Record<string, boolean>>({});
+  const [isResolvingAll, setIsResolvingAll] = useState(false);
 
   // Navigation State with Session Storage Persistence
   const [selectedUniversityKey, setSelectedUniversityKey] = useState<string | null>(() => {
@@ -1990,9 +1992,11 @@ export function AdminUniversitiesTab({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
-  // Respond to Pending Update (with Reversible status and resilient ID & Distribution matching)
+  // Respond to Pending Update (atomic batch resolution with state sync)
   const handleResolvePendingUpdate = async (update: UniversityPendingUpdate, status: 'approved' | 'rejected' | 'pending') => {
-    // Optimistic immediate update of badge counter
+    setResolvingUpdateIds(prev => ({ ...prev, [update.id]: true }));
+
+    // Optimistic immediate update of local state
     setPendingUpdates(prev => {
       const next = prev.map(p => p.id === update.id ? { ...p, status } : p);
       const remainingCount = next.filter(p => p.status === 'pending').length;
@@ -2001,209 +2005,80 @@ export function AdminUniversitiesTab({
     });
 
     try {
-      if (status === 'pending') {
-        await db.recordPendingUpdate({ ...update, status: 'pending', resolvedAt: undefined });
-      } else {
-        await db.respondToPendingUpdate(update.id, status, (targetDb) => {
-          if (update.type === 'add_subject' && update.data) {
-            const subjectId = update.data.id || uuidv4();
-            const subjectName = (update.data.name || '').trim();
-            const newSubj: Subject = {
-              id: subjectId,
-              code: (update.data.code || '').trim(),
-              name: subjectName,
-              creditHours: Number(update.data.creditHours || update.data.credit_hours || 3),
-              totalMarks: Number(update.data.totalMarks || update.data.total_marks || 100),
-              yearIndex: Number(update.data.yearIndex || update.data.year_index || 1),
-              semesterIndex: Number(update.data.semesterIndex || update.data.semester_index || 1),
-              distributions: (update.data.distributions || []).map((d: any) => ({
-                id: d.id || uuidv4(),
-                name: (d.name || '').trim(),
-                maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : (d.max_marks !== undefined ? d.max_marks : 0)),
-                achievedMarks: null,
-                status: 'current' as const
-              })),
-              status: 'current',
-              includeInGpa: update.data.includeInGpa !== false && update.data.include_in_gpa !== false
-            };
-            const normNew = normalizeSubjectName(newSubj.name);
-            const filtered = (targetDb.subjects || []).filter(s => 
-              s.id !== subjectId && 
-              !(normalizeSubjectName(s.name) === normNew && s.yearIndex === newSubj.yearIndex && s.semesterIndex === newSubj.semesterIndex)
-            );
-            return { ...targetDb, subjects: [...filtered, newSubj] };
-          } else if (update.type === 'update_subject' && update.data) {
-            const { previous: _previous, ...upd } = update.data;
-            const updatedDistributions = upd.distributions
-              ? upd.distributions.map((d: any) => ({
-                  id: d.id || uuidv4(),
-                  name: (d.name || '').trim(),
-                  maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : (d.max_marks !== undefined ? d.max_marks : 0)),
-                  achievedMarks: null,
-                  status: 'current' as const
-                }))
-              : undefined;
-
-            const normUpd = normalizeSubjectName(upd.name || '');
-            return {
-              ...targetDb,
-              subjects: (targetDb.subjects || []).map(s => {
-                const isMatch = s.id === upd.id || (normUpd && normalizeSubjectName(s.name) === normUpd && s.yearIndex === upd.yearIndex && s.semesterIndex === upd.semesterIndex);
-                if (!isMatch) return s;
-                return {
-                  ...s,
-                  ...upd,
-                  name: (upd.name || s.name || '').trim(),
-                  distributions: updatedDistributions !== undefined ? updatedDistributions : s.distributions
-                };
-              })
-            };
-          } else if (update.type === 'delete_subject' && update.data) {
-            const upd = update.data;
-            const normUpd = normalizeSubjectName(upd.name || '');
-            return {
-              ...targetDb,
-              subjects: (targetDb.subjects || []).filter(s => s.id !== upd.id && normalizeSubjectName(s.name) !== normUpd)
-            };
-          } else if (update.type === 'add_file' && update.data) {
-            const file = update.data;
-            const newFile: DriveFile = {
-              id: file.id || uuidv4(),
-              name: file.name,
-              size: Number(file.size || 0),
-              type: file.type || 'file',
-              parentId: file.parentId || null,
-              createdAt: file.createdAt || new Date().toISOString(),
-              url: file.url || '',
-              b2FileId: file.b2FileId || file.b2_file_id,
-              yearIndex: file.yearIndex !== undefined ? Number(file.yearIndex) : undefined,
-              semesterIndex: file.semesterIndex !== undefined ? Number(file.semesterIndex) : undefined,
-              subjectId: file.subjectId || file.subject_id || undefined
-            };
-            // Parent resolution: try the original parentId first, then fall
-            // back to the source folder NAME (ids differ between the student's
-            // drive and the cloned database), else surface at the root.
-            let resolvedParentId: string | null = newFile.parentId || null;
-            if (resolvedParentId && !(targetDb.driveFiles || []).some(f => f.id === resolvedParentId && f.type === 'folder')) {
-              const parentByName = file.parentName
-                ? (targetDb.driveFiles || []).find(f => f.type === 'folder' && f.name === file.parentName)
-                : undefined;
-              resolvedParentId = parentByName ? parentByName.id : null;
-            }
-            newFile.parentId = resolvedParentId;
-            const filteredFiles = (targetDb.driveFiles || []).filter(f => f.id !== newFile.id && f.name !== newFile.name);
-            return {
-              ...targetDb,
-              driveFiles: [...filteredFiles, newFile]
-            };
-          } else if (update.type === 'update_file' && update.data) {
-            const { previous: _previous, ...updatedFile } = update.data;
-            return {
-              ...targetDb,
-              driveFiles: (targetDb.driveFiles || []).map(file =>
-                (file.id === updatedFile.id || (file.universityTemplateId && file.universityTemplateId === updatedFile.id) || file.name === updatedFile.name)
-                  ? {
-                      ...file,
-                      ...updatedFile,
-                      name: (updatedFile.name || file.name || '').trim(),
-                      parentId: updatedFile.parentId !== undefined ? updatedFile.parentId : file.parentId,
-                      subjectId: updatedFile.subjectId !== undefined ? updatedFile.subjectId : file.subjectId,
-                      yearIndex: updatedFile.yearIndex !== undefined ? Number(updatedFile.yearIndex) : file.yearIndex,
-                      semesterIndex: updatedFile.semesterIndex !== undefined ? Number(updatedFile.semesterIndex) : file.semesterIndex,
-                      createdAt: updatedFile.createdAt || file.createdAt
-                    }
-                  : file
-              )
-            };
-          } else if (update.type === 'delete_file' && update.data) {
-            const targetId = update.data.id;
-            const targetName = update.data.name;
-            return {
-              ...targetDb,
-              driveFiles: (targetDb.driveFiles || []).filter(f => f.id !== targetId && f.name !== targetName)
-            };
-          } else if (update.type === 'update_grading_scale' && update.data) {
-            const newScale = update.data.gradingScale || update.data;
-            return {
-              ...targetDb,
-              gradingScale: Array.isArray(newScale) ? newScale : targetDb.gradingScale
-            };
-          }
-          return targetDb;
-        });
-      }
-      if (status === 'approved' && update.universityDatabaseId) {
-        setDatabases(prev => prev.map(d => {
-          if (d.id === update.universityDatabaseId) {
-            if (update.type === 'add_subject' && update.data) {
-              const subjectId = update.data.id || uuidv4();
-              const newSubj: Subject = {
-                id: subjectId,
-                code: (update.data.code || '').trim(),
-                name: (update.data.name || '').trim(),
-                creditHours: Number(update.data.creditHours || update.data.credit_hours || 3),
-                totalMarks: Number(update.data.totalMarks || update.data.total_marks || 100),
-                yearIndex: Number(update.data.yearIndex || update.data.year_index || 1),
-                semesterIndex: Number(update.data.semesterIndex || update.data.semester_index || 1),
-                distributions: update.data.distributions || [],
-                status: 'current',
-                includeInGpa: update.data.includeInGpa !== false && update.data.include_in_gpa !== false
-              };
-              const filtered = (d.subjects || []).filter(s => s.id !== subjectId && s.name !== newSubj.name);
-              return { ...d, subjects: [...filtered, newSubj] };
-            } else if (update.type === 'update_subject' && update.data) {
-              const upd = update.data;
-              return {
-                ...d,
-                subjects: (d.subjects || []).map(s => (s.id === upd.id || s.name === upd.name) ? { ...s, ...upd } : s)
-              };
-            } else if (update.type === 'delete_subject' && update.data) {
-              return {
-                ...d,
-                subjects: (d.subjects || []).filter(s => s.id !== update.data.id && s.name !== update.data.name)
-              };
-            } else if (update.type === 'add_file' && update.data) {
-              const file = update.data;
-              const filteredFiles = (d.driveFiles || []).filter(f => f.id !== file.id && f.name !== file.name);
-              return { ...d, driveFiles: [...filteredFiles, file] };
-            } else if (update.type === 'update_file' && update.data) {
-              const upd = update.data;
-              return {
-                ...d,
-                driveFiles: (d.driveFiles || []).map(f => (f.id === upd.id || f.name === upd.name) ? { ...f, ...upd } : f)
-              };
-            } else if (update.type === 'delete_file' && update.data) {
-              return {
-                ...d,
-                driveFiles: (d.driveFiles || []).filter(f => f.id !== update.data.id && f.name !== update.data.name)
-              };
-            } else if (update.type === 'update_grading_scale' && update.data) {
-              const newScale = update.data.gradingScale || update.data;
-              return {
-                ...d,
-                gradingScale: Array.isArray(newScale) ? newScale : d.gradingScale
-              };
-            }
-          }
-          return d;
-        }));
-      }
-      if (update.universityDatabaseId) {
-        await broadcastUniversityDatabaseUpdate({ id: update.universityDatabaseId, timestamp: Date.now() });
-      }
+      await db.batchRespondToPendingUpdates([update], status);
       await loadUniData();
       await onRefreshAllData();
     } catch (e) {
       console.error('Error resolving pending update:', e);
+    } finally {
+      setResolvingUpdateIds(prev => {
+        const next = { ...prev };
+        delete next[update.id];
+        return next;
+      });
     }
   };
 
-  // Grouped Bulk Resolution (Approve / Reject all in group)
+  // Grouped Bulk Resolution (Approve / Reject all pending in group in a single atomic batch)
   const handleResolveGroup = async (groupUpdates: UniversityPendingUpdate[], status: 'approved' | 'rejected') => {
-    for (const u of groupUpdates) {
-      if (u.status === 'pending') {
-        await handleResolvePendingUpdate(u, status);
-      }
+    const pendingInGroup = groupUpdates.filter(u => u.status === 'pending');
+    if (pendingInGroup.length === 0) return;
+
+    const pendingIds = pendingInGroup.map(u => u.id);
+    setResolvingUpdateIds(prev => {
+      const next = { ...prev };
+      pendingIds.forEach(id => { next[id] = true; });
+      return next;
+    });
+
+    // Optimistic update of local state
+    const pendingSet = new Set(pendingIds);
+    setPendingUpdates(prev => {
+      const next = prev.map(p => pendingSet.has(p.id) ? { ...p, status } : p);
+      const remainingCount = next.filter(p => p.status === 'pending').length;
+      onPendingCountChange?.(remainingCount);
+      return next;
+    });
+
+    try {
+      await db.batchRespondToPendingUpdates(pendingInGroup, status);
+      await loadUniData();
+      await onRefreshAllData();
+    } catch (e) {
+      console.error('Error resolving group pending updates:', e);
+    } finally {
+      setResolvingUpdateIds(prev => {
+        const next = { ...prev };
+        pendingIds.forEach(id => { delete next[id]; });
+        return next;
+      });
+    }
+  };
+
+  // Global Bulk Resolution (Approve / Reject ALL pending updates across all students)
+  const handleResolveAllPending = async (status: 'approved' | 'rejected') => {
+    const allPending = pendingUpdates.filter(u => u.status === 'pending');
+    if (allPending.length === 0) return;
+
+    setIsResolvingAll(true);
+    const pendingIds = allPending.map(u => u.id);
+    const pendingSet = new Set(pendingIds);
+
+    // Optimistic update of local state
+    setPendingUpdates(prev => {
+      const next = prev.map(p => pendingSet.has(p.id) ? { ...p, status } : p);
+      onPendingCountChange?.(0);
+      return next;
+    });
+
+    try {
+      await db.batchRespondToPendingUpdates(allPending, status);
+      await loadUniData();
+      await onRefreshAllData();
+    } catch (e) {
+      console.error('Error resolving all pending updates:', e);
+    } finally {
+      setIsResolvingAll(false);
     }
   };
 
@@ -2460,6 +2335,20 @@ export function AdminUniversitiesTab({
                   {isAr ? 'الكل' : 'All'}
                 </button>
               </div>
+
+              {/* Global Approve All Pending Action */}
+              {totalPendingUpdates > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleResolveAllPending('approved')}
+                  disabled={isResolvingAll || Object.keys(resolvingUpdateIds).length > 0}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-2xl text-xs font-black shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+                  title={isAr ? 'الموافقة على كافة التحديثات المعلقة لجميع الطلاب' : 'Approve all pending updates across all students'}
+                >
+                  {isResolvingAll ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                  <span>{isAr ? `الموافقة على كل المعلق (${totalPendingUpdates})` : `Approve All Pending (${totalPendingUpdates})`}</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -2498,6 +2387,7 @@ export function AdminUniversitiesTab({
               return groupedList.map(group => {
                 const pendingInGroup = group.updates.filter(u => u.status === 'pending');
                 const isExpanded = expandedGroupKeys[group.key] !== false; // expanded by default
+                const isGroupBusy = isResolvingAll || pendingInGroup.some(u => resolvingUpdateIds[u.id]);
 
                 return (
                   <div 
@@ -2552,16 +2442,18 @@ export function AdminUniversitiesTab({
                             <button
                               type="button"
                               onClick={() => handleResolveGroup(group.updates, 'approved')}
-                              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+                              disabled={isGroupBusy}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
                               title={isAr ? 'الموافقة على جميع تعديلات هذا الطالب' : 'Approve all updates for this student'}
                             >
-                              <CheckCircle2 size={14} />
+                              {isGroupBusy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                               <span>{isAr ? `موافقة على الكل (${pendingInGroup.length})` : `Approve All (${pendingInGroup.length})`}</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => handleResolveGroup(group.updates, 'rejected')}
-                              className="px-3 py-2 text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                              disabled={isGroupBusy}
+                              className="px-3 py-2 text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 disabled:opacity-50 rounded-xl text-xs font-bold transition-all cursor-pointer"
                               title={isAr ? 'رفض جميع تعديلات هذا الطالب' : 'Reject all updates for this student'}
                             >
                               {isAr ? 'رفض الكل' : 'Reject All'}
@@ -2683,26 +2575,32 @@ export function AdminUniversitiesTab({
                               {update.status === 'pending' ? (
                                 <>
                                   <button
+                                    type="button"
                                     onClick={() => handleResolvePendingUpdate(update, 'rejected')}
-                                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 transition-colors cursor-pointer"
+                                    disabled={resolvingUpdateIds[update.id] || isResolvingAll}
+                                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 disabled:opacity-50 transition-colors cursor-pointer"
                                   >
                                     {isAr ? 'رفض' : 'Reject'}
                                   </button>
                                   <button
+                                    type="button"
                                     onClick={() => handleResolvePendingUpdate(update, 'approved')}
-                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer"
+                                    disabled={resolvingUpdateIds[update.id] || isResolvingAll}
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white shadow-xs transition-colors cursor-pointer"
                                   >
-                                    <Check size={13} />
+                                    {resolvingUpdateIds[update.id] ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
                                     <span>{isAr ? 'موافقة' : 'Approve'}</span>
                                   </button>
                                 </>
                               ) : (
                                 <button
+                                  type="button"
                                   onClick={() => handleResolvePendingUpdate(update, 'pending')}
-                                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 transition-colors cursor-pointer"
+                                  disabled={resolvingUpdateIds[update.id] || isResolvingAll}
+                                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 disabled:opacity-50 text-zinc-700 dark:text-zinc-200 transition-colors cursor-pointer"
                                   title={isAr ? 'تراجع عن القرار' : 'Reverse Decision'}
                                 >
-                                  <RotateCcw size={12} />
+                                  {resolvingUpdateIds[update.id] ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
                                   <span>{isAr ? 'تراجع' : 'Reverse'}</span>
                                 </button>
                               )}

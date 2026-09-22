@@ -2524,42 +2524,114 @@ export const db = {
     }
   },
 
-  async respondToPendingUpdate(id: string, status: 'approved' | 'rejected', applyAction?: (db: UniversityDatabase) => UniversityDatabase): Promise<void> {
+  async batchRespondToPendingUpdates(
+    updates: UniversityPendingUpdate[],
+    status: 'approved' | 'rejected' | 'pending'
+  ): Promise<void> {
+    if (!updates || updates.length === 0) return;
+
+    const resolvedAt = status === 'pending' ? undefined : new Date().toISOString();
+    const updateIdsSet = new Set(updates.map(u => u.id));
+
+    // 1. Update in-memory & LocalStorage pending updates cache
+    let localList: UniversityPendingUpdate[] = [];
+    try {
+      const local = localStorage.getItem('unistudent_pending_updates');
+      localList = local ? JSON.parse(local) : [];
+      localList = localList.map(item => {
+        if (updateIdsSet.has(item.id)) {
+          return { ...item, status, resolvedAt };
+        }
+        return item;
+      });
+      localStorage.setItem('unistudent_pending_updates', JSON.stringify(localList));
+    } catch {}
+
+    // 2. Persist status updates to Supabase
+    try {
+      const ids = Array.from(updateIdsSet);
+      if (status === 'pending') {
+        await supabase
+          .from('university_pending_updates')
+          .update({ status: 'pending', resolved_at: null })
+          .in('id', ids);
+      } else {
+        const { error } = await supabase
+          .from('university_pending_updates')
+          .update({ status, resolved_at: resolvedAt })
+          .in('id', ids);
+
+        if (error && (error.message?.includes('resolved_at') || error.message?.includes('column') || error.code === '42703')) {
+          const fallbackRes = await supabase
+            .from('university_pending_updates')
+            .update({ status })
+            .in('id', ids);
+          if (fallbackRes.error) {
+            console.warn('Supabase batch update status fallback warning:', fallbackRes.error);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase batch update pending update exception:', e);
+    }
+
+    // 3. If approved, apply database updates sequentially per target university database
+    if (status === 'approved') {
+      const byDb: Record<string, UniversityPendingUpdate[]> = {};
+      updates.forEach(u => {
+        if (u.universityDatabaseId) {
+          if (!byDb[u.universityDatabaseId]) byDb[u.universityDatabaseId] = [];
+          byDb[u.universityDatabaseId].push(u);
+        }
+      });
+
+      const dbIds = Object.keys(byDb);
+      for (const dbId of dbIds) {
+        try {
+          let udb = await this.getUniversityDatabase(dbId);
+          if (!udb) {
+            const all = await this.getUniversityDatabases();
+            udb = all.find(d => d.id === dbId) || null;
+          }
+          if (udb) {
+            let currentDb: UniversityDatabase = {
+              ...udb,
+              subjects: udb.subjects || [],
+              driveFiles: udb.driveFiles || [],
+              gradingScale: udb.gradingScale || []
+            };
+            const dbUpdates = byDb[dbId];
+            // Apply updates in chronological order (oldest first)
+            dbUpdates.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+            for (const upd of dbUpdates) {
+              currentDb = applyPendingUpdateToDatabase(currentDb, upd);
+            }
+
+            await this.updateUniversityDatabase(currentDb.id, currentDb);
+          }
+        } catch (dbErr) {
+          console.warn(`Error applying batch pending updates to database ${dbId}:`, dbErr);
+        }
+      }
+
+      // Broadcast update notifications for affected databases
+      for (const dbId of dbIds) {
+        await broadcastUniversityDatabaseUpdate({ id: dbId, timestamp: Date.now() });
+      }
+    }
+  },
+
+  async respondToPendingUpdate(
+    id: string,
+    status: 'approved' | 'rejected' | 'pending',
+    customApplyAction?: (db: UniversityDatabase) => UniversityDatabase
+  ): Promise<void> {
     const pendingList = await this.getPendingUpdates();
     const target = pendingList.find(p => p.id === id);
     if (!target) return;
 
-    const resolvedAt = new Date().toISOString();
-
-    // 1. Immediately update status in local memory and persist to localStorage
-    target.status = status;
-    target.resolvedAt = resolvedAt;
-    try {
-      localStorage.setItem('unistudent_pending_updates', JSON.stringify(pendingList));
-    } catch {}
-
-    // 2. Immediately persist status to Supabase with fallback
-    try {
-      let { error } = await supabase
-        .from('university_pending_updates')
-        .update({ status, resolved_at: resolvedAt })
-        .eq('id', id);
-
-      if (error && (error.message?.includes('resolved_at') || error.message?.includes('column') || error.code === '42703')) {
-        const fallbackRes = await supabase
-          .from('university_pending_updates')
-          .update({ status })
-          .eq('id', id);
-        if (fallbackRes.error) {
-          console.warn('Supabase update status fallback warning:', fallbackRes.error);
-        }
-      }
-    } catch (e) {
-      console.warn('Supabase update pending update exception:', e);
-    }
-
-    // 3. If approved, apply database updates and sync changes safely
-    if (status === 'approved' && applyAction && target.universityDatabaseId) {
+    if (customApplyAction && status === 'approved' && target.universityDatabaseId) {
       try {
         let udb = await this.getUniversityDatabase(target.universityDatabaseId);
         if (!udb) {
@@ -2567,20 +2639,17 @@ export const db = {
           udb = all.find(d => d.id === target.universityDatabaseId) || null;
         }
         if (udb) {
-          udb.subjects = udb.subjects || [];
-          udb.driveFiles = udb.driveFiles || [];
-          const updatedDb = applyAction(udb);
-          await this.updateUniversityDatabase(udb.id, updatedDb);
-          await this.syncUniversityDatabaseChangesToStudents(udb.id, {
-            type: (target.type as any) || 'full_sync',
-            subject: target.data,
-            updatedDb
-          });
+          const updatedDb = customApplyAction(udb);
+          await this.updateUniversityDatabase(updatedDb.id, updatedDb);
         }
       } catch (applyErr) {
-        console.warn('Error applying approved pending update side-effects:', applyErr);
+        console.warn('Error applying custom action in respondToPendingUpdate:', applyErr);
       }
+      await this.batchRespondToPendingUpdates([{ ...target, status }], status);
+      return;
     }
+
+    await this.batchRespondToPendingUpdates([target], status);
   },
 
   // --- Standalone Universities Registry ---
@@ -4133,6 +4202,261 @@ function mapPendingUpdateFromDB(row: any): UniversityPendingUpdate {
     resolvedAt: row.resolved_at
   };
 }
+
+export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, update: UniversityPendingUpdate): UniversityDatabase {
+  if (!targetDb || !update) return targetDb;
+  const subjects = [...(targetDb.subjects || [])];
+  let driveFiles = [...(targetDb.driveFiles || [])];
+  let gradingScale = targetDb.gradingScale ? [...targetDb.gradingScale] : [];
+
+  if (update.type === 'add_subject' && update.data) {
+    const raw = update.data;
+    const subjectId = raw.id || uuidv4();
+    const subjectName = (raw.name || '').trim();
+    const newSubj: Subject = {
+      id: subjectId,
+      code: (raw.code || '').trim(),
+      name: subjectName,
+      creditHours: Number(raw.creditHours || raw.credit_hours || 3),
+      totalMarks: Number(raw.totalMarks || raw.total_marks || 100),
+      yearIndex: Number(raw.yearIndex || raw.year_index || 1),
+      semesterIndex: Number(raw.semesterIndex || raw.semester_index || 1),
+      distributions: (raw.distributions || []).map((d: any) => ({
+        id: d.id || uuidv4(),
+        name: (d.name || '').trim(),
+        maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : (d.max_marks !== undefined ? d.max_marks : 0)),
+        achievedMarks: null,
+        status: 'current' as const
+      })),
+      status: 'current',
+      includeInGpa: raw.includeInGpa !== false && raw.include_in_gpa !== false
+    };
+
+    const normNew = normalizeSubjectName(newSubj.name);
+    // Remove if already exists with same normalized name + year + semester OR same ID
+    const existingIdx = subjects.findIndex(s => 
+      s.id === subjectId || 
+      (normNew && normalizeSubjectName(s.name) === normNew && s.yearIndex === newSubj.yearIndex && s.semesterIndex === newSubj.semesterIndex)
+    );
+
+    if (existingIdx >= 0) {
+      subjects[existingIdx] = { ...subjects[existingIdx], ...newSubj, id: subjects[existingIdx].id };
+    } else {
+      subjects.push(newSubj);
+    }
+  } else if (update.type === 'update_subject' && update.data) {
+    const { previous, ...upd } = update.data;
+    const templateSubjId = upd.universityTemplateId || upd.university_template_id;
+    const normUpd = normalizeSubjectName(upd.name || '');
+    const normPrev = previous?.name ? normalizeSubjectName(previous.name) : '';
+    const updYear = Number(upd.yearIndex || upd.year_index || 1);
+    const updSem = Number(upd.semesterIndex || upd.semester_index || 1);
+
+    const updatedDistributions = upd.distributions
+      ? upd.distributions.map((d: any) => ({
+          id: d.id || uuidv4(),
+          name: (d.name || '').trim(),
+          maxMarks: Number(d.maxMarks !== undefined ? d.maxMarks : (d.max_marks !== undefined ? d.max_marks : 0)),
+          achievedMarks: null,
+          status: 'current' as const
+        }))
+      : undefined;
+
+    let matched = false;
+    for (let i = 0; i < subjects.length; i++) {
+      const s = subjects[i];
+      const normS = normalizeSubjectName(s.name || '');
+      const isIdMatch = s.id === upd.id || (templateSubjId && s.id === templateSubjId);
+      const isNameMatch = Boolean(normUpd && normS === normUpd && s.yearIndex === updYear && s.semesterIndex === updSem);
+      const isPrevNameMatch = Boolean(normPrev && normS === normPrev && s.yearIndex === updYear && s.semesterIndex === updSem);
+
+      if (isIdMatch || isNameMatch || isPrevNameMatch) {
+        matched = true;
+        subjects[i] = {
+          ...s,
+          code: upd.code !== undefined ? (upd.code || '').trim() : s.code,
+          name: upd.name ? upd.name.trim() : s.name,
+          creditHours: upd.creditHours !== undefined ? Number(upd.creditHours) : s.creditHours,
+          totalMarks: upd.totalMarks !== undefined ? Number(upd.totalMarks) : s.totalMarks,
+          yearIndex: upd.yearIndex !== undefined ? Number(upd.yearIndex) : s.yearIndex,
+          semesterIndex: upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : s.semesterIndex,
+          distributions: updatedDistributions !== undefined ? updatedDistributions : s.distributions,
+          includeInGpa: upd.includeInGpa !== undefined ? Boolean(upd.includeInGpa) : s.includeInGpa
+        };
+        break;
+      }
+    }
+
+    // If somehow not matched in subjects list, append it safely
+    if (!matched && upd.name) {
+      subjects.push({
+        id: templateSubjId || upd.id || uuidv4(),
+        code: (upd.code || '').trim(),
+        name: (upd.name || '').trim(),
+        creditHours: Number(upd.creditHours || upd.credit_hours || 3),
+        totalMarks: Number(upd.totalMarks || upd.total_marks || 100),
+        yearIndex: updYear,
+        semesterIndex: updSem,
+        distributions: updatedDistributions || [],
+        status: 'current',
+        includeInGpa: upd.includeInGpa !== false && upd.include_in_gpa !== false
+      });
+    }
+  } else if (update.type === 'delete_subject' && update.data) {
+    const upd = update.data;
+    const templateSubjId = upd.universityTemplateId || upd.university_template_id;
+    const normUpd = normalizeSubjectName(upd.name || '');
+    const updYear = upd.yearIndex !== undefined ? Number(upd.yearIndex) : undefined;
+    const updSem = upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : undefined;
+
+    const removedSubjectIds = new Set<string>();
+
+    const remainingSubjects = subjects.filter(s => {
+      const isIdMatch = s.id === upd.id || (templateSubjId && s.id === templateSubjId);
+      const isNameMatch = Boolean(
+        normUpd && normalizeSubjectName(s.name) === normUpd &&
+        (updYear === undefined || s.yearIndex === updYear) &&
+        (updSem === undefined || s.semesterIndex === updSem)
+      );
+      
+      if (isIdMatch || isNameMatch) {
+        removedSubjectIds.add(s.id);
+        return false;
+      }
+      return true;
+    });
+
+    subjects.length = 0;
+    subjects.push(...remainingSubjects);
+
+    // Also unbind or remove files linked to this deleted subject
+    if (removedSubjectIds.size > 0) {
+      driveFiles = driveFiles.filter(f => !f.subjectId || !removedSubjectIds.has(f.subjectId));
+    }
+  } else if (update.type === 'add_file' && update.data) {
+    const file = update.data;
+    const templateFileId = file.universityTemplateId || file.university_template_id;
+
+    // Resolve parent folder in template
+    let resolvedParentId: string | null = file.parentId || null;
+    if (resolvedParentId && !driveFiles.some(f => f.id === resolvedParentId && f.type === 'folder')) {
+      const parentByName = file.parentName
+        ? driveFiles.find(f => f.type === 'folder' && f.name === file.parentName)
+        : undefined;
+      resolvedParentId = parentByName ? parentByName.id : null;
+    }
+
+    // Resolve linked subject in template
+    let resolvedSubjectId: string | undefined = undefined;
+    if (file.subjectId || file.subject_id) {
+      const rawSubjId = file.subjectId || file.subject_id;
+      const matchedSubj = subjects.find(s => 
+        s.id === rawSubjId || 
+        (file.subjectName && normalizeSubjectName(s.name) === normalizeSubjectName(file.subjectName))
+      );
+      resolvedSubjectId = matchedSubj ? matchedSubj.id : undefined;
+    }
+
+    const newFile: DriveFile = {
+      id: templateFileId || file.id || uuidv4(),
+      name: (file.name || '').trim(),
+      size: Number(file.size || 0),
+      type: file.type || 'file',
+      parentId: resolvedParentId,
+      createdAt: file.createdAt || new Date().toISOString(),
+      url: file.url || '',
+      b2FileId: file.b2FileId || file.b2_file_id,
+      yearIndex: file.yearIndex !== undefined ? Number(file.yearIndex) : undefined,
+      semesterIndex: file.semesterIndex !== undefined ? Number(file.semesterIndex) : undefined,
+      subjectId: resolvedSubjectId
+    };
+
+    // Filter out duplicates (same ID or same name & parent)
+    driveFiles = driveFiles.filter(f => f.id !== newFile.id && !(f.name === newFile.name && f.parentId === newFile.parentId));
+    driveFiles.push(newFile);
+  } else if (update.type === 'update_file' && update.data) {
+    const { previous, ...upd } = update.data;
+    const templateFileId = upd.universityTemplateId || upd.university_template_id;
+    const targetName = (upd.name || '').trim();
+    const prevName = (previous?.name || '').trim();
+
+    // Resolve linked subject in template
+    let resolvedSubjectId: string | undefined = undefined;
+    if (upd.subjectId !== undefined) {
+      const rawSubjId = upd.subjectId;
+      if (rawSubjId) {
+        const matchedSubj = subjects.find(s => 
+          s.id === rawSubjId || 
+          (upd.subjectName && normalizeSubjectName(s.name) === normalizeSubjectName(upd.subjectName))
+        );
+        resolvedSubjectId = matchedSubj ? matchedSubj.id : undefined;
+      }
+    }
+
+    let matched = false;
+    driveFiles = driveFiles.map(f => {
+      const isIdMatch = f.id === upd.id || (templateFileId && f.id === templateFileId);
+      const isNameMatch = (targetName && f.name === targetName) || (prevName && f.name === prevName);
+
+      if (isIdMatch || isNameMatch) {
+        matched = true;
+        return {
+          ...f,
+          name: targetName || f.name,
+          parentId: upd.parentId !== undefined ? upd.parentId : f.parentId,
+          subjectId: upd.subjectId !== undefined ? resolvedSubjectId : f.subjectId,
+          yearIndex: upd.yearIndex !== undefined ? Number(upd.yearIndex) : f.yearIndex,
+          semesterIndex: upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : f.semesterIndex,
+          url: upd.url !== undefined ? upd.url : f.url,
+          b2FileId: upd.b2FileId !== undefined ? upd.b2FileId : (upd.b2_file_id !== undefined ? upd.b2_file_id : f.b2FileId),
+          size: upd.size !== undefined ? Number(upd.size) : f.size,
+          type: upd.type || f.type
+        };
+      }
+      return f;
+    });
+
+    if (!matched && targetName) {
+      driveFiles.push({
+        id: templateFileId || upd.id || uuidv4(),
+        name: targetName,
+        size: Number(upd.size || 0),
+        type: upd.type || 'file',
+        parentId: upd.parentId || null,
+        createdAt: upd.createdAt || new Date().toISOString(),
+        url: upd.url || '',
+        b2FileId: upd.b2FileId || upd.b2_file_id,
+        yearIndex: upd.yearIndex !== undefined ? Number(upd.yearIndex) : undefined,
+        semesterIndex: upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : undefined,
+        subjectId: resolvedSubjectId
+      });
+    }
+  } else if (update.type === 'delete_file' && update.data) {
+    const targetId = update.data.id;
+    const templateFileId = update.data.universityTemplateId || update.data.university_template_id;
+    const targetName = (update.data.name || '').trim();
+
+    driveFiles = driveFiles.filter(f => {
+      if (f.id === targetId || (templateFileId && f.id === templateFileId)) return false;
+      if (targetName && f.name === targetName) return false;
+      return true;
+    });
+  } else if (update.type === 'update_grading_scale' && update.data) {
+    const rawScale = update.data.gradingScale || update.data;
+    if (Array.isArray(rawScale)) {
+      gradingScale = rawScale.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))));
+    }
+  }
+
+  return {
+    ...targetDb,
+    subjects,
+    driveFiles,
+    gradingScale,
+    updatedAt: new Date().toISOString()
+  };
+}
+
 
 export function mapFeedbackFromRow(row: any): FeedbackSuggestion {
   if (!row) {
