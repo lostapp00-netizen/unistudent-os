@@ -235,13 +235,19 @@ export function selectAcademicDriveFiles(
 }
 
 export function matchesDriveItem(file: DriveFile, template: DriveFile, parentId: string | null): boolean {
-  if ((file.parentId || null) !== parentId || file.type !== template.type ||
-      file.name.trim().toLowerCase() !== template.name.trim().toLowerCase()) return false;
-  if (Number(file.yearIndex || 0) !== Number(template.yearIndex || 0) ||
-      Number(file.semesterIndex || 0) !== Number(template.semesterIndex || 0)) return false;
-  if (file.type === 'folder') return true;
-  return Boolean((file.b2FileId && file.b2FileId === template.b2FileId) ||
-    (file.url && file.url === template.url));
+  if (file.universityTemplateId && file.universityTemplateId === template.id) return true;
+  if (file.id === template.id) return true;
+  if ((file.parentId || null) !== parentId || file.type !== template.type) return false;
+
+  const isNameMatch = file.name.trim().toLowerCase() === template.name.trim().toLowerCase();
+  const isUrlMatch = Boolean((file.b2FileId && template.b2FileId && file.b2FileId === template.b2FileId) ||
+    (file.url && template.url && file.url === template.url));
+
+  if (file.type === 'folder') {
+    return isNameMatch;
+  }
+
+  return isNameMatch || isUrlMatch;
 }
 
 export function cn(...inputs: ClassValue[]) {

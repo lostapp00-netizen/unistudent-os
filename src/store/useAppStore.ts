@@ -478,10 +478,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     db.updateSubject(userId, id, updatedFields);
 
     if (old) {
-      // Send the full merged subject so yearIndex/semesterIndex are always
-      // available for the general-vs-specialization phase filter, plus the
-      // exact changed fields so personal-only edits get filtered out.
-      checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'update_subject', `تعديل مادة: ${old.name}`, { ...old, ...updatedFields }, updatedFields);
+      // Send the full merged subject, the previous subject snapshot, and changed fields
+      checkAndNotifySourceUpdate(
+        userId,
+        userEmail,
+        settings.name,
+        'update_subject',
+        `تعديل مادة: ${old.name}`,
+        { ...old, ...updatedFields, previous: old },
+        updatedFields
+      );
     }
   },
   deleteSubject: (id) => {
@@ -503,27 +509,48 @@ export const useAppStore = create<AppState>((set, get) => ({
       set(state => ({ settings: { ...state.settings, deletedSubjectNames: updatedDeleted } }));
       db.upsertSettings(userId, { deletedSubjectNames: updatedDeleted }).catch(() => {});
 
-      checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'delete_subject', `حذف مادة: ${old.name}`, { id, name: old.name, yearIndex: old.yearIndex, semesterIndex: old.semesterIndex });
+      checkAndNotifySourceUpdate(
+        userId,
+        userEmail,
+        settings.name,
+        'delete_subject',
+        `حذف مادة: ${old.name}`,
+        {
+          id,
+          universityTemplateId: old.universityTemplateId,
+          name: old.name,
+          code: old.code,
+          yearIndex: old.yearIndex,
+          semesterIndex: old.semesterIndex
+        }
+      );
     }
   },
 
   addFile: (file) => {
-    const { userId, userEmail, settings, files } = get();
+    const { userId, userEmail, settings, files, subjects } = get();
     if (!userId) return;
     set((state) => ({ files: [...state.files, file] }));
     db.addDriveFile(userId, file);
 
-    // parentName lets the admin-side sync attach the file to the matching
-    // folder by name when its original parentId does not exist in the
-    // university database (fresh id-space after cloning).
     const parentName = file.parentId
       ? (files.find(f => f.id === file.parentId)?.name || '')
       : '';
+    const subName = file.subjectId
+      ? (subjects.find(s => s.id === file.subjectId)?.name || '')
+      : '';
 
-    checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'add_file', `رفع ملف إلى الدرايف: ${file.name}`, { ...file, parentName });
+    checkAndNotifySourceUpdate(
+      userId,
+      userEmail,
+      settings.name,
+      'add_file',
+      `رفع ملف إلى الدرايف: ${file.name}`,
+      { ...file, parentName, subjectName: subName }
+    );
   },
   updateFile: (id, updatedFields) => {
-    const { userId, userEmail, settings, files } = get();
+    const { userId, userEmail, settings, files, subjects } = get();
     if (!userId) return;
     const oldFile = files.find(f => f.id === id);
     set((state) => ({ files: state.files.map(f => f.id === id ? { ...f, ...updatedFields } : f) }));
@@ -534,8 +561,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       const parentName = mergedFile.parentId
         ? (files.find(f => f.id === mergedFile.parentId)?.name || '')
         : '';
-      const subjects = get().subjects || [];
-      const subName = mergedFile.subjectId ? subjects.find(s => s.id === mergedFile.subjectId)?.name : '';
+      const oldParentName = oldFile.parentId
+        ? (files.find(f => f.id === oldFile.parentId)?.name || '')
+        : '';
+      const subName = mergedFile.subjectId ? (subjects.find(s => s.id === mergedFile.subjectId)?.name || '') : '';
+      const oldSubName = oldFile.subjectId ? (subjects.find(s => s.id === oldFile.subjectId)?.name || '') : '';
       const itemKind = mergedFile.type === 'folder' ? 'مجلد' : 'ملف';
       checkAndNotifySourceUpdate(
         userId,
@@ -543,16 +573,28 @@ export const useAppStore = create<AppState>((set, get) => ({
         settings.name,
         'update_file',
         `تعديل ${itemKind}: ${mergedFile.name}`,
-        { ...mergedFile, parentName, subjectName: subName },
+        {
+          ...mergedFile,
+          parentName,
+          subjectName: subName,
+          previous: {
+            ...oldFile,
+            parentName: oldParentName,
+            subjectName: oldSubName
+          }
+        },
         updatedFields
       );
     }
   },
   deleteFile: (id) => {
-    const { userId, files, userEmail, settings } = get();
+    const { userId, files, subjects, userEmail, settings } = get();
     if (!userId) return;
     const target = files.find(f => f.id === id);
     if (target) {
+      const parentName = target.parentId ? (files.find(f => f.id === target.parentId)?.name || '') : '';
+      const subName = target.subjectId ? (subjects.find(s => s.id === target.subjectId)?.name || '') : '';
+
       // Tombstone template-derived items: folder deletes call deleteFile() per
       // descendant, so the whole subtree gets recorded automatically and the
       // sync will never re-import them.
@@ -569,7 +611,27 @@ export const useAppStore = create<AppState>((set, get) => ({
         }).catch(console.error);
       }
 
-      checkAndNotifySourceUpdate(userId, userEmail, settings.name, 'delete_file', `حذف ملف من الدرايف: ${target.name}`, { id, name: target.name });
+      checkAndNotifySourceUpdate(
+        userId,
+        userEmail,
+        settings.name,
+        'delete_file',
+        `حذف ملف من الدرايف: ${target.name}`,
+        {
+          id,
+          universityTemplateId: target.universityTemplateId,
+          name: target.name,
+          type: target.type,
+          url: target.url,
+          b2FileId: target.b2FileId,
+          parentId: target.parentId,
+          parentName,
+          subjectId: target.subjectId,
+          subjectName: subName,
+          yearIndex: target.yearIndex,
+          semesterIndex: target.semesterIndex
+        }
+      );
     }
     set((state) => ({ files: state.files.filter(f => f.id !== id) }));
     db.deleteDriveFile(userId, id);
@@ -1405,7 +1467,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     activeSyncPromise = (async () => {
-      const { userId, settings } = get();
+      const { userId, userEmail, settings } = get();
       if (!userId) return;
 
       try {
@@ -1483,8 +1545,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         await get().unlinkSpecializationDatabase();
       }
 
-      const isCollegeSource = !!(matchedDb.sourceUserId && matchedDb.sourceUserId === userId);
-      const isSpecSource = !!(specDb && specDb.sourceUserId && specDb.sourceUserId === userId);
+      const userEmailLower = (userEmail || settings.email || '').trim().toLowerCase();
+      const isCollegeSource = Boolean(
+        (matchedDb.sourceUserId && matchedDb.sourceUserId === userId) ||
+        (matchedDb.sourceUserEmail && userEmailLower && matchedDb.sourceUserEmail.trim().toLowerCase() === userEmailLower)
+      );
+      const isSpecSource = Boolean(
+        specDb && (
+          (specDb.sourceUserId && specDb.sourceUserId === userId) ||
+          (specDb.sourceUserEmail && userEmailLower && specDb.sourceUserEmail.trim().toLowerCase() === userEmailLower)
+        )
+      );
 
       // If user is source for both or source for only available database, isolate from reverse sync
       if (isCollegeSource && (!specDb || isSpecSource)) {
@@ -1860,17 +1931,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
             const needUpdate =
               (existingFile.parentId || null) !== expectedParentId ||
-              existingFile.url !== tFile.url ||
-              existingFile.name !== tFile.name ||
+              (tFile.url && existingFile.url !== tFile.url) ||
+              (tFile.name && existingFile.name !== tFile.name) ||
               existingFile.universityTemplateId !== tFile.id ||
-              existingFile.yearIndex !== tFile.yearIndex ||
-              existingFile.semesterIndex !== tFile.semesterIndex ||
+              (tFile.yearIndex !== undefined && existingFile.yearIndex !== tFile.yearIndex) ||
+              (tFile.semesterIndex !== undefined && existingFile.semesterIndex !== tFile.semesterIndex) ||
               (mappedSubjectId && existingFile.subjectId !== mappedSubjectId);
 
             if (needUpdate) {
               existingFile.parentId = expectedParentId;
-              existingFile.url = tFile.url || existingFile.url;
-              existingFile.name = tFile.name || existingFile.name;
+              if (tFile.url) existingFile.url = tFile.url;
+              if (tFile.b2FileId) existingFile.b2FileId = tFile.b2FileId;
+              if (tFile.name) existingFile.name = tFile.name;
               existingFile.universityTemplateId = tFile.id;
               if (tFile.yearIndex !== undefined) existingFile.yearIndex = tFile.yearIndex;
               if (tFile.semesterIndex !== undefined) existingFile.semesterIndex = tFile.semesterIndex;
@@ -1879,6 +1951,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               await db.updateDriveFile(userId, existingFile.id, {
                 parentId: expectedParentId,
                 url: existingFile.url,
+                b2FileId: existingFile.b2FileId,
                 name: existingFile.name,
                 yearIndex: existingFile.yearIndex,
                 semesterIndex: existingFile.semesterIndex,

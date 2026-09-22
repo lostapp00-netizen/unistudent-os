@@ -4205,22 +4205,25 @@ function mapPendingUpdateFromDB(row: any): UniversityPendingUpdate {
 
 export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, update: UniversityPendingUpdate): UniversityDatabase {
   if (!targetDb || !update) return targetDb;
-  const subjects = [...(targetDb.subjects || [])];
+  let subjects = [...(targetDb.subjects || [])];
   let driveFiles = [...(targetDb.driveFiles || [])];
   let gradingScale = targetDb.gradingScale ? [...targetDb.gradingScale] : [];
 
   if (update.type === 'add_subject' && update.data) {
     const raw = update.data;
-    const subjectId = raw.id || uuidv4();
     const subjectName = (raw.name || '').trim();
+    if (!subjectName) return targetDb;
+
+    const templateSubjId = raw.universityTemplateId || raw.university_template_id;
+    const subjectId = templateSubjId || raw.id || uuidv4();
     const newSubj: Subject = {
       id: subjectId,
       code: (raw.code || '').trim(),
       name: subjectName,
-      creditHours: Number(raw.creditHours || raw.credit_hours || 3),
-      totalMarks: Number(raw.totalMarks || raw.total_marks || 100),
-      yearIndex: Number(raw.yearIndex || raw.year_index || 1),
-      semesterIndex: Number(raw.semesterIndex || raw.semester_index || 1),
+      creditHours: Number(raw.creditHours !== undefined ? raw.creditHours : (raw.credit_hours !== undefined ? raw.credit_hours : 3)),
+      totalMarks: Number(raw.totalMarks !== undefined ? raw.totalMarks : (raw.total_marks !== undefined ? raw.total_marks : 100)),
+      yearIndex: Number(raw.yearIndex !== undefined ? raw.yearIndex : (raw.year_index !== undefined ? raw.year_index : 1)),
+      semesterIndex: Number(raw.semesterIndex !== undefined ? raw.semesterIndex : (raw.semester_index !== undefined ? raw.semester_index : 1)),
       distributions: (raw.distributions || []).map((d: any) => ({
         id: d.id || uuidv4(),
         name: (d.name || '').trim(),
@@ -4233,10 +4236,10 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     };
 
     const normNew = normalizeSubjectName(newSubj.name);
-    // Remove if already exists with same normalized name + year + semester OR same ID
+    // Update if already exists with same normalized name + year + semester OR same ID
     const existingIdx = subjects.findIndex(s => 
       s.id === subjectId || 
-      (normNew && normalizeSubjectName(s.name) === normNew && s.yearIndex === newSubj.yearIndex && s.semesterIndex === newSubj.semesterIndex)
+      (normNew && normalizeSubjectName(s.name) === normNew && Number(s.yearIndex || 1) === newSubj.yearIndex && Number(s.semesterIndex || 1) === newSubj.semesterIndex)
     );
 
     if (existingIdx >= 0) {
@@ -4246,11 +4249,16 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     }
   } else if (update.type === 'update_subject' && update.data) {
     const { previous, ...upd } = update.data;
-    const templateSubjId = upd.universityTemplateId || upd.university_template_id;
-    const normUpd = normalizeSubjectName(upd.name || '');
-    const normPrev = previous?.name ? normalizeSubjectName(previous.name) : '';
-    const updYear = Number(upd.yearIndex || upd.year_index || 1);
-    const updSem = Number(upd.semesterIndex || upd.semester_index || 1);
+    const prev = previous || {};
+    const templateSubjId = upd.universityTemplateId || upd.university_template_id || prev.universityTemplateId || prev.university_template_id;
+    const targetName = (upd.name || prev.name || '').trim();
+    const prevName = (prev.name || '').trim();
+    const normUpd = normalizeSubjectName(targetName);
+    const normPrev = normalizeSubjectName(prevName);
+    const updYear = Number(upd.yearIndex !== undefined ? upd.yearIndex : (upd.year_index !== undefined ? upd.year_index : (prev.yearIndex || prev.year_index || 1)));
+    const updSem = Number(upd.semesterIndex !== undefined ? upd.semesterIndex : (upd.semester_index !== undefined ? upd.semester_index : (prev.semesterIndex || prev.semester_index || 1)));
+    const prevYear = Number(prev.yearIndex || prev.year_index || updYear);
+    const prevSem = Number(prev.semesterIndex || prev.semester_index || updSem);
 
     const updatedDistributions = upd.distributions
       ? upd.distributions.map((d: any) => ({
@@ -4266,16 +4274,20 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     for (let i = 0; i < subjects.length; i++) {
       const s = subjects[i];
       const normS = normalizeSubjectName(s.name || '');
-      const isIdMatch = s.id === upd.id || (templateSubjId && s.id === templateSubjId);
-      const isNameMatch = Boolean(normUpd && normS === normUpd && s.yearIndex === updYear && s.semesterIndex === updSem);
-      const isPrevNameMatch = Boolean(normPrev && normS === normPrev && s.yearIndex === updYear && s.semesterIndex === updSem);
+      const sYear = Number(s.yearIndex || 1);
+      const sSem = Number(s.semesterIndex || 1);
 
-      if (isIdMatch || isNameMatch || isPrevNameMatch) {
+      const isIdMatch = Boolean((templateSubjId && s.id === templateSubjId) || (upd.id && s.id === upd.id) || (prev.id && s.id === prev.id));
+      const isPrevNameMatch = Boolean(normPrev && normS === normPrev && (sYear === prevYear || sYear === updYear) && (sSem === prevSem || sSem === updSem));
+      const isTargetNameMatch = Boolean(normUpd && normS === normUpd && (sYear === updYear || sYear === prevYear));
+      const isCodeMatch = Boolean(upd.code && s.code && s.code.trim().toLowerCase() === upd.code.trim().toLowerCase() && sYear === updYear);
+
+      if (isIdMatch || isPrevNameMatch || isTargetNameMatch || isCodeMatch) {
         matched = true;
         subjects[i] = {
           ...s,
           code: upd.code !== undefined ? (upd.code || '').trim() : s.code,
-          name: upd.name ? upd.name.trim() : s.name,
+          name: targetName || s.name,
           creditHours: upd.creditHours !== undefined ? Number(upd.creditHours) : s.creditHours,
           totalMarks: upd.totalMarks !== undefined ? Number(upd.totalMarks) : s.totalMarks,
           yearIndex: upd.yearIndex !== undefined ? Number(upd.yearIndex) : s.yearIndex,
@@ -4287,12 +4299,11 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
       }
     }
 
-    // If somehow not matched in subjects list, append it safely
-    if (!matched && upd.name) {
+    if (!matched && targetName) {
       subjects.push({
         id: templateSubjId || upd.id || uuidv4(),
         code: (upd.code || '').trim(),
-        name: (upd.name || '').trim(),
+        name: targetName,
         creditHours: Number(upd.creditHours || upd.credit_hours || 3),
         totalMarks: Number(upd.totalMarks || upd.total_marks || 100),
         yearIndex: updYear,
@@ -4312,11 +4323,11 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     const removedSubjectIds = new Set<string>();
 
     const remainingSubjects = subjects.filter(s => {
-      const isIdMatch = s.id === upd.id || (templateSubjId && s.id === templateSubjId);
+      const isIdMatch = Boolean((templateSubjId && s.id === templateSubjId) || (upd.id && s.id === upd.id));
       const isNameMatch = Boolean(
         normUpd && normalizeSubjectName(s.name) === normUpd &&
-        (updYear === undefined || s.yearIndex === updYear) &&
-        (updSem === undefined || s.semesterIndex === updSem)
+        (updYear === undefined || Number(s.yearIndex || 1) === updYear) &&
+        (updSem === undefined || Number(s.semesterIndex || 1) === updSem)
       );
       
       if (isIdMatch || isNameMatch) {
@@ -4326,8 +4337,7 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
       return true;
     });
 
-    subjects.length = 0;
-    subjects.push(...remainingSubjects);
+    subjects = remainingSubjects;
 
     // Also unbind or remove files linked to this deleted subject
     if (removedSubjectIds.size > 0) {
@@ -4336,81 +4346,127 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
   } else if (update.type === 'add_file' && update.data) {
     const file = update.data;
     const templateFileId = file.universityTemplateId || file.university_template_id;
+    const fileName = (file.name || '').trim();
+    if (!fileName) return targetDb;
 
     // Resolve parent folder in template
-    let resolvedParentId: string | null = file.parentId || null;
-    if (resolvedParentId && !driveFiles.some(f => f.id === resolvedParentId && f.type === 'folder')) {
-      const parentByName = file.parentName
-        ? driveFiles.find(f => f.type === 'folder' && f.name === file.parentName)
-        : undefined;
+    let resolvedParentId: string | null = null;
+    if (file.parentId) {
+      const parentById = driveFiles.find(f => f.id === file.parentId && f.type === 'folder');
+      if (parentById) {
+        resolvedParentId = parentById.id;
+      } else if (file.parentName) {
+        const parentByName = driveFiles.find(f => f.type === 'folder' && f.name.trim().toLowerCase() === file.parentName.trim().toLowerCase());
+        resolvedParentId = parentByName ? parentByName.id : null;
+      }
+    } else if (file.parentName) {
+      const parentByName = driveFiles.find(f => f.type === 'folder' && f.name.trim().toLowerCase() === file.parentName.trim().toLowerCase());
       resolvedParentId = parentByName ? parentByName.id : null;
     }
 
     // Resolve linked subject in template
     let resolvedSubjectId: string | undefined = undefined;
-    if (file.subjectId || file.subject_id) {
+    if (file.subjectId || file.subject_id || file.subjectName) {
       const rawSubjId = file.subjectId || file.subject_id;
+      const subNameNorm = file.subjectName ? normalizeSubjectName(file.subjectName) : '';
       const matchedSubj = subjects.find(s => 
-        s.id === rawSubjId || 
-        (file.subjectName && normalizeSubjectName(s.name) === normalizeSubjectName(file.subjectName))
+        (rawSubjId && s.id === rawSubjId) || 
+        (subNameNorm && normalizeSubjectName(s.name) === subNameNorm)
       );
       resolvedSubjectId = matchedSubj ? matchedSubj.id : undefined;
     }
 
     const newFile: DriveFile = {
       id: templateFileId || file.id || uuidv4(),
-      name: (file.name || '').trim(),
+      name: fileName,
       size: Number(file.size || 0),
       type: file.type || 'file',
       parentId: resolvedParentId,
-      createdAt: file.createdAt || new Date().toISOString(),
+      createdAt: file.createdAt || new Date().toISOString().split('T')[0],
       url: file.url || '',
-      b2FileId: file.b2FileId || file.b2_file_id,
+      b2FileId: file.b2FileId || file.b2_file_id || undefined,
       yearIndex: file.yearIndex !== undefined ? Number(file.yearIndex) : undefined,
       semesterIndex: file.semesterIndex !== undefined ? Number(file.semesterIndex) : undefined,
       subjectId: resolvedSubjectId
     };
 
-    // Filter out duplicates (same ID or same name & parent)
-    driveFiles = driveFiles.filter(f => f.id !== newFile.id && !(f.name === newFile.name && f.parentId === newFile.parentId));
-    driveFiles.push(newFile);
+    // Deduplicate or merge existing item
+    const existingIdx = driveFiles.findIndex(f => 
+      f.id === newFile.id || 
+      (f.name.trim().toLowerCase() === newFile.name.toLowerCase() && (f.parentId || null) === (newFile.parentId || null) && f.type === newFile.type)
+    );
+
+    if (existingIdx >= 0) {
+      driveFiles[existingIdx] = {
+        ...driveFiles[existingIdx],
+        ...newFile,
+        id: driveFiles[existingIdx].id,
+        url: newFile.url || driveFiles[existingIdx].url || '',
+        b2FileId: newFile.b2FileId || driveFiles[existingIdx].b2FileId
+      };
+    } else {
+      driveFiles.push(newFile);
+    }
   } else if (update.type === 'update_file' && update.data) {
     const { previous, ...upd } = update.data;
-    const templateFileId = upd.universityTemplateId || upd.university_template_id;
-    const targetName = (upd.name || '').trim();
-    const prevName = (previous?.name || '').trim();
+    const prev = previous || {};
+    const templateFileId = upd.universityTemplateId || upd.university_template_id || prev.universityTemplateId || prev.university_template_id;
+    const targetName = (upd.name || prev.name || '').trim();
+    const prevName = (prev.name || '').trim();
+    const itemType = upd.type || prev.type || 'file';
+
+    // Resolve parent folder in template
+    let resolvedParentId: string | null = null;
+    const targetParentId = upd.parentId !== undefined ? upd.parentId : prev.parentId;
+    const targetParentName = (upd.parentName !== undefined ? upd.parentName : prev.parentName || '').trim().toLowerCase();
+
+    if (targetParentId) {
+      const parentById = driveFiles.find(f => f.id === targetParentId && f.type === 'folder');
+      if (parentById) {
+        resolvedParentId = parentById.id;
+      } else if (targetParentName) {
+        const parentByName = driveFiles.find(f => f.type === 'folder' && f.name.trim().toLowerCase() === targetParentName);
+        resolvedParentId = parentByName ? parentByName.id : null;
+      }
+    } else if (targetParentName) {
+      const parentByName = driveFiles.find(f => f.type === 'folder' && f.name.trim().toLowerCase() === targetParentName);
+      resolvedParentId = parentByName ? parentByName.id : null;
+    }
 
     // Resolve linked subject in template
     let resolvedSubjectId: string | undefined = undefined;
-    if (upd.subjectId !== undefined) {
-      const rawSubjId = upd.subjectId;
-      if (rawSubjId) {
-        const matchedSubj = subjects.find(s => 
-          s.id === rawSubjId || 
-          (upd.subjectName && normalizeSubjectName(s.name) === normalizeSubjectName(upd.subjectName))
-        );
-        resolvedSubjectId = matchedSubj ? matchedSubj.id : undefined;
-      }
+    const targetSubjId = upd.subjectId !== undefined ? upd.subjectId : prev.subjectId;
+    const targetSubjName = (upd.subjectName !== undefined ? upd.subjectName : prev.subjectName || '').trim();
+    if (targetSubjId || targetSubjName) {
+      const subNameNorm = targetSubjName ? normalizeSubjectName(targetSubjName) : '';
+      const matchedSubj = subjects.find(s => 
+        (targetSubjId && s.id === targetSubjId) || 
+        (subNameNorm && normalizeSubjectName(s.name) === subNameNorm)
+      );
+      resolvedSubjectId = matchedSubj ? matchedSubj.id : undefined;
     }
 
     let matched = false;
     driveFiles = driveFiles.map(f => {
-      const isIdMatch = f.id === upd.id || (templateFileId && f.id === templateFileId);
-      const isNameMatch = (targetName && f.name === targetName) || (prevName && f.name === prevName);
+      const isIdMatch = Boolean((templateFileId && f.id === templateFileId) || (upd.id && f.id === upd.id) || (prev.id && f.id === prev.id));
+      const isPrevNameMatch = Boolean(prevName && f.name.trim().toLowerCase() === prevName.toLowerCase() && f.type === itemType);
+      const isTargetNameMatch = Boolean(targetName && f.name.trim().toLowerCase() === targetName.toLowerCase() && f.type === itemType);
+      const isUrlMatch = Boolean(f.url && ((upd.url && f.url === upd.url) || (prev.url && f.url === prev.url)));
+      const isB2Match = Boolean(f.b2FileId && ((upd.b2FileId && f.b2FileId === upd.b2FileId) || (prev.b2FileId && f.b2FileId === prev.b2FileId)));
 
-      if (isIdMatch || isNameMatch) {
+      if (isIdMatch || isPrevNameMatch || isTargetNameMatch || isUrlMatch || isB2Match) {
         matched = true;
         return {
           ...f,
           name: targetName || f.name,
-          parentId: upd.parentId !== undefined ? upd.parentId : f.parentId,
-          subjectId: upd.subjectId !== undefined ? resolvedSubjectId : f.subjectId,
+          type: itemType || f.type,
+          parentId: (upd.parentId !== undefined || upd.parentName !== undefined) ? resolvedParentId : f.parentId,
+          subjectId: (upd.subjectId !== undefined || upd.subjectName !== undefined) ? resolvedSubjectId : f.subjectId,
           yearIndex: upd.yearIndex !== undefined ? Number(upd.yearIndex) : f.yearIndex,
           semesterIndex: upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : f.semesterIndex,
-          url: upd.url !== undefined ? upd.url : f.url,
-          b2FileId: upd.b2FileId !== undefined ? upd.b2FileId : (upd.b2_file_id !== undefined ? upd.b2_file_id : f.b2FileId),
-          size: upd.size !== undefined ? Number(upd.size) : f.size,
-          type: upd.type || f.type
+          url: upd.url || f.url || prev.url || '',
+          b2FileId: upd.b2FileId || upd.b2_file_id || f.b2FileId || prev.b2FileId || prev.b2_file_id,
+          size: upd.size !== undefined ? Number(upd.size) : f.size
         };
       }
       return f;
@@ -4420,27 +4476,66 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
       driveFiles.push({
         id: templateFileId || upd.id || uuidv4(),
         name: targetName,
-        size: Number(upd.size || 0),
-        type: upd.type || 'file',
-        parentId: upd.parentId || null,
-        createdAt: upd.createdAt || new Date().toISOString(),
-        url: upd.url || '',
-        b2FileId: upd.b2FileId || upd.b2_file_id,
-        yearIndex: upd.yearIndex !== undefined ? Number(upd.yearIndex) : undefined,
-        semesterIndex: upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : undefined,
+        size: Number(upd.size || prev.size || 0),
+        type: itemType,
+        parentId: resolvedParentId,
+        createdAt: upd.createdAt || prev.createdAt || new Date().toISOString().split('T')[0],
+        url: upd.url || prev.url || '',
+        b2FileId: upd.b2FileId || upd.b2_file_id || prev.b2FileId || prev.b2_file_id,
+        yearIndex: upd.yearIndex !== undefined ? Number(upd.yearIndex) : (prev.yearIndex !== undefined ? Number(prev.yearIndex) : undefined),
+        semesterIndex: upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : (prev.semesterIndex !== undefined ? Number(prev.semesterIndex) : undefined),
         subjectId: resolvedSubjectId
       });
     }
   } else if (update.type === 'delete_file' && update.data) {
-    const targetId = update.data.id;
-    const templateFileId = update.data.universityTemplateId || update.data.university_template_id;
-    const targetName = (update.data.name || '').trim();
+    const delData = update.data;
+    const targetId = delData.id;
+    const templateFileId = delData.universityTemplateId || delData.university_template_id;
+    const targetName = (delData.name || '').trim().toLowerCase();
+    const targetType = delData.type;
+    const targetUrl = delData.url;
+    const targetB2 = delData.b2FileId || delData.b2_file_id;
+    const targetYear = delData.yearIndex !== undefined ? Number(delData.yearIndex) : undefined;
+    const targetSem = delData.semesterIndex !== undefined ? Number(delData.semesterIndex) : undefined;
+
+    const deletedFolderIds = new Set<string>();
 
     driveFiles = driveFiles.filter(f => {
-      if (f.id === targetId || (templateFileId && f.id === templateFileId)) return false;
-      if (targetName && f.name === targetName) return false;
+      const isIdMatch = Boolean((templateFileId && f.id === templateFileId) || (targetId && f.id === targetId));
+      const isUrlMatch = Boolean((targetUrl && f.url === targetUrl) || (targetB2 && f.b2FileId === targetB2));
+      const isNameMatch = Boolean(
+        targetName && f.name.trim().toLowerCase() === targetName &&
+        (targetType === undefined || f.type === targetType) &&
+        (targetYear === undefined || f.yearIndex === targetYear) &&
+        (targetSem === undefined || f.semesterIndex === targetSem)
+      );
+
+      if (isIdMatch || isUrlMatch || isNameMatch) {
+        if (f.type === 'folder') {
+          deletedFolderIds.add(f.id);
+        }
+        return false;
+      }
       return true;
     });
+
+    // If a folder was deleted, cascade delete all items inside it
+    if (deletedFolderIds.size > 0) {
+      let changed = true;
+      while (changed) {
+        changed = false;
+        driveFiles = driveFiles.filter(f => {
+          if (f.parentId && deletedFolderIds.has(f.parentId)) {
+            if (f.type === 'folder') {
+              deletedFolderIds.add(f.id);
+              changed = true;
+            }
+            return false;
+          }
+          return true;
+        });
+      }
+    }
   } else if (update.type === 'update_grading_scale' && update.data) {
     const rawScale = update.data.gradingScale || update.data;
     if (Array.isArray(rawScale)) {
