@@ -2566,35 +2566,9 @@ export const db = {
       localStorage.setItem('unistudent_pending_updates', JSON.stringify(localList));
     } catch {}
 
-    // 2. Persist status updates to Supabase
-    try {
-      const ids = Array.from(updateIdsSet);
-      if (status === 'pending') {
-        await supabase
-          .from('university_pending_updates')
-          .update({ status: 'pending', resolved_at: null })
-          .in('id', ids);
-      } else {
-        const { error } = await supabase
-          .from('university_pending_updates')
-          .update({ status, resolved_at: resolvedAt })
-          .in('id', ids);
-
-        if (error && (error.message?.includes('resolved_at') || error.message?.includes('column') || error.code === '42703')) {
-          const fallbackRes = await supabase
-            .from('university_pending_updates')
-            .update({ status })
-            .in('id', ids);
-          if (fallbackRes.error) {
-            console.warn('Supabase batch update status fallback warning:', fallbackRes.error);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Supabase batch update pending update exception:', e);
-    }
-
-    // 3. If approved, apply database updates sequentially per target university database
+    // 2. If approved, apply database updates FIRST (before updating Supabase status)
+    //    This prevents the realtime listener from fetching stale/old database state
+    //    when the pending_updates status change triggers a reload.
     if (status === 'approved') {
       const byDb: Record<string, UniversityPendingUpdate[]> = {};
       updates.forEach(u => {
@@ -2642,6 +2616,35 @@ export const db = {
       for (const dbId of dbIds) {
         await broadcastUniversityDatabaseUpdate({ id: dbId, timestamp: Date.now() });
       }
+    }
+
+    // 3. Persist status updates to Supabase AFTER database changes are applied
+    //    so the realtime listener sees the already-updated database state.
+    try {
+      const ids = Array.from(updateIdsSet);
+      if (status === 'pending') {
+        await supabase
+          .from('university_pending_updates')
+          .update({ status: 'pending', resolved_at: null })
+          .in('id', ids);
+      } else {
+        const { error } = await supabase
+          .from('university_pending_updates')
+          .update({ status, resolved_at: resolvedAt })
+          .in('id', ids);
+
+        if (error && (error.message?.includes('resolved_at') || error.message?.includes('column') || error.code === '42703')) {
+          const fallbackRes = await supabase
+            .from('university_pending_updates')
+            .update({ status })
+            .in('id', ids);
+          if (fallbackRes.error) {
+            console.warn('Supabase batch update status fallback warning:', fallbackRes.error);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase batch update pending update exception:', e);
     }
   },
 

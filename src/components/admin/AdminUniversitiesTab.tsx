@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuidv4 } from 'uuid';
 import { 
@@ -454,6 +454,18 @@ export function AdminUniversitiesTab({
     }
   };
 
+  // Debounced version for realtime listeners to avoid rapid re-fetches
+  // during approval flow (which updates both pending_updates and university_databases)
+  const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedLoadUniData = useCallback(() => {
+    if (realtimeDebounceRef.current) {
+      clearTimeout(realtimeDebounceRef.current);
+    }
+    realtimeDebounceRef.current = setTimeout(() => {
+      loadUniData();
+    }, 600);
+  }, []);
+
   useEffect(() => {
     loadUniData();
 
@@ -464,21 +476,21 @@ export function AdminUniversitiesTab({
         'postgres_changes',
         { event: '*', schema: 'public', table: 'university_pending_updates' },
         () => {
-          loadUniData();
+          debouncedLoadUniData();
         }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'university_databases' },
         () => {
-          loadUniData();
+          debouncedLoadUniData();
         }
       )
       .subscribe();
 
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'unistudent_pending_updates' || e.key === 'unistudent_university_databases') {
-        loadUniData();
+        debouncedLoadUniData();
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -486,6 +498,9 @@ export function AdminUniversitiesTab({
     return () => {
       supabase.removeChannel(channel);
       window.removeEventListener('storage', handleStorage);
+      if (realtimeDebounceRef.current) {
+        clearTimeout(realtimeDebounceRef.current);
+      }
     };
   }, []);
 
