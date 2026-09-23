@@ -4622,7 +4622,18 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
 
     if (targetIdx >= 0) {
       const existing = driveFiles[targetIdx];
-      const finalParentId = parentFound ? resolvedParentId : (existing.parentId !== undefined ? existing.parentId : null);
+
+      // Only change parentId if the resolved parent is actually a folder that
+      // exists inside this template DB. If the incoming parentId is a local
+      // student-side UUID (not a template folder ID), keep the existing template
+      // parentId to avoid corrupting the template's folder structure.
+      let finalParentId: string | null;
+      if (parentFound && (resolvedParentId === null || driveFiles.some(f => f.id === resolvedParentId && f.type === 'folder'))) {
+        finalParentId = resolvedParentId;
+      } else {
+        finalParentId = existing.parentId !== undefined ? existing.parentId : null;
+      }
+
       const finalSubjectId = subjectFound ? resolvedSubjectId : existing.subjectId;
 
       driveFiles[targetIdx] = {
@@ -4638,12 +4649,16 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
         size: upd.size !== undefined ? Number(upd.size) : existing.size
       };
     } else if (targetName) {
+      // Only add as new if we have a valid parent in the template (or root)
+      const newParentId = (resolvedParentId === null || driveFiles.some(f => f.id === resolvedParentId && f.type === 'folder'))
+        ? resolvedParentId
+        : null;
       driveFiles.push({
         id: templateFileId || upd.id || uuidv4(),
         name: targetName,
         size: Number(upd.size || prev.size || 0),
         type: itemType,
-        parentId: resolvedParentId,
+        parentId: newParentId,
         createdAt: upd.createdAt || prev.createdAt || new Date().toISOString().split('T')[0],
         url: upd.url || prev.url || '',
         b2FileId: upd.b2FileId || upd.b2_file_id || prev.b2FileId || prev.b2_file_id,
