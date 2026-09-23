@@ -1629,8 +1629,6 @@ export const db = {
         source_user_email: full.sourceUserEmail || existing.sourceUserEmail || '',
         total_years: Number(full.totalYears || existing.totalYears || 4),
         semesters_per_year: Number(full.semestersPerYear || existing.semestersPerYear || 2),
-        subjects: full.subjects !== undefined ? full.subjects : (existing.subjects || []),
-        drive_files: full.driveFiles !== undefined ? full.driveFiles : (existing.driveFiles || []),
         grading_scale: scale,
         is_visible: full.isVisible !== false,
         available_years: full.availableYears || existing.availableYears || [1],
@@ -1638,6 +1636,23 @@ export const db = {
         specialization_start_semester: Number(full.specializationStartSemester || existing.specializationStartSemester || 1),
         updated_at: updatedAt
       };
+
+      // Only send drive_files to Supabase when partialData explicitly includes them.
+      // If partialData is a partial update (e.g. only isVisible), falling back to
+      // existing.driveFiles (which may be stale/empty from a cold cache read) would
+      // wipe all template drive files from the database. Omitting the key entirely
+      // makes Supabase keep the existing column value unchanged.
+      if (partialData.driveFiles !== undefined) {
+        payload.drive_files = partialData.driveFiles;
+      } else if (existing.driveFiles !== undefined && existing.driveFiles !== null && (existing.driveFiles as any[]).length > 0) {
+        payload.drive_files = existing.driveFiles;
+      }
+      // Similarly protect subjects — never send [] to Supabase unless explicitly requested
+      if (partialData.subjects !== undefined) {
+        payload.subjects = partialData.subjects;
+      } else if (existing.subjects !== undefined && existing.subjects !== null && (existing.subjects as any[]).length > 0) {
+        payload.subjects = existing.subjects;
+      }
 
       if (isSpec) {
         payload.is_specialization = true;
