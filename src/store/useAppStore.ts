@@ -1987,17 +1987,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
         currentFiles = dedupedFiles;
 
-        // Remove drive files that were deleted from template. Only rows
-        // carrying a template id are template-derived — treating any file
-        // with a URL as template-derived used to auto-delete the student's
-        // own uploads a few seconds after upload (uploads have URLs too).
+        // Remove drive files ONLY if the user explicitly deleted them (tombstoned).
+        // The old "delete if not in template" logic was too aggressive: it wiped
+        // files whenever the sync ran with a stale/incomplete template snapshot
+        // (e.g. during the race between accepting an update and Supabase propagating
+        // the change). Tombstones (deletedTemplateFileIds) are set in deleteFile()
+        // for template-derived items, so intentional deletions are still honoured.
         const remainingFiles: DriveFile[] = [];
         for (const f of currentFiles) {
-          const fName = (f.name || '').trim().toLowerCase();
-          const isFromTemplate = Boolean(f.universityTemplateId);
-          const stillInTemplate = (f.universityTemplateId && templateFileMap.has(f.universityTemplateId)) || templateNames.has(fName);
-
-          if (isFromTemplate && !stillInTemplate) {
+          if (f.universityTemplateId && deletedTemplateFileIds.has(f.universityTemplateId)) {
             await db.deleteDriveFile(userId, f.id);
             hasFileChanges = true;
           } else {
