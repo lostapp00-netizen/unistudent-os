@@ -1976,7 +1976,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             dedupedFiles.push(f);
             continue;
           }
-          const key = `${(f.name || '').trim().toLowerCase()}-${f.type}-${f.parentId || 'root'}-${f.yearIndex || 0}-${f.semesterIndex || 0}-${f.subjectId || 'none'}`;
+          const key = `${(f.name || '').trim().toLowerCase()}-${f.type}-${f.parentId || 'root'}`;
           if (seenDriveKeys.has(key)) {
             await db.deleteDriveFile(userId, f.id);
             hasFileChanges = true;
@@ -2016,10 +2016,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         } catch {}
       }
       if (hasFileChanges) {
-        set({ files: currentFiles });
+        // Merge: the sync took a snapshot of files at start. If the user added
+        // files while the sync was running, those are in get().files but NOT in
+        // currentFiles. We must not clobber them.
+        const syncedIds = new Set(currentFiles.map((f: DriveFile) => f.id));
+        const addedDuringSync = get().files.filter((f: DriveFile) => !syncedIds.has(f.id));
+        const finalFiles = [...currentFiles, ...addedDuringSync];
+        set({ files: finalFiles });
         try {
-          localStorage.setItem(`unistudent_drive_files_${userId}`, JSON.stringify(currentFiles));
-          localStorage.setItem(`unistudent_files_${userId}`, JSON.stringify(currentFiles));
+          localStorage.setItem(`unistudent_drive_files_${userId}`, JSON.stringify(finalFiles));
+          localStorage.setItem(`unistudent_files_${userId}`, JSON.stringify(finalFiles));
         } catch {}
       }
 

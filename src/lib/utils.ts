@@ -236,43 +236,18 @@ export function selectAcademicDriveFiles(
 
 export function matchesDriveItem(file: DriveFile, template: DriveFile, parentId: string | null): boolean {
   if (file.universityTemplateId && file.universityTemplateId === template.id) return true;
-  // If file already has a different universityTemplateId, it must never match another template item
-  if (file.universityTemplateId && file.universityTemplateId !== template.id) return false;
   if (file.id === template.id) return true;
   if ((file.parentId || null) !== parentId || file.type !== template.type) return false;
 
   const isNameMatch = file.name.trim().toLowerCase() === template.name.trim().toLowerCase();
-
-  if (file.type === 'folder') {
-    if (!isNameMatch) return false;
-
-    // Check academic phase consistency if specified
-    const fileY = Number(file.yearIndex || 0);
-    const tmplY = Number(template.yearIndex || 0);
-    if (fileY > 0 && tmplY > 0 && fileY !== tmplY) return false;
-
-    const fileSem = Number(file.semesterIndex || 0);
-    const tmplSem = Number(template.semesterIndex || 0);
-    if (fileSem > 0 && tmplSem > 0 && fileSem !== tmplSem) return false;
-
-    if (file.subjectId && template.subjectId && file.subjectId !== template.subjectId) return false;
-    return true;
-  }
-
   const isUrlMatch = Boolean((file.b2FileId && template.b2FileId && file.b2FileId === template.b2FileId) ||
     (file.url && template.url && file.url === template.url));
 
-  if (!isNameMatch && !isUrlMatch) return false;
+  if (file.type === 'folder') {
+    return isNameMatch;
+  }
 
-  const fileY = Number(file.yearIndex || 0);
-  const tmplY = Number(template.yearIndex || 0);
-  if (fileY > 0 && tmplY > 0 && fileY !== tmplY) return false;
-
-  const fileSem = Number(file.semesterIndex || 0);
-  const tmplSem = Number(template.semesterIndex || 0);
-  if (fileSem > 0 && tmplSem > 0 && fileSem !== tmplSem) return false;
-
-  return true;
+  return isNameMatch || isUrlMatch;
 }
 
 export function cn(...inputs: ClassValue[]) {

@@ -947,6 +947,28 @@ export const db = {
     try {
       const cacheKey = `unistudent_drive_files_${userId}`;
       if (fetchedFromSupabase) {
+        // Merge: keep any local-only files not yet confirmed by Supabase
+        // (e.g. pending inserts). Without this, a file added optimistically
+        // to localStorage is wiped out on the very next getDriveFiles call.
+        try {
+          const cached = localStorage.getItem(cacheKey);
+          if (cached) {
+            const localFiles: DriveFile[] = JSON.parse(cached).map(mapDriveFileFromDB);
+            const supabaseIds = new Set(dbFiles.map((f: DriveFile) => f.id));
+            const now = Date.now();
+            // Only keep local-only files that were created in the last 10 minutes —
+            // these are likely pending Supabase inserts. Older local-only files are
+            // probably files that Supabase genuinely deleted (don't resurrect them).
+            const localOnly = localFiles.filter((f: DriveFile) => {
+              if (supabaseIds.has(f.id)) return false;
+              const created = new Date(f.createdAt || 0).getTime();
+              return (now - created) < 10 * 60 * 1000;
+            });
+            if (localOnly.length > 0) {
+              dbFiles = [...dbFiles, ...localOnly];
+            }
+          }
+        } catch { /* ignore parse errors */ }
         localStorage.setItem(cacheKey, JSON.stringify(dbFiles));
         return dbFiles;
       }
