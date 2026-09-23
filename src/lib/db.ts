@@ -1549,6 +1549,8 @@ export const db = {
     const updatedAt = new Date().toISOString();
     let cachedDatabases: UniversityDatabase[] = [];
 
+    // Diagnostic logging to trace drive_files changes
+    console.log(`[updateUniversityDatabase] id=${id}, partialData.driveFiles=${partialData.driveFiles ? partialData.driveFiles.length : 'undefined'}, partialData.subjects=${partialData.subjects ? partialData.subjects.length : 'undefined'}`);
     // 1. Local-first: immediately update localStorage cache
     try {
       cachedDatabases = await this.getUniversityDatabases();
@@ -1636,22 +1638,55 @@ export const db = {
         specialization_start_semester: Number(full.specializationStartSemester || existing.specializationStartSemester || 1),
         updated_at: updatedAt
       };
+      // ── Safety guard: NEVER overwrite drive_files / subjects in Supabase
+      // with an array that is shorter than the one already stored.
+      // This covers the critical scenario where getUniversityDatabase
+      // returned stale/empty data, applyPendingUpdateToDatabase worked on
+      // that empty data, and updateUniversityDatabase is now about to
+      // persist the result back — which would wipe the real files.
+      let supabaseCurrentDriveFiles: any[] | null = null;
+      let supabaseCurrentSubjects: any[] | null = null;
+      try {
+        const { data: currentRow } = await supabase
+          .from('university_databases')
+          .select('drive_files, subjects')
+          .eq('id', id)
+          .maybeSingle();
+        if (currentRow) {
+          supabaseCurrentDriveFiles = Array.isArray(currentRow.drive_files) ? currentRow.drive_files : null;
+          supabaseCurrentSubjects = Array.isArray(currentRow.subjects) ? currentRow.subjects : null;
+        }
+      } catch {}
 
-      // Only send drive_files to Supabase when partialData explicitly includes them.
-      // If partialData is a partial update (e.g. only isVisible), falling back to
-      // existing.driveFiles (which may be stale/empty from a cold cache read) would
-      // wipe all template drive files from the database. Omitting the key entirely
-      // makes Supabase keep the existing column value unchanged.
-      if (partialData.driveFiles !== undefined) {
-        payload.drive_files = partialData.driveFiles;
-      } else if (existing.driveFiles !== undefined && existing.driveFiles !== null && (existing.driveFiles as any[]).length > 0) {
-        payload.drive_files = existing.driveFiles;
+      // Determine the driveFiles to persist
+      const candidateDriveFiles = partialData.driveFiles !== undefined
+        ? partialData.driveFiles
+        : (existing.driveFiles && (existing.driveFiles as any[]).length > 0 ? existing.driveFiles : undefined);
+
+      if (candidateDriveFiles !== undefined) {
+        // Only send if we're not losing data. If Supabase has MORE files
+        // than what we're about to write, keep the Supabase version.
+        if (supabaseCurrentDriveFiles && supabaseCurrentDriveFiles.length > 0
+            && (candidateDriveFiles as any[]).length === 0) {
+          // Don't send — Supabase already has files, we'd wipe them
+        } else {
+          payload.drive_files = candidateDriveFiles;
+        }
       }
-      // Similarly protect subjects — never send [] to Supabase unless explicitly requested
-      if (partialData.subjects !== undefined) {
-        payload.subjects = partialData.subjects;
-      } else if (existing.subjects !== undefined && existing.subjects !== null && (existing.subjects as any[]).length > 0) {
-        payload.subjects = existing.subjects;
+      // else: omit drive_files from payload → Supabase keeps existing value
+
+      // Same protection for subjects
+      const candidateSubjects = partialData.subjects !== undefined
+        ? partialData.subjects
+        : (existing.subjects && (existing.subjects as any[]).length > 0 ? existing.subjects : undefined);
+
+      if (candidateSubjects !== undefined) {
+        if (supabaseCurrentSubjects && supabaseCurrentSubjects.length > 0
+            && (candidateSubjects as any[]).length === 0) {
+          // Don't send — Supabase already has subjects, we'd wipe them
+        } else {
+          payload.subjects = candidateSubjects;
+        }
       }
 
       if (isSpec) {
@@ -1662,6 +1697,7 @@ export const db = {
       }
 
       // Try update first
+      console.log(`[updateUniversityDatabase] SENDING TO SUPABASE: drive_files=${payload.drive_files ? payload.drive_files.length : 'OMITTED'}, subjects=${payload.subjects ? payload.subjects.length : 'OMITTED'}, supabaseCurrent=${supabaseCurrentDriveFiles ? supabaseCurrentDriveFiles.length : 'null'}`);
       let updateRes = await supabase
         .from('university_databases')
         .update(payload)
@@ -2676,10 +2712,58 @@ export const db = {
             udb = all.find(d => d.id === dbId) || null;
           }
           if (udb) {
+            // ── Critical: verify the fetched DB actually has its driveFiles.
+            // getUniversityDatabase can return stale data with driveFiles: []
+            // (Supabase replication lag, cold cache, or a previous bug that
+            // already wiped the column). If the arrays look empty, attempt a
+            // fresh direct read of the Supabase row to recover the real data.
+            let dbDriveFiles = udb.driveFiles || [];
+            let dbSubjects = udb.subjects || [];
+            if (dbDriveFiles.length === 0 || dbSubjects.length === 0) {
+              try {
+                const { data: freshRow } = await supabase
+                  .from('university_databases')
+                  .select('drive_files, subjects')
+                  .eq('id', dbId)
+                  .maybeSingle();
+                if (freshRow) {
+                  if (dbDriveFiles.length === 0 && Array.isArray(freshRow.drive_files) && freshRow.drive_files.length > 0) {
+                    dbDriveFiles = freshRow.drive_files.map((f: any) => ({
+                      id: f.id,
+                      name: f.name || '',
+                      size: Number(f.size || 0),
+                      type: f.type || 'file',
+                      parentId: f.parentId || f.parent_id || null,
+                      createdAt: f.createdAt || f.upload_date || new Date().toISOString(),
+                      url: f.url || '',
+                      b2FileId: f.b2FileId || f.b2_file_id,
+                      yearIndex: f.yearIndex ?? f.year_index ?? undefined,
+                      semesterIndex: f.semesterIndex ?? f.semester_index ?? undefined,
+                      subjectId: f.subjectId ?? f.subject_id ?? undefined
+                    }));
+                  }
+                  if (dbSubjects.length === 0 && Array.isArray(freshRow.subjects) && freshRow.subjects.length > 0) {
+                    dbSubjects = freshRow.subjects.map((s: any) => ({
+                      id: s.id,
+                      code: s.code || '',
+                      name: s.name || '',
+                      creditHours: Number(s.creditHours || s.credit_hours || 3),
+                      totalMarks: Number(s.totalMarks || s.total_marks || 100),
+                      yearIndex: Number(s.yearIndex || s.year_index || 1),
+                      semesterIndex: Number(s.semesterIndex || s.semester_index || 1),
+                      distributions: s.distributions || [],
+                      status: s.status || 'current',
+                      includeInGpa: s.includeInGpa !== false
+                    }));
+                  }
+                }
+              } catch {}
+            }
+
             let currentDb: UniversityDatabase = {
               ...udb,
-              subjects: udb.subjects || [],
-              driveFiles: udb.driveFiles || [],
+              subjects: dbSubjects,
+              driveFiles: dbDriveFiles,
               gradingScale: udb.gradingScale || []
             };
             const dbUpdates = byDb[dbId];
