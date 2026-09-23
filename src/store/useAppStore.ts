@@ -1930,7 +1930,6 @@ export const useAppStore = create<AppState>((set, get) => ({
             templateToLocalId.set(tFile.id, existingFile.id);
 
             const needUpdate =
-              (existingFile.parentId || null) !== expectedParentId ||
               (tFile.url && existingFile.url !== tFile.url) ||
               (tFile.name && existingFile.name !== tFile.name) ||
               existingFile.universityTemplateId !== tFile.id ||
@@ -1939,7 +1938,6 @@ export const useAppStore = create<AppState>((set, get) => ({
               (mappedSubjectId && existingFile.subjectId !== mappedSubjectId);
 
             if (needUpdate) {
-              existingFile.parentId = expectedParentId;
               if (tFile.url) existingFile.url = tFile.url;
               if (tFile.b2FileId) existingFile.b2FileId = tFile.b2FileId;
               if (tFile.name) existingFile.name = tFile.name;
@@ -1949,7 +1947,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               if (mappedSubjectId) existingFile.subjectId = mappedSubjectId;
 
               await db.updateDriveFile(userId, existingFile.id, {
-                parentId: expectedParentId,
+                parentId: existingFile.parentId,
                 url: existingFile.url,
                 b2FileId: existingFile.b2FileId,
                 name: existingFile.name,
@@ -1969,7 +1967,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
         // Heal duplicates created by older restores: collapse template-derived
         // rows that share the same logical path (name + type + phase + local
-        // parent + identical content) into one row — personal items are never
+        // parent + subject + identical content) into one row — personal items are never
         // touched.
         const dedupedFiles: DriveFile[] = [];
         const seenDriveKeys = new Set<string>();
@@ -1978,7 +1976,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             dedupedFiles.push(f);
             continue;
           }
-          const key = `${(f.name || '').trim().toLowerCase()}-${f.type}-${f.parentId || 'root'}`;
+          const key = `${(f.name || '').trim().toLowerCase()}-${f.type}-${f.parentId || 'root'}-${f.yearIndex || 0}-${f.semesterIndex || 0}-${f.subjectId || 'none'}`;
           if (seenDriveKeys.has(key)) {
             await db.deleteDriveFile(userId, f.id);
             hasFileChanges = true;

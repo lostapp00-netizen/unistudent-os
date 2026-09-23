@@ -1011,6 +1011,11 @@ export const db = {
       const list: DriveFile[] = JSON.parse(localStorage.getItem(key) || '[]');
       localStorage.setItem(key, JSON.stringify(list.map(f => f.id === id ? { ...f, ...file } : f)));
     } catch {}
+    try {
+      const altKey = `unistudent_files_${userId}`;
+      const list: DriveFile[] = JSON.parse(localStorage.getItem(altKey) || '[]');
+      localStorage.setItem(altKey, JSON.stringify(list.map(f => f.id === id ? { ...f, ...file } : f)));
+    } catch {}
 
     const payload: any = {};
     if (file.name !== undefined) payload.name = file.name;
@@ -1030,6 +1035,11 @@ export const db = {
       const key = `unistudent_drive_files_${userId}`;
       const list: DriveFile[] = JSON.parse(localStorage.getItem(key) || '[]');
       localStorage.setItem(key, JSON.stringify(list.filter(f => f.id !== id)));
+    } catch {}
+    try {
+      const altKey = `unistudent_files_${userId}`;
+      const list: DriveFile[] = JSON.parse(localStorage.getItem(altKey) || '[]');
+      localStorage.setItem(altKey, JSON.stringify(list.filter(f => f.id !== id)));
     } catch {}
 
     await resilientWrite('deleteDriveFile', () =>
@@ -4492,6 +4502,8 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     const targetParentId = upd.parentId !== undefined ? upd.parentId : prev.parentId;
     const targetParentName = (upd.parentName !== undefined ? upd.parentName : prev.parentName || '').trim();
     const normTargetParentName = normalizeSubjectName(targetParentName);
+    const itemYear = upd.yearIndex !== undefined ? Number(upd.yearIndex) : (prev.yearIndex !== undefined ? Number(prev.yearIndex) : undefined);
+    const itemSem = upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : (prev.semesterIndex !== undefined ? Number(prev.semesterIndex) : undefined);
 
     if (targetParentId) {
       const parentById = driveFiles.find(f => f.id === targetParentId && f.type === 'folder');
@@ -4499,14 +4511,24 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
         resolvedParentId = parentById.id;
         parentFound = true;
       } else if (normTargetParentName) {
-        const parentByName = driveFiles.find(f => f.type === 'folder' && normalizeSubjectName(f.name) === normTargetParentName);
+        const parentByName = driveFiles.find(f => 
+          f.type === 'folder' && 
+          normalizeSubjectName(f.name) === normTargetParentName &&
+          (itemYear === undefined || f.yearIndex === undefined || Number(f.yearIndex) === itemYear) &&
+          (itemSem === undefined || f.semesterIndex === undefined || Number(f.semesterIndex) === itemSem)
+        ) || driveFiles.find(f => f.type === 'folder' && normalizeSubjectName(f.name) === normTargetParentName);
         if (parentByName) {
           resolvedParentId = parentByName.id;
           parentFound = true;
         }
       }
     } else if (normTargetParentName) {
-      const parentByName = driveFiles.find(f => f.type === 'folder' && normalizeSubjectName(f.name) === normTargetParentName);
+      const parentByName = driveFiles.find(f => 
+        f.type === 'folder' && 
+        normalizeSubjectName(f.name) === normTargetParentName &&
+        (itemYear === undefined || f.yearIndex === undefined || Number(f.yearIndex) === itemYear) &&
+        (itemSem === undefined || f.semesterIndex === undefined || Number(f.semesterIndex) === itemSem)
+      ) || driveFiles.find(f => f.type === 'folder' && normalizeSubjectName(f.name) === normTargetParentName);
       if (parentByName) {
         resolvedParentId = parentByName.id;
         parentFound = true;
@@ -4536,37 +4558,64 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
       subjectFound = true;
     }
 
-    let matched = false;
-    driveFiles = driveFiles.map(f => {
-      const normFName = normalizeSubjectName(f.name || '');
-      const isIdMatch = Boolean((templateFileId && f.id === templateFileId) || (upd.id && f.id === upd.id) || (prev.id && f.id === prev.id));
-      const isPrevNameMatch = Boolean(normPrevName && normFName === normPrevName && f.type === itemType);
-      const isTargetNameMatch = Boolean(normTargetName && normFName === normTargetName && f.type === itemType);
-      const isUrlMatch = Boolean(f.url && ((upd.url && f.url === upd.url) || (prev.url && f.url === prev.url)));
-      const isB2Match = Boolean(f.b2FileId && ((upd.b2FileId && f.b2FileId === upd.b2FileId) || (prev.b2FileId && f.b2FileId === prev.b2FileId)));
+    // Locate the single target file/folder to update
+    let targetIdx = -1;
+    // 1. Exact ID match
+    if (templateFileId || upd.id || prev.id) {
+      targetIdx = driveFiles.findIndex(f => 
+        (templateFileId && f.id === templateFileId) || 
+        (upd.id && f.id === upd.id) || 
+        (prev.id && f.id === prev.id)
+      );
+    }
+    // 2. Exact URL or B2 ID match
+    if (targetIdx < 0 && (upd.url || prev.url || upd.b2FileId || prev.b2FileId)) {
+      targetIdx = driveFiles.findIndex(f => 
+        f.type === itemType && (
+          (upd.b2FileId && f.b2FileId === upd.b2FileId) ||
+          (prev.b2FileId && f.b2FileId === prev.b2FileId) ||
+          (upd.url && f.url === upd.url) ||
+          (prev.url && f.url === prev.url)
+        )
+      );
+    }
+    // 3. Name + type + phase match
+    if (targetIdx < 0 && (normPrevName || normTargetName)) {
+      targetIdx = driveFiles.findIndex(f => {
+        const normFName = normalizeSubjectName(f.name || '');
+        const nameMatches = (normPrevName && normFName === normPrevName) || (normTargetName && normFName === normTargetName);
+        if (!nameMatches || f.type !== itemType) return false;
+        if (itemYear !== undefined && f.yearIndex !== undefined && Number(f.yearIndex) !== itemYear) return false;
+        if (itemSem !== undefined && f.semesterIndex !== undefined && Number(f.semesterIndex) !== itemSem) return false;
+        return true;
+      });
+    }
+    // 4. Fallback name + type match
+    if (targetIdx < 0 && (normPrevName || normTargetName)) {
+      targetIdx = driveFiles.findIndex(f => {
+        const normFName = normalizeSubjectName(f.name || '');
+        return f.type === itemType && ((normPrevName && normFName === normPrevName) || (normTargetName && normFName === normTargetName));
+      });
+    }
 
-      if (isIdMatch || isPrevNameMatch || isTargetNameMatch || isUrlMatch || isB2Match) {
-        matched = true;
-        const finalParentId = parentFound ? resolvedParentId : (f.parentId !== undefined ? f.parentId : null);
-        const finalSubjectId = subjectFound ? resolvedSubjectId : f.subjectId;
+    if (targetIdx >= 0) {
+      const existing = driveFiles[targetIdx];
+      const finalParentId = parentFound ? resolvedParentId : (existing.parentId !== undefined ? existing.parentId : null);
+      const finalSubjectId = subjectFound ? resolvedSubjectId : existing.subjectId;
 
-        return {
-          ...f,
-          name: targetName || f.name,
-          type: itemType || f.type,
-          parentId: finalParentId,
-          subjectId: finalSubjectId,
-          yearIndex: upd.yearIndex !== undefined ? Number(upd.yearIndex) : f.yearIndex,
-          semesterIndex: upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : f.semesterIndex,
-          url: upd.url || f.url || prev.url || '',
-          b2FileId: upd.b2FileId || upd.b2_file_id || f.b2FileId || prev.b2FileId || prev.b2_file_id,
-          size: upd.size !== undefined ? Number(upd.size) : f.size
-        };
-      }
-      return f;
-    });
-
-    if (!matched && targetName) {
+      driveFiles[targetIdx] = {
+        ...existing,
+        name: targetName || existing.name,
+        type: itemType || existing.type,
+        parentId: finalParentId,
+        subjectId: finalSubjectId,
+        yearIndex: upd.yearIndex !== undefined ? Number(upd.yearIndex) : existing.yearIndex,
+        semesterIndex: upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : existing.semesterIndex,
+        url: upd.url || existing.url || prev.url || '',
+        b2FileId: upd.b2FileId || upd.b2_file_id || existing.b2FileId || prev.b2FileId || prev.b2_file_id,
+        size: upd.size !== undefined ? Number(upd.size) : existing.size
+      };
+    } else if (targetName) {
       driveFiles.push({
         id: templateFileId || upd.id || uuidv4(),
         name: targetName,

@@ -378,15 +378,30 @@ export function DriveTab() {
     // phase (year / semester) — matching "anything placed inside a folder
     // takes the folder's phase". Moving to root keeps the current values.
     const destination = selectedDestinationFolderId ? files.find(f => f.id === selectedDestinationFolderId) : null;
+    const targetYear = destination ? Number(destination.yearIndex) || Number(fileToMove.yearIndex) || 1 : undefined;
+    const targetSem = destination ? Number(destination.semesterIndex) || Number(fileToMove.semesterIndex) || 1 : undefined;
+
     updateFile(fileToMove.id, {
       parentId: selectedDestinationFolderId,
       ...(destination
         ? {
-            yearIndex: Number(destination.yearIndex) || Number(fileToMove.yearIndex) || 1,
-            semesterIndex: Number(destination.semesterIndex) || Number(fileToMove.semesterIndex) || 1
+            yearIndex: targetYear,
+            semesterIndex: targetSem
           }
         : {})
     });
+
+    // If moving a folder into another folder, also propagate the new year/semester to all descendants
+    if (fileToMove.type === 'folder' && destination) {
+      const descendantIds = getAllDescendantIds(fileToMove.id, files);
+      for (const dId of descendantIds) {
+        updateFile(dId, {
+          yearIndex: targetYear,
+          semesterIndex: targetSem
+        });
+      }
+    }
+
     setFileToMove(null);
     setSelectedDestinationFolderId(null);
   };
