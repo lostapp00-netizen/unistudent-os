@@ -1332,24 +1332,52 @@ export const db = {
 
   // --- University Databases ---
   async getUniversityDatabases(): Promise<UniversityDatabase[]> {
+    // Read local cache first so we can merge (not blindly overwrite)
+    let localList: UniversityDatabase[] = [];
+    try {
+      const localRaw = localStorage.getItem('unistudent_university_databases');
+      localList = localRaw ? JSON.parse(localRaw) : [];
+    } catch {}
+
     try {
       const { data, error } = await supabase.from('university_databases').select('*').order('created_at', { ascending: false });
       if (!error && data) {
-        const mapped = data.map(d => mapUniversityDatabaseFromDB(d));
+        const remoteList = data.map(d => mapUniversityDatabaseFromDB(d));
+
+        // Merge: for each database, keep whichever copy has the latest updatedAt
+        // timestamp. This prevents a stale Supabase read (e.g. during replication
+        // lag or right after a local write) from overwriting a just-persisted
+        // local update.
+        const localMap = new Map(localList.map(d => [d.id, d]));
+        const merged: UniversityDatabase[] = [];
+        const seenIds = new Set<string>();
+
+        for (const remote of remoteList) {
+          seenIds.add(remote.id);
+          const local = localMap.get(remote.id);
+          if (local && new Date(local.updatedAt).getTime() > new Date(remote.updatedAt).getTime()) {
+            merged.push(local);
+          } else {
+            merged.push(remote);
+          }
+        }
+
+        // Include any local-only entries not yet in Supabase
+        for (const local of localList) {
+          if (!seenIds.has(local.id)) {
+            merged.push(local);
+          }
+        }
+
         try {
-          localStorage.setItem('unistudent_university_databases', JSON.stringify(mapped));
+          localStorage.setItem('unistudent_university_databases', JSON.stringify(merged));
         } catch {}
-        return mapped;
+        return merged;
       }
     } catch (e) {
       console.warn('Supabase getUniversityDatabases warning:', e);
     }
-    try {
-      const local = localStorage.getItem('unistudent_university_databases');
-      return local ? JSON.parse(local) : [];
-    } catch {
-      return [];
-    }
+    return localList;
   },
 
   async getUniversityDatabase(id: string): Promise<UniversityDatabase | null> {
@@ -1363,8 +1391,22 @@ export const db = {
         const mapped = mapUniversityDatabaseFromDB(data);
         try {
           const current = await this.getUniversityDatabases();
-          const updated = [mapped, ...current.filter(u => u.id !== id)];
-          localStorage.setItem('unistudent_university_databases', JSON.stringify(updated));
+          // Only replace the local entry if the Supabase version is newer
+          const localEntry = current.find(u => u.id === id);
+          const useRemote = !localEntry || new Date(mapped.updatedAt).getTime() >= new Date(localEntry.updatedAt).getTime();
+          if (useRemote) {
+            const updated = [mapped, ...current.filter(u => u.id !== id)];
+            localStorage.setItem('unistudent_university_databases', JSON.stringify(updated));
+          }
+        } catch {}
+        // Return the fresher version
+        try {
+          const localRaw = localStorage.getItem('unistudent_university_databases');
+          const localList: UniversityDatabase[] = localRaw ? JSON.parse(localRaw) : [];
+          const localVersion = localList.find(u => u.id === id);
+          if (localVersion && new Date(localVersion.updatedAt).getTime() > new Date(mapped.updatedAt).getTime()) {
+            return localVersion;
+          }
         } catch {}
         return mapped;
       }
