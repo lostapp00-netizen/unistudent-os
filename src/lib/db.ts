@@ -1638,12 +1638,14 @@ export const db = {
         specialization_start_semester: Number(full.specializationStartSemester || existing.specializationStartSemester || 1),
         updated_at: updatedAt
       };
-      // ── Safety guard: NEVER overwrite drive_files / subjects in Supabase
-      // with an array that is shorter than the one already stored.
-      // This covers the critical scenario where getUniversityDatabase
-      // returned stale/empty data, applyPendingUpdateToDatabase worked on
-      // that empty data, and updateUniversityDatabase is now about to
-      // persist the result back — which would wipe the real files.
+
+      // ── MERGE strategy for drive_files and subjects ──
+      // Instead of blindly replacing the JSONB arrays, we MERGE:
+      //   1. Fetch what's currently stored in Supabase
+      //   2. If our candidate array is shorter, merge our changes INTO
+      //      the Supabase array (update matching items, add new ones)
+      //   3. Only send the merged result
+      // Combined with the DB trigger, this gives two layers of protection.
       let supabaseCurrentDriveFiles: any[] | null = null;
       let supabaseCurrentSubjects: any[] | null = null;
       try {
@@ -1658,32 +1660,62 @@ export const db = {
         }
       } catch {}
 
-      // Determine the driveFiles to persist
+      // Helper: merge candidate items into a base array by ID
+      const mergeById = (base: any[], candidate: any[]): any[] => {
+        if (!base || base.length === 0) return candidate;
+        if (!candidate || candidate.length === 0) return base;
+        const result = [...base];
+        const baseIds = new Set(result.map((item: any) => item.id));
+        for (const item of candidate) {
+          const idx = result.findIndex((b: any) => b.id === item.id);
+          if (idx >= 0) {
+            // Update existing item with candidate's values
+            result[idx] = { ...result[idx], ...item };
+          } else {
+            // New item not in base — add it
+            result.push(item);
+          }
+        }
+        return result;
+      };
+
+      // Determine drive_files for the payload
       const candidateDriveFiles = partialData.driveFiles !== undefined
-        ? partialData.driveFiles
-        : (existing.driveFiles && (existing.driveFiles as any[]).length > 0 ? existing.driveFiles : undefined);
+        ? partialData.driveFiles as any[]
+        : (existing.driveFiles && (existing.driveFiles as any[]).length > 0
+            ? existing.driveFiles as any[]
+            : undefined);
 
       if (candidateDriveFiles !== undefined) {
-        // Only send if we're not losing data. If Supabase has MORE files
-        // than what we're about to write, keep the Supabase version.
-        if (supabaseCurrentDriveFiles && supabaseCurrentDriveFiles.length > 0
-            && (candidateDriveFiles as any[]).length === 0) {
-          // Don't send — Supabase already has files, we'd wipe them
+        if (supabaseCurrentDriveFiles && supabaseCurrentDriveFiles.length > 0) {
+          if (candidateDriveFiles.length < supabaseCurrentDriveFiles.length) {
+            // Candidate is SMALLER than what Supabase has — merge to avoid data loss
+            console.warn(`[updateUniversityDatabase] drive_files: candidate(${candidateDriveFiles.length}) < supabase(${supabaseCurrentDriveFiles.length}). Merging.`);
+            payload.drive_files = mergeById(supabaseCurrentDriveFiles, candidateDriveFiles);
+          } else {
+            payload.drive_files = candidateDriveFiles;
+          }
         } else {
           payload.drive_files = candidateDriveFiles;
         }
       }
-      // else: omit drive_files from payload → Supabase keeps existing value
+      // else: omit drive_files → Supabase keeps existing value
 
-      // Same protection for subjects
+      // Determine subjects for the payload
       const candidateSubjects = partialData.subjects !== undefined
-        ? partialData.subjects
-        : (existing.subjects && (existing.subjects as any[]).length > 0 ? existing.subjects : undefined);
+        ? partialData.subjects as any[]
+        : (existing.subjects && (existing.subjects as any[]).length > 0
+            ? existing.subjects as any[]
+            : undefined);
 
       if (candidateSubjects !== undefined) {
-        if (supabaseCurrentSubjects && supabaseCurrentSubjects.length > 0
-            && (candidateSubjects as any[]).length === 0) {
-          // Don't send — Supabase already has subjects, we'd wipe them
+        if (supabaseCurrentSubjects && supabaseCurrentSubjects.length > 0) {
+          if (candidateSubjects.length < supabaseCurrentSubjects.length) {
+            console.warn(`[updateUniversityDatabase] subjects: candidate(${candidateSubjects.length}) < supabase(${supabaseCurrentSubjects.length}). Merging.`);
+            payload.subjects = mergeById(supabaseCurrentSubjects, candidateSubjects);
+          } else {
+            payload.subjects = candidateSubjects;
+          }
         } else {
           payload.subjects = candidateSubjects;
         }
