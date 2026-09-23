@@ -1387,8 +1387,26 @@ export const db = {
         for (const remote of remoteList) {
           seenIds.add(remote.id);
           const local = localMap.get(remote.id);
-          if (local && new Date(local.updatedAt).getTime() > new Date(remote.updatedAt).getTime()) {
-            merged.push(local);
+          if (local) {
+            // Prefer the version with MORE driveFiles — this prevents a stale
+            // localStorage entry (with empty/partial driveFiles from a bad write)
+            // from overriding Supabase's correct data, even if the local timestamp
+            // is newer.
+            const localFiles = local.driveFiles?.length ?? 0;
+            const remoteFiles = remote.driveFiles?.length ?? 0;
+            if (remoteFiles > 0 && localFiles < remoteFiles) {
+              // Remote has more files — use remote but keep local's non-driveFiles
+              // metadata if it's newer
+              if (new Date(local.updatedAt).getTime() > new Date(remote.updatedAt).getTime()) {
+                merged.push({ ...local, driveFiles: remote.driveFiles, subjects: remote.subjects && remote.subjects.length > (local.subjects?.length ?? 0) ? remote.subjects : local.subjects });
+              } else {
+                merged.push(remote);
+              }
+            } else if (new Date(local.updatedAt).getTime() > new Date(remote.updatedAt).getTime()) {
+              merged.push(local);
+            } else {
+              merged.push(remote);
+            }
           } else {
             merged.push(remote);
           }
@@ -1431,12 +1449,19 @@ export const db = {
             localStorage.setItem('unistudent_university_databases', JSON.stringify(updated));
           }
         } catch {}
-        // Return the fresher version
+        // Return the fresher version — but NEVER prefer local if it has fewer driveFiles
         try {
           const localRaw = localStorage.getItem('unistudent_university_databases');
           const localList: UniversityDatabase[] = localRaw ? JSON.parse(localRaw) : [];
           const localVersion = localList.find(u => u.id === id);
           if (localVersion && new Date(localVersion.updatedAt).getTime() > new Date(mapped.updatedAt).getTime()) {
+            // Local is newer, but check if it has fewer driveFiles
+            const localFiles = localVersion.driveFiles?.length ?? 0;
+            const remoteFiles = mapped.driveFiles?.length ?? 0;
+            if (remoteFiles > 0 && localFiles < remoteFiles) {
+              // Local has fewer files — return remote's files with local's metadata
+              return { ...localVersion, driveFiles: mapped.driveFiles, subjects: mapped.subjects && mapped.subjects.length > (localVersion.subjects?.length ?? 0) ? mapped.subjects : localVersion.subjects };
+            }
             return localVersion;
           }
         } catch {}
@@ -1556,9 +1581,50 @@ export const db = {
       cachedDatabases = await this.getUniversityDatabases();
       const targetIndex = cachedDatabases.findIndex(d => d.id === id);
       if (targetIndex >= 0) {
+        const existing = cachedDatabases[targetIndex];
+        // Protect driveFiles: never overwrite with a shorter array
+        let mergedDriveFiles = existing.driveFiles;
+        if (partialData.driveFiles !== undefined) {
+          if ((partialData.driveFiles as any[]).length >= (existing.driveFiles?.length ?? 0)) {
+            mergedDriveFiles = partialData.driveFiles;
+          } else {
+            // partialData has FEWER files — keep existing, but merge any new/updated items
+            const result = [...(existing.driveFiles || [])];
+            for (const f of (partialData.driveFiles as any[])) {
+              const idx = result.findIndex((r: any) => r.id === f.id);
+              if (idx >= 0) {
+                result[idx] = { ...result[idx], ...f };
+              } else {
+                result.push(f);
+              }
+            }
+            mergedDriveFiles = result;
+            console.warn(`[updateUniversityDatabase] localStorage: protected driveFiles from ${existing.driveFiles?.length ?? 0} → ${(partialData.driveFiles as any[]).length}. Merged to ${result.length}`);
+          }
+        }
+        // Same for subjects
+        let mergedSubjects = existing.subjects;
+        if (partialData.subjects !== undefined) {
+          if ((partialData.subjects as any[]).length >= (existing.subjects?.length ?? 0)) {
+            mergedSubjects = partialData.subjects;
+          } else {
+            const result = [...(existing.subjects || [])];
+            for (const s of (partialData.subjects as any[])) {
+              const idx = result.findIndex((r: any) => r.id === s.id);
+              if (idx >= 0) {
+                result[idx] = { ...result[idx], ...s };
+              } else {
+                result.push(s);
+              }
+            }
+            mergedSubjects = result;
+          }
+        }
         cachedDatabases[targetIndex] = {
-          ...cachedDatabases[targetIndex],
+          ...existing,
           ...partialData,
+          driveFiles: mergedDriveFiles as any,
+          subjects: mergedSubjects as any,
           updatedAt
         };
       } else {
@@ -2739,58 +2805,50 @@ export const db = {
       for (const dbId of dbIds) {
         try {
           let udb = await this.getUniversityDatabase(dbId);
+          console.log(`[batchRespond] Step 1: getUniversityDatabase(${dbId}) → driveFiles=${udb?.driveFiles?.length ?? 'null'}, subjects=${udb?.subjects?.length ?? 'null'}`);
           if (!udb) {
             const all = await this.getUniversityDatabases();
             udb = all.find(d => d.id === dbId) || null;
+            console.log(`[batchRespond] Step 1b: fallback → driveFiles=${udb?.driveFiles?.length ?? 'null'}`);
           }
           if (udb) {
-            // ── Critical: verify the fetched DB actually has its driveFiles.
-            // getUniversityDatabase can return stale data with driveFiles: []
-            // (Supabase replication lag, cold cache, or a previous bug that
-            // already wiped the column). If the arrays look empty, attempt a
-            // fresh direct read of the Supabase row to recover the real data.
             let dbDriveFiles = udb.driveFiles || [];
             let dbSubjects = udb.subjects || [];
-            if (dbDriveFiles.length === 0 || dbSubjects.length === 0) {
-              try {
-                const { data: freshRow } = await supabase
-                  .from('university_databases')
-                  .select('drive_files, subjects')
-                  .eq('id', dbId)
-                  .maybeSingle();
-                if (freshRow) {
-                  if (dbDriveFiles.length === 0 && Array.isArray(freshRow.drive_files) && freshRow.drive_files.length > 0) {
-                    dbDriveFiles = freshRow.drive_files.map((f: any) => ({
-                      id: f.id,
-                      name: f.name || '',
-                      size: Number(f.size || 0),
-                      type: f.type || 'file',
-                      parentId: f.parentId || f.parent_id || null,
-                      createdAt: f.createdAt || f.upload_date || new Date().toISOString(),
-                      url: f.url || '',
-                      b2FileId: f.b2FileId || f.b2_file_id,
-                      yearIndex: f.yearIndex ?? f.year_index ?? undefined,
-                      semesterIndex: f.semesterIndex ?? f.semester_index ?? undefined,
-                      subjectId: f.subjectId ?? f.subject_id ?? undefined
-                    }));
-                  }
-                  if (dbSubjects.length === 0 && Array.isArray(freshRow.subjects) && freshRow.subjects.length > 0) {
-                    dbSubjects = freshRow.subjects.map((s: any) => ({
-                      id: s.id,
-                      code: s.code || '',
-                      name: s.name || '',
-                      creditHours: Number(s.creditHours || s.credit_hours || 3),
-                      totalMarks: Number(s.totalMarks || s.total_marks || 100),
-                      yearIndex: Number(s.yearIndex || s.year_index || 1),
-                      semesterIndex: Number(s.semesterIndex || s.semester_index || 1),
-                      distributions: s.distributions || [],
-                      status: s.status || 'current',
-                      includeInGpa: s.includeInGpa !== false
-                    }));
-                  }
+            
+            // ALWAYS do a fresh direct read to ensure we have the latest data
+            try {
+              const { data: freshRow } = await supabase
+                .from('university_databases')
+                .select('drive_files, subjects')
+                .eq('id', dbId)
+                .maybeSingle();
+              console.log(`[batchRespond] Step 2: Fresh Supabase → drive_files=${freshRow?.drive_files?.length ?? 'null'}, subjects=${freshRow?.subjects?.length ?? 'null'}`);
+              if (freshRow) {
+                if (Array.isArray(freshRow.drive_files) && freshRow.drive_files.length > dbDriveFiles.length) {
+                  dbDriveFiles = freshRow.drive_files.map((f: any) => ({
+                    id: f.id, name: f.name || '', size: Number(f.size || 0),
+                    type: f.type || 'file', parentId: f.parentId || f.parent_id || null,
+                    createdAt: f.createdAt || f.upload_date || new Date().toISOString(),
+                    url: f.url || '', b2FileId: f.b2FileId || f.b2_file_id,
+                    yearIndex: f.yearIndex ?? f.year_index ?? undefined,
+                    semesterIndex: f.semesterIndex ?? f.semester_index ?? undefined,
+                    subjectId: f.subjectId ?? f.subject_id ?? undefined
+                  }));
+                  console.log(`[batchRespond] Using Supabase drive_files (${dbDriveFiles.length}) over cached (${udb.driveFiles?.length ?? 0})`);
                 }
-              } catch {}
-            }
+                if (Array.isArray(freshRow.subjects) && freshRow.subjects.length > dbSubjects.length) {
+                  dbSubjects = freshRow.subjects.map((s: any) => ({
+                    id: s.id, code: s.code || '', name: s.name || '',
+                    creditHours: Number(s.creditHours || s.credit_hours || 3),
+                    totalMarks: Number(s.totalMarks || s.total_marks || 100),
+                    yearIndex: Number(s.yearIndex || s.year_index || 1),
+                    semesterIndex: Number(s.semesterIndex || s.semester_index || 1),
+                    distributions: s.distributions || [], status: s.status || 'current',
+                    includeInGpa: s.includeInGpa !== false
+                  }));
+                }
+              }
+            } catch {}
 
             let currentDb: UniversityDatabase = {
               ...udb,
@@ -2798,14 +2856,18 @@ export const db = {
               driveFiles: dbDriveFiles,
               gradingScale: udb.gradingScale || []
             };
+            console.log(`[batchRespond] Step 3: currentDb → driveFiles=${currentDb.driveFiles.length}, subjects=${currentDb.subjects.length}`);
+            
             const dbUpdates = byDb[dbId];
-            // Apply updates in chronological order (oldest first)
             dbUpdates.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
             for (const upd of dbUpdates) {
+              const beforeCount = currentDb.driveFiles.length;
               currentDb = applyPendingUpdateToDatabase(currentDb, upd);
+              console.log(`[batchRespond] Step 4: applyPendingUpdate type=${upd.type} → driveFiles: ${beforeCount} → ${currentDb.driveFiles.length}`);
             }
 
+            console.log(`[batchRespond] Step 5: updateUniversityDatabase with driveFiles=${currentDb.driveFiles.length}`);
             await this.updateUniversityDatabase(currentDb.id, currentDb);
             await this.syncUniversityDatabaseChangesToStudents(currentDb.id, {
               type: 'full_sync',
