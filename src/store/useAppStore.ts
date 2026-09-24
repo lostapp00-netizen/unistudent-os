@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, GraduationGradeRule, UniversityDatabase } from '../types';
-import { db, flushPendingWrites } from '../lib/db';
+import { db, flushPendingWrites, matchDriveItemInDatabase, matchSubjectInDatabase } from '../lib/db';
 import { normalizeSubjectName } from '../lib/academicTranslation';
 import { matchesDriveItem } from '../lib/utils';
 
@@ -2190,6 +2190,39 @@ export async function checkAndNotifySourceUpdate(
       finalDescription = `تعديل جدول التقديرات (${rulesCount} تقدير) • ${cohortName ? `${cohortName} • ` : ''}${scopeLabel}`;
     }
 
+    // Pin the edited item to its row in the university database before the
+    // update is recorded. Approving later then targets the exact same item
+    // instead of guessing from names — the guess is what used to leave a
+    // duplicate behind and make the original vanish.
+    let resolvedData = data;
+    try {
+      if (data && (type === 'update_file' || type === 'delete_file')) {
+        const item = matchDriveItemInDatabase(targetDb, data);
+        if (item) {
+          resolvedData = {
+            ...data,
+            universityTemplateId: item.id,
+            ...(item.parentId !== undefined ? { parentTemplateId: item.parentId } : {}),
+            ...(item.subjectId ? { subjectTemplateId: item.subjectId } : {})
+          };
+        }
+      } else if (data && (type === 'update_subject' || type === 'delete_subject')) {
+        const subject = matchSubjectInDatabase(targetDb, data);
+        if (subject) {
+          resolvedData = { ...data, universityTemplateId: subject.id };
+        }
+      }
+    } catch (resolveErr) {
+      console.warn('checkAndNotifySourceUpdate: could not pin item identity', resolveErr);
+    }
+
+    // Record which fields the student actually changed. The approval step uses
+    // this to tell a rename apart from a real move: a rename must keep the
+    // admin's placement (folder/year/semester), a move must follow the student.
+    if (resolvedData && changedFields && typeof changedFields === 'object' && !Array.isArray(changedFields)) {
+      resolvedData = { ...resolvedData, changedFields: Object.keys(changedFields) };
+    }
+
     await db.recordPendingUpdate({
       id: uuidv4(),
       universityDatabaseId: targetDb.id,
@@ -2205,7 +2238,7 @@ export async function checkAndNotifySourceUpdate(
       sourceUserName: effectiveUserName || targetDb.sourceUserName || '',
       type,
       description: finalDescription,
-      data,
+      data: resolvedData,
       status: 'pending',
       createdAt: new Date().toISOString()
     });

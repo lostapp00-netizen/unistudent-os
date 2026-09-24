@@ -226,6 +226,11 @@ export function selectAcademicDriveFiles(
     return {
       ...f,
       id: idMap.get(f.id) || createId(),
+      // Keep a permanent link back to the database row this item came from.
+      // Ids are regenerated on every pull, so without this the approval step
+      // could only match by name — and a failed name match is what created a
+      // duplicate while the original quietly disappeared.
+      originId: f.id,
       parentId: parentId ? (idMap.get(parentId) || null) : null,
       yearIndex: f.yearIndex,
       semesterIndex: f.semesterIndex,
@@ -236,6 +241,7 @@ export function selectAcademicDriveFiles(
 
 export function matchesDriveItem(file: DriveFile, template: DriveFile, parentId: string | null): boolean {
   if (file.universityTemplateId && file.universityTemplateId === template.id) return true;
+  if ((file as any).originId && (file as any).originId === template.id) return true;
   if (file.id === template.id) return true;
   if ((file.parentId || null) !== parentId || file.type !== template.type) return false;
 

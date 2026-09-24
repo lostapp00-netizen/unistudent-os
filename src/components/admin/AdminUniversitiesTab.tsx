@@ -1435,8 +1435,9 @@ export function AdminUniversitiesTab({
         return dbItem;
       }));
 
-      // 2. Persist to DB (Completely overwrites old subjects & drive & grading)
-      await db.updateUniversityDatabase(selectedCollegeDb.id, cleanOverwriteData);
+      // 2. Persist to DB (an intentional full replacement: the source student
+      //    changed, so the old subjects/drive/grading are meant to go away)
+      await db.updateUniversityDatabase(selectedCollegeDb.id, cleanOverwriteData, { replaceArrays: true });
 
       if (notifySourceStudent) {
         await db.sendStudentNotification(newStudent.id, {
@@ -1570,7 +1571,12 @@ export function AdminUniversitiesTab({
         }
         return dbItem;
       }));
-      await db.updateUniversityDatabase(selectedCollegeDb.id, { gradingScale: newScale });
+      // Rules removed in the editor are the only ones that may disappear.
+      const removedScaleIds = (selectedCollegeDb.gradingScale || [])
+        .filter(g => !newScale.some(n => n.id === g.id))
+        .map(g => g.id)
+        .filter(Boolean);
+      await db.updateUniversityDatabase(selectedCollegeDb.id, { gradingScale: newScale }, { removedGradingScaleIds: removedScaleIds });
       // Sync grading scale to all students who restored this database
       await db.syncUniversityDatabaseChangesToStudents(selectedCollegeDb.id, {
         type: 'update_grading_scale',
@@ -1731,7 +1737,11 @@ export function AdminUniversitiesTab({
       const subjectId = subjectToDelete.id;
       const targetSubj = selectedCollegeDb.subjects.find(s => s.id === subjectId);
       const updatedSubjects = selectedCollegeDb.subjects.filter(s => s.id !== subjectId);
-      await db.updateUniversityDatabase(selectedCollegeDb.id, { subjects: updatedSubjects });
+      await db.updateUniversityDatabase(
+        selectedCollegeDb.id,
+        { subjects: updatedSubjects },
+        { removedSubjectIds: [subjectId] }
+      );
       
       // Real-time synchronization to all enrolled/restored students
       await db.syncUniversityDatabaseChangesToStudents(selectedCollegeDb.id, {
@@ -1953,7 +1963,11 @@ export function AdminUniversitiesTab({
       const doomedIds = new Set(doomed.map(f => f.id));
 
       const updatedFiles = allFiles.filter(f => !doomedIds.has(f.id));
-      await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
+      await db.updateUniversityDatabase(
+        selectedCollegeDb.id,
+        { driveFiles: updatedFiles },
+        { removedDriveFileIds: [...doomedIds] }
+      );
 
       // Server-side (Edge Function) hard delete with client-side fallback.
       import('../../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
@@ -2022,13 +2036,16 @@ export function AdminUniversitiesTab({
     setResolvingUpdateIds(prev => ({ ...prev, [update.id]: true }));
 
     try {
-      await db.batchRespondToPendingUpdates([update], status);
+      const result = await db.batchRespondToPendingUpdates([update], status);
       setPendingUpdates(prev => {
         const next = prev.map(p => p.id === update.id ? { ...p, status } : p);
         const remainingCount = next.filter(p => p.status === 'pending').length;
         onPendingCountChange?.(remainingCount);
         return next;
       });
+      if (result?.warnings?.length) {
+        alert(result.warnings.join('\n'));
+      }
       await loadUniData();
       await onRefreshAllData();
     } catch (e) {
@@ -2046,11 +2063,13 @@ export function AdminUniversitiesTab({
   const handleResolveGroup = async (groupUpdates: UniversityPendingUpdate[], status: 'approved' | 'rejected') => {
     const pendingInGroup = groupUpdates.filter(u => u.status === 'pending');
     if (pendingInGroup.length === 0) return;
+    const groupWarnings: string[] = [];
 
     for (const update of pendingInGroup) {
       setResolvingUpdateIds(prev => ({ ...prev, [update.id]: true }));
       try {
-        await db.batchRespondToPendingUpdates([update], status);
+        const result = await db.batchRespondToPendingUpdates([update], status);
+        if (result?.warnings?.length) groupWarnings.push(...result.warnings);
         setPendingUpdates(prev => {
           const next = prev.map(p => p.id === update.id ? { ...p, status } : p);
           const remainingCount = next.filter(p => p.status === 'pending').length;
@@ -2075,6 +2094,9 @@ export function AdminUniversitiesTab({
     } catch (e) {
       console.error('Error refreshing after group pending updates:', e);
     }
+    if (groupWarnings.length > 0) {
+      alert(groupWarnings.join('\n'));
+    }
   };
 
   // Global Bulk Resolution (Approve / Reject ALL pending updates across all students sequentially with real-time visual progress)
@@ -2083,10 +2105,12 @@ export function AdminUniversitiesTab({
     if (allPending.length === 0) return;
 
     setIsResolvingAll(true);
+    const allWarnings: string[] = [];
     for (const update of allPending) {
       setResolvingUpdateIds(prev => ({ ...prev, [update.id]: true }));
       try {
-        await db.batchRespondToPendingUpdates([update], status);
+        const result = await db.batchRespondToPendingUpdates([update], status);
+        if (result?.warnings?.length) allWarnings.push(...result.warnings);
         setPendingUpdates(prev => {
           const next = prev.map(p => p.id === update.id ? { ...p, status } : p);
           const remainingCount = next.filter(p => p.status === 'pending').length;
@@ -2112,6 +2136,9 @@ export function AdminUniversitiesTab({
       console.error('Error refreshing after resolving all pending updates:', e);
     } finally {
       setIsResolvingAll(false);
+    }
+    if (allWarnings.length > 0) {
+      alert(allWarnings.join('\n'));
     }
   };
 

@@ -329,6 +329,130 @@ function cacheRead<T>(key: string, fetchFn: () => PromiseLike<T[] | null>): Prom
   })();
 }
 
+// ---------------------------------------------------------------------------
+// University database item-level patching
+// ---------------------------------------------------------------------------
+// The university database stores drive_files / subjects / grading_scale as JSONB
+// arrays inside one row. Writing them as a whole array taken from a client
+// snapshot is what silently deleted items: if the snapshot was stale, every item
+// missing from it disappeared. These helpers make every write item-addressed:
+// an item is only ever removed when its id is explicitly listed as removed.
+
+export interface UniversityDatabaseItemPatch<T> {
+  /** Items to create or update, matched by id. Never removes anything. */
+  upsert?: T[];
+  /** Items to remove — the ONLY way an item can disappear. */
+  removeIds?: string[];
+}
+
+export interface UniversityDatabasePatch {
+  scalars?: Partial<UniversityDatabase>;
+  driveFiles?: UniversityDatabaseItemPatch<DriveFile>;
+  subjects?: UniversityDatabaseItemPatch<Subject>;
+  gradingScale?: UniversityDatabaseItemPatch<any>;
+  /** Explicit, intentional full replacement (switch source student / rebuild). */
+  replaceArrays?: boolean;
+}
+
+/** Merge items into an array by id (create or update, never remove). */
+export function upsertItemsById<T extends { id?: string }>(base: T[] | undefined, patch?: T[]): T[] {
+  const result: T[] = [...(base || [])];
+  if (!patch || patch.length === 0) return result;
+  for (const item of patch) {
+    if (!item || !item.id) continue;
+    const idx = result.findIndex(r => r && r.id === item.id);
+    if (idx >= 0) {
+      result[idx] = { ...result[idx], ...item };
+    } else {
+      result.push(item);
+    }
+  }
+  return result;
+}
+
+/** Remove items by id (no cascade). */
+export function removeItemsById<T extends { id?: string }>(base: T[] | undefined, ids?: string[]): T[] {
+  if (!ids || ids.length === 0) return [...(base || [])];
+  const doomed = new Set(ids);
+  return (base || []).filter(item => !item || !item.id || !doomed.has(item.id));
+}
+
+/** Remove drive items by id, cascading into the descendants of removed folders. */
+export function removeDriveItemsById(base: DriveFile[] | undefined, ids?: string[]): DriveFile[] {
+  const list = [...(base || [])];
+  if (!ids || ids.length === 0) return list;
+  const doomed = new Set(ids);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const item of list) {
+      if (!item || !item.id || doomed.has(item.id)) continue;
+      if (item.parentId && doomed.has(item.parentId)) {
+        doomed.add(item.id);
+        grew = true;
+      }
+    }
+  }
+  return list.filter(item => !item || !item.id || !doomed.has(item.id));
+}
+
+/** camelCase university-database field -> Supabase column */
+const UNIVERSITY_SCALAR_COLUMNS: Record<string, string> = {
+  universityNameAr: 'university_name_ar',
+  universityNameEn: 'university_name_en',
+  collegeNameAr: 'college_name_ar',
+  collegeNameEn: 'college_name_en',
+  cohortName: 'cohort_name',
+  cohortNotes: 'cohort_notes',
+  academicYearStart: 'academic_year_start',
+  academicYearEnd: 'academic_year_end',
+  sourceUserId: 'source_user_id',
+  sourceUserName: 'source_user_name',
+  sourceUserEmail: 'source_user_email',
+  totalYears: 'total_years',
+  semestersPerYear: 'semesters_per_year',
+  availableYears: 'available_years',
+  specializationStartYear: 'specialization_start_year',
+  specializationStartSemester: 'specialization_start_semester',
+  isVisible: 'is_visible',
+  isSpecialization: 'is_specialization',
+  parentDatabaseId: 'parent_database_id',
+  specializationNameAr: 'specialization_name_ar',
+  specializationNameEn: 'specialization_name_en',
+};
+
+/** Build the snake_case scalar payload for the patch RPC from a partial DB. */
+function buildUniversityScalarsPayload(partialData: Partial<UniversityDatabase>): Record<string, any> {
+  const payload: Record<string, any> = {};
+  for (const [field, column] of Object.entries(UNIVERSITY_SCALAR_COLUMNS)) {
+    const value = (partialData as any)[field];
+    if (value === undefined) continue;
+    payload[column] = value;
+  }
+  return payload;
+}
+
+function isMissingPatchRpcError(error: any): boolean {
+  if (!error) return false;
+  const code = String(error.code || '');
+  const message = String(error.message || '');
+  // Only genuine "function does not exist" signals count as a missing RPC.
+  // A guard-trigger rejection also mentions the function name, so it must NOT
+  // be mistaken for a missing migration.
+  return (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    message.includes('Could not find the function') ||
+    message.includes('does not exist')
+  );
+}
+
+function isMissingRowError(error: any): boolean {
+  if (!error) return false;
+  const message = String(error.message || '');
+  return message.includes('not found') && !message.includes('Blocked:');
+}
+
 export const db = {
   // --- Settings ---
   async getSettings(userId: string): Promise<UserSettings | null> {
@@ -1570,65 +1694,74 @@ export const db = {
     }
   },
 
-  async updateUniversityDatabase(id: string, partialData: Partial<UniversityDatabase>): Promise<void> {
+  async updateUniversityDatabase(
+    id: string,
+    partialData: Partial<UniversityDatabase>,
+    options?: {
+      removedDriveFileIds?: string[];
+      removedSubjectIds?: string[];
+      removedGradingScaleIds?: string[];
+      replaceArrays?: boolean;
+    }
+  ): Promise<void> {
+    // Arrays are item-addressed: whatever is passed is UPSERTED by id, and an
+    // item can only disappear when its id is explicitly listed as removed.
+    // Being absent from the payload NEVER means deletion — that assumption is
+    // exactly what used to wipe items when the caller's snapshot was stale.
+    const { driveFiles, subjects, gradingScale, ...scalarFields } = partialData as any;
+    await this.patchUniversityDatabase(id, {
+      scalars: scalarFields,
+      driveFiles: driveFiles !== undefined
+        ? { upsert: driveFiles as DriveFile[], removeIds: options?.removedDriveFileIds }
+        : undefined,
+      subjects: subjects !== undefined
+        ? { upsert: subjects as Subject[], removeIds: options?.removedSubjectIds }
+        : undefined,
+      gradingScale: gradingScale !== undefined
+        ? { upsert: gradingScale as any[], removeIds: options?.removedGradingScaleIds }
+        : undefined,
+      replaceArrays: options?.replaceArrays
+    });
+  },
+
+  async patchUniversityDatabase(id: string, patch: UniversityDatabasePatch): Promise<void> {
     const updatedAt = new Date().toISOString();
     let cachedDatabases: UniversityDatabase[] = [];
 
-    // Diagnostic logging to trace drive_files changes
-    console.log(`[updateUniversityDatabase] id=${id}, partialData.driveFiles=${partialData.driveFiles ? partialData.driveFiles.length : 'undefined'}, partialData.subjects=${partialData.subjects ? partialData.subjects.length : 'undefined'}`);
-    // 1. Local-first: immediately update localStorage cache
+    // 1. Local-first: apply the very same item-level semantics to the cache.
     try {
       cachedDatabases = await this.getUniversityDatabases();
       const targetIndex = cachedDatabases.findIndex(d => d.id === id);
       if (targetIndex >= 0) {
         const existing = cachedDatabases[targetIndex];
-        // Protect driveFiles: never overwrite with a shorter array
-        let mergedDriveFiles = existing.driveFiles;
-        if (partialData.driveFiles !== undefined) {
-          if ((partialData.driveFiles as any[]).length >= (existing.driveFiles?.length ?? 0)) {
-            mergedDriveFiles = partialData.driveFiles;
-          } else {
-            // partialData has FEWER files — keep existing, but merge any new/updated items
-            const result = [...(existing.driveFiles || [])];
-            for (const f of (partialData.driveFiles as any[])) {
-              const idx = result.findIndex((r: any) => r.id === f.id);
-              if (idx >= 0) {
-                result[idx] = { ...result[idx], ...f };
-              } else {
-                result.push(f);
-              }
-            }
-            mergedDriveFiles = result;
-            console.warn(`[updateUniversityDatabase] localStorage: protected driveFiles from ${existing.driveFiles?.length ?? 0} → ${(partialData.driveFiles as any[]).length}. Merged to ${result.length}`);
-          }
-        }
-        // Same for subjects
-        let mergedSubjects = existing.subjects;
-        if (partialData.subjects !== undefined) {
-          if ((partialData.subjects as any[]).length >= (existing.subjects?.length ?? 0)) {
-            mergedSubjects = partialData.subjects;
-          } else {
-            const result = [...(existing.subjects || [])];
-            for (const s of (partialData.subjects as any[])) {
-              const idx = result.findIndex((r: any) => r.id === s.id);
-              if (idx >= 0) {
-                result[idx] = { ...result[idx], ...s };
-              } else {
-                result.push(s);
-              }
-            }
-            mergedSubjects = result;
-          }
-        }
+        const nextDriveFiles = (patch.replaceArrays && patch.driveFiles?.upsert)
+          ? [...patch.driveFiles.upsert]
+          : removeDriveItemsById(
+              upsertItemsById(existing.driveFiles as DriveFile[], patch.driveFiles?.upsert),
+              patch.driveFiles?.removeIds
+            );
+        const nextSubjects = (patch.replaceArrays && patch.subjects?.upsert)
+          ? [...patch.subjects.upsert]
+          : removeItemsById(
+              upsertItemsById(existing.subjects as Subject[], patch.subjects?.upsert),
+              patch.subjects?.removeIds
+            );
+        const nextGradingScale = (patch.replaceArrays && patch.gradingScale?.upsert)
+          ? [...patch.gradingScale.upsert]
+          : removeItemsById(
+              upsertItemsById(existing.gradingScale as any[], patch.gradingScale?.upsert),
+              patch.gradingScale?.removeIds
+            );
         cachedDatabases[targetIndex] = {
           ...existing,
-          ...partialData,
-          driveFiles: mergedDriveFiles as any,
-          subjects: mergedSubjects as any,
+          ...(patch.scalars || {}),
+          driveFiles: nextDriveFiles as any,
+          subjects: nextSubjects as any,
+          gradingScale: nextGradingScale as any,
           updatedAt
         };
       } else {
-        cachedDatabases.push({
+        const created = {
           id,
           universityNameAr: '',
           universityNameEn: '',
@@ -1639,201 +1772,158 @@ export const db = {
           availableYears: [1],
           isVisible: true,
           isSpecialization: false,
-          subjects: [],
-          driveFiles: [],
-          gradingScale: [],
           createdAt: updatedAt,
-          ...partialData,
+          ...(patch.scalars || {}),
           updatedAt
-        } as UniversityDatabase);
+        } as UniversityDatabase;
+        created.driveFiles = (patch.driveFiles?.upsert || []) as any;
+        created.subjects = (patch.subjects?.upsert || []) as any;
+        created.gradingScale = (patch.gradingScale?.upsert || []) as any;
+        cachedDatabases.push(created);
       }
       localStorage.setItem('unistudent_university_databases', JSON.stringify(cachedDatabases));
     } catch (localErr) {
-      console.warn('LocalStorage updateUniversityDatabase warning:', localErr);
+      console.warn('LocalStorage patchUniversityDatabase warning:', localErr);
     }
 
-    // 2. Persist to Supabase
+    // 2. Persist to Supabase through the item-level patch RPC.
     try {
       const existing = cachedDatabases.find(database => database.id === id) || ({} as any);
-      const full = { ...existing, ...partialData };
+      const merged = { ...existing, ...(patch.scalars || {}) };
+      const scalarsPayload = buildUniversityScalarsPayload(patch.scalars || {});
 
-      const isSpec = full.isSpecialization !== undefined ? full.isSpecialization : existing.isSpecialization;
-      let scale = full.gradingScale !== undefined ? [...full.gradingScale] : [...(existing.gradingScale || [])];
-      scale = scale.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))));
+      // Grading scale: merge rules by id and keep the metadata marker in sync.
+      let scaleUpsert = patch.gradingScale?.upsert ? [...patch.gradingScale.upsert] : undefined;
+      if (scaleUpsert) {
+        scaleUpsert = scaleUpsert.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))));
+        const isSpec = merged.isSpecialization === true;
+        scaleUpsert.push(
+          isSpec
+            ? {
+                id: '__spec_meta__',
+                isSpecialization: true,
+                parentDatabaseId: merged.parentDatabaseId,
+                specializationNameAr: merged.specializationNameAr,
+                specializationNameEn: merged.specializationNameEn,
+                specializationStartYear: merged.specializationStartYear,
+                specializationStartSemester: merged.specializationStartSemester,
+                availableYears: merged.availableYears
+              } as any
+            : {
+                id: '__college_meta__',
+                isSpecialization: false,
+                availableYears: merged.availableYears,
+                specializationStartYear: merged.specializationStartYear,
+                specializationStartSemester: merged.specializationStartSemester
+              } as any
+        );
+      }
 
-      if (isSpec) {
-        scale.push({
-          id: '__spec_meta__',
-          isSpecialization: true,
-          parentDatabaseId: full.parentDatabaseId !== undefined ? full.parentDatabaseId : existing.parentDatabaseId,
-          specializationNameAr: full.specializationNameAr !== undefined ? full.specializationNameAr : existing.specializationNameAr,
-          specializationNameEn: full.specializationNameEn !== undefined ? full.specializationNameEn : existing.specializationNameEn,
-          specializationStartYear: full.specializationStartYear !== undefined ? full.specializationStartYear : existing.specializationStartYear,
-          specializationStartSemester: full.specializationStartSemester !== undefined ? full.specializationStartSemester : existing.specializationStartSemester,
-          availableYears: full.availableYears !== undefined ? full.availableYears : existing.availableYears,
-        } as any);
+      let error: any = null;
+      if (patch.replaceArrays) {
+        const res = await supabase.rpc('replace_university_database_arrays', {
+          p_id: id,
+          p_drive_files: patch.driveFiles?.upsert ?? null,
+          p_subjects: patch.subjects?.upsert ?? null,
+          p_grading_scale: scaleUpsert ?? null,
+          p_scalars: scalarsPayload
+        });
+        error = res.error;
       } else {
-        scale.push({
-          id: '__college_meta__',
-          isSpecialization: false,
-          availableYears: full.availableYears !== undefined ? full.availableYears : existing.availableYears,
-          specializationStartYear: full.specializationStartYear !== undefined ? full.specializationStartYear : existing.specializationStartYear,
-          specializationStartSemester: full.specializationStartSemester !== undefined ? full.specializationStartSemester : existing.specializationStartSemester,
-        } as any);
+        const res = await supabase.rpc('apply_university_database_patch', {
+          p_id: id,
+          p_patch: {
+            driveFiles: patch.driveFiles?.upsert ?? null,
+            subjects: patch.subjects?.upsert ?? null,
+            gradingScale: scaleUpsert ?? null
+          },
+          p_removed_drive_file_ids: patch.driveFiles?.removeIds ?? [],
+          p_removed_subject_ids: patch.subjects?.removeIds ?? [],
+          p_removed_grading_scale_ids: patch.gradingScale?.removeIds ?? [],
+          p_scalars: scalarsPayload
+        });
+        error = res.error;
       }
 
-      const payload: any = {
-        id,
-        university_name_ar: full.universityNameAr || existing.universityNameAr || '',
-        university_name_en: full.universityNameEn || existing.universityNameEn || null,
-        college_name_ar: full.collegeNameAr || existing.collegeNameAr || '',
-        college_name_en: full.collegeNameEn || existing.collegeNameEn || null,
-        cohort_name: full.cohortName !== undefined ? (full.cohortName || null) : (existing.cohortName || null),
-        academic_year_start: full.academicYearStart !== undefined ? full.academicYearStart : (existing.academicYearStart ?? null),
-        academic_year_end: full.academicYearEnd !== undefined ? full.academicYearEnd : (existing.academicYearEnd ?? null),
-        cohort_notes: full.cohortNotes !== undefined ? (full.cohortNotes || '') : (existing.cohortNotes || ''),
-        source_user_id: full.sourceUserId || existing.sourceUserId || null,
-        source_user_name: full.sourceUserName || existing.sourceUserName || '',
-        source_user_email: full.sourceUserEmail || existing.sourceUserEmail || '',
-        total_years: Number(full.totalYears || existing.totalYears || 4),
-        semesters_per_year: Number(full.semestersPerYear || existing.semestersPerYear || 2),
-        grading_scale: scale,
-        is_visible: full.isVisible !== false,
-        available_years: full.availableYears || existing.availableYears || [1],
-        specialization_start_year: Number(full.specializationStartYear || existing.specializationStartYear || 2),
-        specialization_start_semester: Number(full.specializationStartSemester || existing.specializationStartSemester || 1),
-        updated_at: updatedAt
-      };
-
-      // ── MERGE strategy for drive_files and subjects ──
-      // Instead of blindly replacing the JSONB arrays, we MERGE:
-      //   1. Fetch what's currently stored in Supabase
-      //   2. If our candidate array is shorter, merge our changes INTO
-      //      the Supabase array (update matching items, add new ones)
-      //   3. Only send the merged result
-      // Combined with the DB trigger, this gives two layers of protection.
-      let supabaseCurrentDriveFiles: any[] | null = null;
-      let supabaseCurrentSubjects: any[] | null = null;
-      try {
-        const { data: currentRow } = await supabase
-          .from('university_databases')
-          .select('drive_files, subjects')
-          .eq('id', id)
-          .maybeSingle();
-        if (currentRow) {
-          supabaseCurrentDriveFiles = Array.isArray(currentRow.drive_files) ? currentRow.drive_files : null;
-          supabaseCurrentSubjects = Array.isArray(currentRow.subjects) ? currentRow.subjects : null;
-        }
-      } catch {}
-
-      // Helper: merge candidate items into a base array by ID
-      const mergeById = (base: any[], candidate: any[]): any[] => {
-        if (!base || base.length === 0) return candidate;
-        if (!candidate || candidate.length === 0) return base;
-        const result = [...base];
-        const baseIds = new Set(result.map((item: any) => item.id));
-        for (const item of candidate) {
-          const idx = result.findIndex((b: any) => b.id === item.id);
-          if (idx >= 0) {
-            // Update existing item with candidate's values
-            result[idx] = { ...result[idx], ...item };
-          } else {
-            // New item not in base — add it
-            result.push(item);
-          }
-        }
-        return result;
-      };
-
-      // Determine drive_files for the payload
-      const candidateDriveFiles = partialData.driveFiles !== undefined
-        ? partialData.driveFiles as any[]
-        : (existing.driveFiles && (existing.driveFiles as any[]).length > 0
-            ? existing.driveFiles as any[]
-            : undefined);
-
-      if (candidateDriveFiles !== undefined) {
-        if (supabaseCurrentDriveFiles && supabaseCurrentDriveFiles.length > 0) {
-          if (candidateDriveFiles.length < supabaseCurrentDriveFiles.length) {
-            // Candidate is SMALLER than what Supabase has — merge to avoid data loss
-            console.warn(`[updateUniversityDatabase] drive_files: candidate(${candidateDriveFiles.length}) < supabase(${supabaseCurrentDriveFiles.length}). Merging.`);
-            payload.drive_files = mergeById(supabaseCurrentDriveFiles, candidateDriveFiles);
-          } else {
-            payload.drive_files = candidateDriveFiles;
-          }
+      if (error) {
+        if (isMissingPatchRpcError(error) || isMissingRowError(error)) {
+          // Migration 202609240001 is not applied yet (or the row does not
+          // exist): fall back to a merge against a FRESH read, so a stale
+          // snapshot still cannot drop items that are missing from it.
+          console.warn('[patchUniversityDatabase] patch RPC unavailable — using safe merge fallback. Apply migration 202609240001_university_database_item_patch.sql');
+          await this.legacyMergeUniversityDatabase(id, patch, scaleUpsert, scalarsPayload, updatedAt);
         } else {
-          payload.drive_files = candidateDriveFiles;
-        }
-      }
-      // else: omit drive_files → Supabase keeps existing value
-
-      // Determine subjects for the payload
-      const candidateSubjects = partialData.subjects !== undefined
-        ? partialData.subjects as any[]
-        : (existing.subjects && (existing.subjects as any[]).length > 0
-            ? existing.subjects as any[]
-            : undefined);
-
-      if (candidateSubjects !== undefined) {
-        if (supabaseCurrentSubjects && supabaseCurrentSubjects.length > 0) {
-          if (candidateSubjects.length < supabaseCurrentSubjects.length) {
-            console.warn(`[updateUniversityDatabase] subjects: candidate(${candidateSubjects.length}) < supabase(${supabaseCurrentSubjects.length}). Merging.`);
-            payload.subjects = mergeById(supabaseCurrentSubjects, candidateSubjects);
-          } else {
-            payload.subjects = candidateSubjects;
-          }
-        } else {
-          payload.subjects = candidateSubjects;
-        }
-      }
-
-      if (isSpec) {
-        payload.is_specialization = true;
-        payload.parent_database_id = full.parentDatabaseId || existing.parentDatabaseId || null;
-        payload.specialization_name_ar = full.specializationNameAr || existing.specializationNameAr || null;
-        payload.specialization_name_en = full.specializationNameEn || existing.specializationNameEn || null;
-      }
-
-      // Try update first
-      console.log(`[updateUniversityDatabase] SENDING TO SUPABASE: drive_files=${payload.drive_files ? payload.drive_files.length : 'OMITTED'}, subjects=${payload.subjects ? payload.subjects.length : 'OMITTED'}, supabaseCurrent=${supabaseCurrentDriveFiles ? supabaseCurrentDriveFiles.length : 'null'}`);
-      let updateRes = await supabase
-        .from('university_databases')
-        .update(payload)
-        .eq('id', id);
-
-      if (updateRes.error && updateRes.error.message && (updateRes.error.message.includes('column') || updateRes.error.message.includes('does not exist'))) {
-        delete payload.is_specialization;
-        delete payload.parent_database_id;
-        delete payload.specialization_name_ar;
-        delete payload.specialization_name_en;
-        delete payload.specialization_start_year;
-        delete payload.specialization_start_semester;
-        delete payload.available_years;
-        delete payload.cohort_name;
-        delete payload.academic_year_start;
-        delete payload.academic_year_end;
-        delete payload.cohort_notes;
-        updateRes = await supabase
-          .from('university_databases')
-          .update(payload)
-          .eq('id', id);
-      }
-
-      // If update had issues or row didn't exist yet, try upsert
-      if (updateRes.error) {
-        const upsertRes = await supabase
-          .from('university_databases')
-          .upsert(payload, { onConflict: 'id' });
-        if (upsertRes.error) {
-          console.warn('Supabase updateUniversityDatabase fallback error:', upsertRes.error);
+          console.warn('Supabase patchUniversityDatabase failed:', error);
         }
       }
     } catch (e) {
-      console.warn('Supabase updateUniversityDatabase warning:', e);
+      console.warn('Supabase patchUniversityDatabase warning:', e);
     }
 
     // 3. Robust broadcast to all active student clients
     await broadcastUniversityDatabaseUpdate({ id, timestamp: Date.now() });
+  },
+
+  // Fallback used only when the item-patch migration is missing. It reads the
+  // row fresh from Supabase, merges the patch by id, and only then writes the
+  // full arrays — so an item that exists in Supabase can never be dropped just
+  // because it was absent from a client snapshot.
+  async legacyMergeUniversityDatabase(
+    id: string,
+    patch: UniversityDatabasePatch,
+    scaleUpsert: any[] | undefined,
+    scalarsPayload: Record<string, any>,
+    updatedAt: string
+  ): Promise<void> {
+    let currentDriveFiles: any[] | null = null;
+    let currentSubjects: any[] | null = null;
+    let currentScale: any[] | null = null;
+    try {
+      const { data: currentRow } = await supabase
+        .from('university_databases')
+        .select('drive_files, subjects, grading_scale')
+        .eq('id', id)
+        .maybeSingle();
+      if (currentRow) {
+        currentDriveFiles = Array.isArray(currentRow.drive_files) ? currentRow.drive_files : null;
+        currentSubjects = Array.isArray(currentRow.subjects) ? currentRow.subjects : null;
+        currentScale = Array.isArray(currentRow.grading_scale) ? currentRow.grading_scale : null;
+      }
+    } catch {}
+
+    const payload: any = { id, ...scalarsPayload, updated_at: updatedAt };
+    if (patch.replaceArrays) {
+      if (patch.driveFiles?.upsert) payload.drive_files = patch.driveFiles.upsert;
+      if (patch.subjects?.upsert) payload.subjects = patch.subjects.upsert;
+      if (scaleUpsert) payload.grading_scale = scaleUpsert;
+    } else {
+      if (patch.driveFiles) {
+        payload.drive_files = removeDriveItemsById(
+          upsertItemsById(currentDriveFiles as DriveFile[], patch.driveFiles.upsert),
+          patch.driveFiles.removeIds
+        );
+      }
+      if (patch.subjects) {
+        payload.subjects = removeItemsById(
+          upsertItemsById(currentSubjects as Subject[], patch.subjects.upsert),
+          patch.subjects.removeIds
+        );
+      }
+      if (scaleUpsert) {
+        payload.grading_scale = removeItemsById(
+          upsertItemsById(currentScale as any[], scaleUpsert),
+          patch.gradingScale?.removeIds
+        );
+      }
+    }
+
+    const { error } = await supabase.from('university_databases').update(payload).eq('id', id);
+    if (error) {
+      const upsertRes = await supabase.from('university_databases').upsert(payload, { onConflict: 'id' });
+      if (upsertRes.error) {
+        console.warn('Supabase legacyMergeUniversityDatabase error:', upsertRes.error);
+      }
+    }
   },
 
   async deleteUniversityDatabase(id: string): Promise<void> {
@@ -2769,11 +2859,12 @@ export const db = {
   async batchRespondToPendingUpdates(
     updates: UniversityPendingUpdate[],
     status: 'approved' | 'rejected' | 'pending'
-  ): Promise<void> {
-    if (!updates || updates.length === 0) return;
+  ): Promise<{ warnings: string[] }> {
+    if (!updates || updates.length === 0) return { warnings: [] };
 
     const resolvedAt = status === 'pending' ? undefined : new Date().toISOString();
     const updateIdsSet = new Set(updates.map(u => u.id));
+    const collectedWarnings: string[] = [];
 
     // 1. Update in-memory & LocalStorage pending updates cache
     let localList: UniversityPendingUpdate[] = [];
@@ -2861,17 +2952,37 @@ export const db = {
             const dbUpdates = byDb[dbId];
             dbUpdates.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
+            const removedDriveFileIds = new Set<string>();
+            const removedSubjectIds = new Set<string>();
+            const removedGradingScaleIds = new Set<string>();
+            const applyWarnings: string[] = [];
+
             for (const upd of dbUpdates) {
               const beforeCount = currentDb.driveFiles.length;
-              currentDb = applyPendingUpdateToDatabase(currentDb, upd);
+              const applied = applyPendingUpdateToDatabaseDetailed(currentDb, upd);
+              currentDb = applied.db;
+              applied.removedDriveFileIds.forEach(id => removedDriveFileIds.add(id));
+              applied.removedSubjectIds.forEach(id => removedSubjectIds.add(id));
+              applied.removedGradingScaleIds.forEach(id => removedGradingScaleIds.add(id));
+              applied.warnings.forEach(w => applyWarnings.push(w));
               console.log(`[batchRespond] Step 4: applyPendingUpdate type=${upd.type} → driveFiles: ${beforeCount} → ${currentDb.driveFiles.length}`);
             }
 
-            console.log(`[batchRespond] Step 5: updateUniversityDatabase with driveFiles=${currentDb.driveFiles.length}`);
-            await this.updateUniversityDatabase(currentDb.id, currentDb);
+            if (applyWarnings.length > 0) {
+              console.warn(`[batchRespond] ${applyWarnings.length} warning(s) while applying approved updates:\n` + applyWarnings.join('\n'));
+              applyWarnings.forEach(w => collectedWarnings.push(w));
+            }
+
+            console.log(`[batchRespond] Step 5: patchUniversityDatabase with driveFiles=${currentDb.driveFiles.length}, removed=${removedDriveFileIds.size}`);
+            await this.updateUniversityDatabase(currentDb.id, currentDb, {
+              removedDriveFileIds: [...removedDriveFileIds],
+              removedSubjectIds: [...removedSubjectIds],
+              removedGradingScaleIds: [...removedGradingScaleIds]
+            });
             await this.syncUniversityDatabaseChangesToStudents(currentDb.id, {
               type: 'full_sync',
-              updatedDb: currentDb
+              updatedDb: currentDb,
+              warnings: applyWarnings
             }).catch(() => {});
           }
         } catch (dbErr) {
@@ -2913,6 +3024,8 @@ export const db = {
     } catch (e) {
       console.warn('Supabase batch update pending update exception:', e);
     }
+
+    return { warnings: collectedWarnings };
   },
 
   async respondToPendingUpdate(
@@ -3057,6 +3170,8 @@ export const db = {
       subjectId?: string;
       gradingScale?: GradeRule[];
       updatedDb?: UniversityDatabase;
+      /** Problems hit while applying the update, surfaced for the admin. */
+      warnings?: string[];
     }
   ): Promise<void> {
     try {
@@ -4496,7 +4611,226 @@ function mapPendingUpdateFromDB(row: any): UniversityPendingUpdate {
   };
 }
 
-export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, update: UniversityPendingUpdate): UniversityDatabase {
+/** Did the student explicitly move/relocate this item (vs. just rename it)? */
+function changedFieldsOf(data: any): string[] {
+  const raw = data?.changedFields || data?.changed_fields;
+  // Callers pass the changed fields either as a list of names or as an object
+  // of field -> new value (the shape the store uses). Support both.
+  if (Array.isArray(raw)) return raw.map((f: any) => String(f));
+  if (raw && typeof raw === 'object') return Object.keys(raw);
+  return [];
+}
+
+function fieldChanged(data: any, ...names: string[]): boolean {
+  const fields = changedFieldsOf(data);
+  if (fields.length === 0) return false;
+  return fields.some(f => names.includes(f));
+}
+
+export function drivePlacementChanged(data: any): boolean {
+  return fieldChanged(data, 'parentId', 'parent_id', 'yearIndex', 'year_index', 'semesterIndex', 'semester_index', 'subjectId', 'subject_id');
+}
+
+export function subjectPlacementChanged(data: any): boolean {
+  return fieldChanged(data, 'yearIndex', 'year_index', 'semesterIndex', 'semester_index');
+}
+
+/**
+ * Resolve an incoming parent reference (template id, student id, or name) to a
+ * folder that actually exists in the university database.
+ */
+export function resolveTemplateParentIdDetailed(
+  driveFiles: DriveFile[],
+  opts: {
+    parentId?: string | null;
+    parentTemplateId?: string | null;
+    parentName?: string;
+    yearIndex?: number;
+    semesterIndex?: number;
+  }
+): { id: string | null; found: boolean } {
+  const list = driveFiles || [];
+  const isFolder = (f: DriveFile) => Boolean(f && f.type === 'folder');
+
+  if (opts.parentTemplateId) {
+    const byTemplate = list.find(f => isFolder(f) && (f.id === opts.parentTemplateId || (f as any).originId === opts.parentTemplateId));
+    if (byTemplate) return { id: byTemplate.id, found: true };
+  }
+
+  if (opts.parentId) {
+    const byId = list.find(f => isFolder(f) && f.id === opts.parentId);
+    if (byId) return { id: byId.id, found: true };
+    const byOrigin = list.find(f => isFolder(f) && (f as any).originId === opts.parentId);
+    if (byOrigin) return { id: byOrigin.id, found: true };
+    // A student-side id we do not know about: fall through to the name lookup.
+  } else if (opts.parentId === null || opts.parentId === '') {
+    return { id: null, found: true };
+  }
+
+  const normName = normalizeSubjectName((opts.parentName || '').trim());
+  if (normName) {
+    const year = opts.yearIndex;
+    const sem = opts.semesterIndex;
+    const byName = list.find(f =>
+      isFolder(f) &&
+      normalizeSubjectName(f.name || '') === normName &&
+      (year === undefined || f.yearIndex === undefined || Number(f.yearIndex) === year) &&
+      (sem === undefined || f.semesterIndex === undefined || Number(f.semesterIndex) === sem)
+    ) || list.find(f => isFolder(f) && normalizeSubjectName(f.name || '') === normName);
+    if (byName) return { id: byName.id, found: true };
+  }
+
+  return { id: null, found: false };
+}
+
+export function resolveTemplateParentId(
+  driveFiles: DriveFile[],
+  opts: {
+    parentId?: string | null;
+    parentTemplateId?: string | null;
+    parentName?: string;
+    yearIndex?: number;
+    semesterIndex?: number;
+  }
+): string | null {
+  return resolveTemplateParentIdDetailed(driveFiles, opts).id;
+}
+
+/**
+ * Find the database item a student-side drive item refers to. Used when the
+ * student's edit is recorded, so the approval step has a stable identity to
+ * match on instead of guessing from names later.
+ */
+export function matchDriveItemInDatabase(targetDb: UniversityDatabase, data: any): DriveFile | null {
+  if (!targetDb || !data) return null;
+  const files = targetDb.driveFiles || [];
+  const templateId = data.universityTemplateId || data.university_template_id;
+  const originId = data.originId || data.origin_id;
+
+  if (templateId) {
+    const hit = files.find(f => f.id === templateId);
+    if (hit) return hit;
+  }
+  const localId = originId || data.id;
+  if (localId) {
+    const hit = files.find(f => f.id === localId || (f as any).originId === localId);
+    if (hit) return hit;
+  }
+
+  const url = data.url;
+  const b2 = data.b2FileId || data.b2_file_id;
+  if (url || b2) {
+    const hit = files.find(f => (b2 && f.b2FileId === b2) || (url && f.url === url));
+    if (hit) return hit;
+  }
+
+  const normName = normalizeSubjectName((data.name || '').trim());
+  if (!normName) return null;
+  const type = data.type || 'file';
+  const year = data.yearIndex !== undefined ? Number(data.yearIndex) : undefined;
+  const sem = data.semesterIndex !== undefined ? Number(data.semesterIndex) : undefined;
+  const parentName = normalizeSubjectName((data.parentName || '').trim());
+
+  const byName = files.filter(f => f.type === type && normalizeSubjectName(f.name || '') === normName);
+  if (byName.length === 0) return null;
+  if (byName.length === 1) return byName[0];
+
+  const scoped = byName.filter(f => {
+    if (year !== undefined && f.yearIndex !== undefined && Number(f.yearIndex) !== year) return false;
+    if (sem !== undefined && f.semesterIndex !== undefined && Number(f.semesterIndex) !== sem) return false;
+    if (parentName) {
+      const parent = files.find(p => p.id === f.parentId);
+      if (parent && normalizeSubjectName(parent.name || '') !== parentName) return false;
+    }
+    return true;
+  });
+  // Ambiguous matches must not be guessed: a wrong pick would edit the wrong item.
+  return scoped.length === 1 ? scoped[0] : null;
+}
+
+export function matchSubjectInDatabase(targetDb: UniversityDatabase, data: any): Subject | null {
+  if (!targetDb || !data) return null;
+  const subjects = targetDb.subjects || [];
+  const templateId = data.universityTemplateId || data.university_template_id;
+  const originId = data.originId || data.origin_id;
+
+  if (templateId) {
+    const hit = subjects.find(s => s.id === templateId);
+    if (hit) return hit;
+  }
+  const localId = originId || data.id;
+  if (localId) {
+    const hit = subjects.find(s => s.id === localId || (s as any).originId === localId);
+    if (hit) return hit;
+  }
+
+  const year = data.yearIndex !== undefined ? Number(data.yearIndex) : undefined;
+  const sem = data.semesterIndex !== undefined ? Number(data.semesterIndex) : undefined;
+  const code = (data.code || '').trim().toLowerCase();
+  if (code) {
+    const byCode = subjects.filter(s =>
+      (s.code || '').trim().toLowerCase() === code &&
+      (year === undefined || Number(s.yearIndex || 1) === year)
+    );
+    if (byCode.length === 1) return byCode[0];
+  }
+
+  const normName = normalizeSubjectName((data.name || '').trim());
+  if (!normName) return null;
+  const byName = subjects.filter(s =>
+    normalizeSubjectName(s.name || '') === normName &&
+    (year === undefined || Number(s.yearIndex || 1) === year) &&
+    (sem === undefined || Number(s.semesterIndex || 1) === sem)
+  );
+  if (byName.length === 1) return byName[0];
+  const byNameAnyYear = subjects.filter(s => normalizeSubjectName(s.name || '') === normName);
+  return byNameAnyYear.length === 1 ? byNameAnyYear[0] : null;
+}
+
+export interface PendingUpdateApplicationResult {
+  db: UniversityDatabase;
+  /** Ids that this update really removes (the only ids the writer may drop). */
+  removedDriveFileIds: string[];
+  removedSubjectIds: string[];
+  removedGradingScaleIds: string[];
+  /** Human-readable notes about anything that could not be matched. */
+  warnings: string[];
+}
+
+/**
+ * Apply an approved pending update and report exactly which items were removed
+ * plus any matching problem. The writer needs the removed ids because arrays
+ * are item-addressed: nothing is deleted unless it is listed here.
+ */
+export function applyPendingUpdateToDatabaseDetailed(
+  targetDb: UniversityDatabase,
+  update: UniversityPendingUpdate
+): PendingUpdateApplicationResult {
+  const beforeDrive = new Set((targetDb.driveFiles || []).map(f => f.id));
+  const beforeSubjects = new Set((targetDb.subjects || []).map(s => s.id));
+  const beforeScale = new Set((targetDb.gradingScale || []).map((g: any) => g?.id).filter(Boolean));
+
+  const warnings: string[] = [];
+  const db = applyPendingUpdateToDatabase(targetDb, update, warnings);
+
+  const afterDrive = new Set((db.driveFiles || []).map(f => f.id));
+  const afterSubjects = new Set((db.subjects || []).map(s => s.id));
+  const afterScale = new Set((db.gradingScale || []).map((g: any) => g?.id).filter(Boolean));
+
+  return {
+    db,
+    removedDriveFileIds: [...beforeDrive].filter(id => !afterDrive.has(id)),
+    removedSubjectIds: [...beforeSubjects].filter(id => !afterSubjects.has(id)),
+    removedGradingScaleIds: [...beforeScale].filter((id: any) => !afterScale.has(id as string)),
+    warnings
+  };
+}
+
+export function applyPendingUpdateToDatabase(
+  targetDb: UniversityDatabase,
+  update: UniversityPendingUpdate,
+  warnings?: string[]
+): UniversityDatabase {
   if (!targetDb || !update) return targetDb;
   let subjects = [...(targetDb.subjects || [])];
   let driveFiles = [...(targetDb.driveFiles || [])];
@@ -4544,6 +4878,7 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     const { previous, ...upd } = update.data;
     const prev = previous || {};
     const templateSubjId = upd.universityTemplateId || upd.university_template_id || prev.universityTemplateId || prev.university_template_id;
+    const originSubjId = upd.originId || upd.origin_id || prev.originId || prev.origin_id;
     const targetName = (upd.name || prev.name || '').trim();
     const prevName = (prev.name || '').trim();
     const normUpd = normalizeSubjectName(targetName);
@@ -4552,6 +4887,9 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     const updSem = Number(upd.semesterIndex !== undefined ? upd.semesterIndex : (upd.semester_index !== undefined ? upd.semester_index : (prev.semesterIndex || prev.semester_index || 1)));
     const prevYear = Number(prev.yearIndex || prev.year_index || updYear);
     const prevSem = Number(prev.semesterIndex || prev.semester_index || updSem);
+    // Placement (year/semester) only follows the student when the student
+    // explicitly changed it — otherwise the admin's placement is authoritative.
+    const placementChanged = subjectPlacementChanged(upd);
 
     const updatedDistributions = upd.distributions
       ? upd.distributions.map((d: any) => ({
@@ -4570,7 +4908,12 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
       const sYear = Number(s.yearIndex || 1);
       const sSem = Number(s.semesterIndex || 1);
 
-      const isIdMatch = Boolean((templateSubjId && s.id === templateSubjId) || (upd.id && s.id === upd.id) || (prev.id && s.id === prev.id));
+      const isIdMatch = Boolean(
+        (templateSubjId && s.id === templateSubjId) ||
+        (originSubjId && s.id === originSubjId) ||
+        (upd.id && s.id === upd.id) ||
+        (prev.id && s.id === prev.id)
+      );
       const isPrevNameMatch = Boolean(normPrev && normS === normPrev && (sYear === prevYear || sYear === updYear) && (sSem === prevSem || sSem === updSem));
       const isTargetNameMatch = Boolean(normUpd && normS === normUpd && (sYear === updYear || sYear === prevYear));
       const isCodeMatch = Boolean(upd.code && s.code && s.code.trim().toLowerCase() === upd.code.trim().toLowerCase() && sYear === updYear);
@@ -4583,8 +4926,8 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
           name: targetName || s.name,
           creditHours: upd.creditHours !== undefined ? Number(upd.creditHours) : s.creditHours,
           totalMarks: upd.totalMarks !== undefined ? Number(upd.totalMarks) : s.totalMarks,
-          yearIndex: upd.yearIndex !== undefined ? Number(upd.yearIndex) : s.yearIndex,
-          semesterIndex: upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : s.semesterIndex,
+          yearIndex: placementChanged && upd.yearIndex !== undefined ? Number(upd.yearIndex) : s.yearIndex,
+          semesterIndex: placementChanged && upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : s.semesterIndex,
           distributions: updatedDistributions !== undefined ? updatedDistributions : s.distributions,
           includeInGpa: upd.includeInGpa !== undefined ? Boolean(upd.includeInGpa) : s.includeInGpa
         };
@@ -4592,19 +4935,13 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
       }
     }
 
-    if (!matched && targetName) {
-      subjects.push({
-        id: templateSubjId || upd.id || uuidv4(),
-        code: (upd.code || '').trim(),
-        name: targetName,
-        creditHours: Number(upd.creditHours || upd.credit_hours || 3),
-        totalMarks: Number(upd.totalMarks || upd.total_marks || 100),
-        yearIndex: updYear,
-        semesterIndex: updSem,
-        distributions: updatedDistributions || [],
-        status: 'current',
-        includeInGpa: upd.includeInGpa !== false && upd.include_in_gpa !== false
-      });
+    // Never fabricate a duplicate subject when the match fails: that created a
+    // second copy with a fresh id while the original stayed behind, so the next
+    // full-array write from a one-copy snapshot silently dropped the original.
+    if (!matched) {
+      warnings?.push(
+        `تعذّر مطابقة تعديل مادة "${targetName || upd.id}" مع أي مادة موجودة في قاعدة البيانات — تم تجاهل التعديل بدل إنشاء نسخة مكرّرة.`
+      );
     }
   } else if (update.type === 'delete_subject' && update.data) {
     const upd = update.data;
@@ -4614,23 +4951,29 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     const updSem = upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : undefined;
 
     const removedSubjectIds = new Set<string>();
+    const candidateIndexes: number[] = [];
 
-    const remainingSubjects = subjects.filter(s => {
+    subjects.forEach((s, idx) => {
       const isIdMatch = Boolean((templateSubjId && s.id === templateSubjId) || (upd.id && s.id === upd.id));
       const isNameMatch = Boolean(
         normUpd && normalizeSubjectName(s.name) === normUpd &&
         (updYear === undefined || Number(s.yearIndex || 1) === updYear) &&
         (updSem === undefined || Number(s.semesterIndex || 1) === updSem)
       );
-      
-      if (isIdMatch || isNameMatch) {
-        removedSubjectIds.add(s.id);
-        return false;
-      }
-      return true;
+      if (isIdMatch || isNameMatch) candidateIndexes.push(idx);
     });
 
-    subjects = remainingSubjects;
+    if (candidateIndexes.length > 1) {
+      warnings?.push(
+        `حذف المادة "${upd.name || upd.id}" طابق ${candidateIndexes.length} مواد (نفس الاسم في سنوات/ترمات مختلفة) — تم حذف واحدة فقط لتجنّب حذف مواد مش مقصودة.`
+      );
+    }
+
+    // Only ever delete a single subject per pending update: name-only matches
+    // used to wipe every same-named subject across all years.
+    const victimIndexes = candidateIndexes.slice(0, 1);
+    victimIndexes.forEach(idx => removedSubjectIds.add(subjects[idx].id));
+    subjects = subjects.filter((_, idx) => !victimIndexes.includes(idx));
 
     // Also unbind or remove files linked to this deleted subject
     if (removedSubjectIds.size > 0) {
@@ -4643,27 +4986,22 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     if (!fileName) return targetDb;
 
     // Resolve parent folder in template
-    let resolvedParentId: string | null = null;
-    if (file.parentId) {
-      const parentById = driveFiles.find(f => f.id === file.parentId && f.type === 'folder');
-      if (parentById) {
-        resolvedParentId = parentById.id;
-      } else if (file.parentName) {
-        const parentByName = driveFiles.find(f => f.type === 'folder' && f.name.trim().toLowerCase() === file.parentName.trim().toLowerCase());
-        resolvedParentId = parentByName ? parentByName.id : null;
-      }
-    } else if (file.parentName) {
-      const parentByName = driveFiles.find(f => f.type === 'folder' && f.name.trim().toLowerCase() === file.parentName.trim().toLowerCase());
-      resolvedParentId = parentByName ? parentByName.id : null;
-    }
+    const resolvedParentId = resolveTemplateParentId(driveFiles, {
+      parentId: file.parentId,
+      parentTemplateId: file.parentTemplateId || file.parent_template_id,
+      parentName: file.parentName,
+      yearIndex: file.yearIndex,
+      semesterIndex: file.semesterIndex
+    });
+    const parentFolder = resolvedParentId ? driveFiles.find(f => f.id === resolvedParentId) : undefined;
 
     // Resolve linked subject in template
     let resolvedSubjectId: string | undefined = undefined;
-    if (file.subjectId || file.subject_id || file.subjectName) {
-      const rawSubjId = file.subjectId || file.subject_id;
+    if (file.subjectId || file.subject_id || file.subjectName || file.subjectTemplateId || file.subject_template_id) {
+      const rawSubjId = file.subjectTemplateId || file.subject_template_id || file.subjectId || file.subject_id;
       const subNameNorm = file.subjectName ? normalizeSubjectName(file.subjectName) : '';
-      const matchedSubj = subjects.find(s => 
-        (rawSubjId && s.id === rawSubjId) || 
+      const matchedSubj = subjects.find(s =>
+        (rawSubjId && s.id === rawSubjId) ||
         (subNameNorm && normalizeSubjectName(s.name) === subNameNorm)
       );
       resolvedSubjectId = matchedSubj ? matchedSubj.id : undefined;
@@ -4678,14 +5016,25 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
       createdAt: file.createdAt || new Date().toISOString().split('T')[0],
       url: file.url || '',
       b2FileId: file.b2FileId || file.b2_file_id || undefined,
-      yearIndex: file.yearIndex !== undefined ? Number(file.yearIndex) : undefined,
-      semesterIndex: file.semesterIndex !== undefined ? Number(file.semesterIndex) : undefined,
+      yearIndex: file.yearIndex !== undefined
+        ? Number(file.yearIndex)
+        : (parentFolder?.yearIndex !== undefined ? parentFolder.yearIndex : undefined),
+      semesterIndex: file.semesterIndex !== undefined
+        ? Number(file.semesterIndex)
+        : (parentFolder?.semesterIndex !== undefined ? parentFolder.semesterIndex : undefined),
       subjectId: resolvedSubjectId
-    };
+    } as DriveFile;
+
+    // Remember which student-side item produced this row, so later updates can
+    // be matched by identity even after ids were regenerated on pull.
+    if (file.originId || file.id) {
+      (newFile as any).originId = file.originId || file.id;
+    }
 
     // Deduplicate or merge existing item
-    const existingIdx = driveFiles.findIndex(f => 
-      f.id === newFile.id || 
+    const existingIdx = driveFiles.findIndex(f =>
+      f.id === newFile.id ||
+      (f as any).originId && (f as any).originId === (newFile as any).originId ||
       (f.name.trim().toLowerCase() === newFile.name.toLowerCase() && (f.parentId || null) === (newFile.parentId || null) && f.type === newFile.type)
     );
 
@@ -4712,51 +5061,31 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     const normPrevName = normalizeSubjectName(prevName);
 
     // Resolve parent folder in template
-    let resolvedParentId: string | null = null;
-    let parentFound = false;
     const targetParentId = upd.parentId !== undefined ? upd.parentId : prev.parentId;
+    const targetParentTemplateId = upd.parentTemplateId || upd.parent_template_id || prev.parentTemplateId || prev.parent_template_id;
     const targetParentName = (upd.parentName !== undefined ? upd.parentName : prev.parentName || '').trim();
-    const normTargetParentName = normalizeSubjectName(targetParentName);
     const itemYear = upd.yearIndex !== undefined ? Number(upd.yearIndex) : (prev.yearIndex !== undefined ? Number(prev.yearIndex) : undefined);
     const itemSem = upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : (prev.semesterIndex !== undefined ? Number(prev.semesterIndex) : undefined);
 
-    if (targetParentId) {
-      const parentById = driveFiles.find(f => f.id === targetParentId && f.type === 'folder');
-      if (parentById) {
-        resolvedParentId = parentById.id;
-        parentFound = true;
-      } else if (normTargetParentName) {
-        const parentByName = driveFiles.find(f => 
-          f.type === 'folder' && 
-          normalizeSubjectName(f.name) === normTargetParentName &&
-          (itemYear === undefined || f.yearIndex === undefined || Number(f.yearIndex) === itemYear) &&
-          (itemSem === undefined || f.semesterIndex === undefined || Number(f.semesterIndex) === itemSem)
-        ) || driveFiles.find(f => f.type === 'folder' && normalizeSubjectName(f.name) === normTargetParentName);
-        if (parentByName) {
-          resolvedParentId = parentByName.id;
-          parentFound = true;
-        }
-      }
-    } else if (normTargetParentName) {
-      const parentByName = driveFiles.find(f => 
-        f.type === 'folder' && 
-        normalizeSubjectName(f.name) === normTargetParentName &&
-        (itemYear === undefined || f.yearIndex === undefined || Number(f.yearIndex) === itemYear) &&
-        (itemSem === undefined || f.semesterIndex === undefined || Number(f.semesterIndex) === itemSem)
-      ) || driveFiles.find(f => f.type === 'folder' && normalizeSubjectName(f.name) === normTargetParentName);
-      if (parentByName) {
-        resolvedParentId = parentByName.id;
-        parentFound = true;
-      }
-    } else if (targetParentId === null || targetParentId === '') {
-      resolvedParentId = null;
-      parentFound = true;
-    }
+    const resolvedParent = resolveTemplateParentIdDetailed(driveFiles, {
+      parentId: targetParentId,
+      parentTemplateId: targetParentTemplateId,
+      parentName: targetParentName,
+      yearIndex: itemYear,
+      semesterIndex: itemSem
+    });
+    const resolvedParentId = resolvedParent.id;
+    const parentFound = resolvedParent.found;
+    // Placement only follows the student when the student explicitly moved the
+    // item — otherwise the admin's folder/year/semester stays authoritative.
+    const placementChanged = drivePlacementChanged(upd);
 
     // Resolve linked subject in template
     let resolvedSubjectId: string | undefined = undefined;
     let subjectFound = false;
-    const targetSubjId = upd.subjectId !== undefined ? upd.subjectId : prev.subjectId;
+    const explicitSubjId = upd.subjectTemplateId || upd.subject_template_id ||
+      (upd.subjectId !== undefined ? upd.subjectId : undefined);
+    const targetSubjId = explicitSubjId !== undefined ? explicitSubjId : prev.subjectId;
     const targetSubjName = (upd.subjectName !== undefined ? upd.subjectName : prev.subjectName || '').trim();
     if (targetSubjId || targetSubjName) {
       const subNameNorm = targetSubjName ? normalizeSubjectName(targetSubjName) : '';
@@ -4774,12 +5103,14 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     }
 
     // Locate the single target file/folder to update
+    const originFileId = upd.originId || upd.origin_id || prev.originId || prev.origin_id;
     let targetIdx = -1;
-    // 1. Exact ID match
-    if (templateFileId || upd.id || prev.id) {
-      targetIdx = driveFiles.findIndex(f => 
-        (templateFileId && f.id === templateFileId) || 
-        (upd.id && f.id === upd.id) || 
+    // 1. Exact ID match (template id, origin id from the pull, or local ids)
+    if (templateFileId || originFileId || upd.id || prev.id) {
+      targetIdx = driveFiles.findIndex(f =>
+        (templateFileId && f.id === templateFileId) ||
+        (originFileId && (f as any).originId === originFileId) ||
+        (upd.id && f.id === upd.id) ||
         (prev.id && f.id === prev.id)
       );
     }
@@ -4821,13 +5152,13 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
       // student-side UUID (not a template folder ID), keep the existing template
       // parentId to avoid corrupting the template's folder structure.
       let finalParentId: string | null;
-      if (parentFound && (resolvedParentId === null || driveFiles.some(f => f.id === resolvedParentId && f.type === 'folder'))) {
+      if (placementChanged && parentFound && (resolvedParentId === null || driveFiles.some(f => f.id === resolvedParentId && f.type === 'folder'))) {
         finalParentId = resolvedParentId;
       } else {
         finalParentId = existing.parentId !== undefined ? existing.parentId : null;
       }
 
-      const finalSubjectId = subjectFound ? resolvedSubjectId : existing.subjectId;
+      const finalSubjectId = placementChanged && subjectFound ? resolvedSubjectId : existing.subjectId;
 
       driveFiles[targetIdx] = {
         ...existing,
@@ -4835,30 +5166,47 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
         type: itemType || existing.type,
         parentId: finalParentId,
         subjectId: finalSubjectId,
-        yearIndex: upd.yearIndex !== undefined ? Number(upd.yearIndex) : existing.yearIndex,
-        semesterIndex: upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : existing.semesterIndex,
+        yearIndex: placementChanged && upd.yearIndex !== undefined ? Number(upd.yearIndex) : existing.yearIndex,
+        semesterIndex: placementChanged && upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : existing.semesterIndex,
         url: upd.url || existing.url || prev.url || '',
         b2FileId: upd.b2FileId || upd.b2_file_id || existing.b2FileId || prev.b2FileId || prev.b2_file_id,
         size: upd.size !== undefined ? Number(upd.size) : existing.size
-      };
+      } as DriveFile;
+      if (originFileId) {
+        (driveFiles[targetIdx] as any).originId = (existing as any).originId || originFileId;
+      }
     } else if (targetName) {
-      // Only add as new if we have a valid parent in the template (or root)
-      const newParentId = (resolvedParentId === null || driveFiles.some(f => f.id === resolvedParentId && f.type === 'folder'))
-        ? resolvedParentId
-        : null;
-      driveFiles.push({
-        id: templateFileId || upd.id || uuidv4(),
-        name: targetName,
-        size: Number(upd.size || prev.size || 0),
-        type: itemType,
-        parentId: newParentId,
-        createdAt: upd.createdAt || prev.createdAt || new Date().toISOString().split('T')[0],
-        url: upd.url || prev.url || '',
-        b2FileId: upd.b2FileId || upd.b2_file_id || prev.b2FileId || prev.b2_file_id,
-        yearIndex: upd.yearIndex !== undefined ? Number(upd.yearIndex) : (prev.yearIndex !== undefined ? Number(prev.yearIndex) : undefined),
-        semesterIndex: upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : (prev.semesterIndex !== undefined ? Number(prev.semesterIndex) : undefined),
-        subjectId: resolvedSubjectId
-      });
+      // No identity match at all. If the item came from this database but its
+      // row is gone, re-adding it would leave a duplicate behind — so report it
+      // instead. The student's own uploads (no template link) are still added,
+      // otherwise their new files would never reach the database.
+      const wasTemplateDerived = Boolean(templateFileId || originFileId);
+      if (wasTemplateDerived) {
+        warnings?.push(
+          `تعذّر مطابقة تعديل الملف "${targetName}" مع أي عنصر موجود في قاعدة البيانات (المعرّف ${templateFileId || originFileId} غير موجود) — تم تجاهل التعديل بدل إنشاء نسخة مكرّرة.`
+        );
+      } else {
+        warnings?.push(
+          `الملف "${targetName}" مش موجود في قاعدة البيانات — تمت إضافته كعنصر جديد لأنه من ملفات الطالب.`
+        );
+        const newParentId = (resolvedParentId === null || driveFiles.some(f => f.id === resolvedParentId && f.type === 'folder'))
+          ? resolvedParentId
+          : null;
+        driveFiles.push({
+          id: templateFileId || upd.id || uuidv4(),
+          name: targetName,
+          size: Number(upd.size || prev.size || 0),
+          type: itemType,
+          parentId: newParentId,
+          createdAt: upd.createdAt || prev.createdAt || new Date().toISOString().split('T')[0],
+          url: upd.url || prev.url || '',
+          b2FileId: upd.b2FileId || upd.b2_file_id || prev.b2FileId || prev.b2_file_id,
+          yearIndex: upd.yearIndex !== undefined ? Number(upd.yearIndex) : (prev.yearIndex !== undefined ? Number(prev.yearIndex) : undefined),
+          semesterIndex: upd.semesterIndex !== undefined ? Number(upd.semesterIndex) : (prev.semesterIndex !== undefined ? Number(prev.semesterIndex) : undefined),
+          subjectId: resolvedSubjectId,
+          ...(originFileId ? { originId: originFileId } : {})
+        } as DriveFile);
+      }
     }
   } else if (update.type === 'delete_file' && update.data) {
     const delData = update.data;
@@ -4871,6 +5219,17 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
     const targetB2 = delData.b2FileId || delData.b2_file_id;
     const targetYear = delData.yearIndex !== undefined ? Number(delData.yearIndex) : undefined;
     const targetSem = delData.semesterIndex !== undefined ? Number(delData.semesterIndex) : undefined;
+    // When the folder is known, only delete inside it. Name-only matches used to
+    // delete same-named files in every folder of the database.
+    const parentMatch = resolveTemplateParentIdDetailed(driveFiles, {
+      parentId: delData.parentId,
+      parentTemplateId: delData.parentTemplateId || delData.parent_template_id,
+      parentName: delData.parentName,
+      yearIndex: targetYear,
+      semesterIndex: targetSem
+    });
+    const parentKnown = parentMatch.found || delData.parentId === null || delData.parentId === '';
+    const parentScopeId = parentMatch.id;
 
     const deletedFolderIds = new Set<string>();
 
@@ -4882,7 +5241,8 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
         normTargetName && normFName === normTargetName &&
         (targetType === undefined || f.type === targetType) &&
         (targetYear === undefined || Number(f.yearIndex || 1) === targetYear) &&
-        (targetSem === undefined || Number(f.semesterIndex || 1) === targetSem)
+        (targetSem === undefined || Number(f.semesterIndex || 1) === targetSem) &&
+        (isIdMatch || !parentKnown || (f.parentId || null) === (parentScopeId || null))
       );
 
       if (isIdMatch || isUrlMatch || isNameMatch) {
@@ -4914,7 +5274,19 @@ export function applyPendingUpdateToDatabase(targetDb: UniversityDatabase, updat
   } else if (update.type === 'update_grading_scale' && update.data) {
     const rawScale = update.data.gradingScale || update.data;
     if (Array.isArray(rawScale)) {
-      gradingScale = rawScale.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))));
+      const incoming = rawScale.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))));
+      // Merge rules by id instead of replacing the whole table: a partial
+      // snapshot used to silently drop every rule it did not contain.
+      const merged = upsertItemsById(gradingScale as any[], incoming);
+      const missing = gradingScale.filter(
+        (g: any) => g?.id && !incoming.some((i: any) => i?.id === g.id)
+      );
+      if (missing.length > 0) {
+        warnings?.push(
+          `تعديل جدول التقديرات ما احتوىش ${missing.length} قاعدة موجودة — تم الحفاظ عليها بدل حذفها.`
+        );
+      }
+      gradingScale = merged;
     }
   }
 

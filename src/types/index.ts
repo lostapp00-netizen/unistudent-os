@@ -57,6 +57,9 @@ export type DriveFile = {
   id: string;
   // Stable link to the source item in the approved university template.
   universityTemplateId?: string;
+  // Original database row id this item was pulled from. Ids are regenerated on
+  // every pull, so this is the only durable link back to the source row.
+  originId?: string;
   name: string;
   size: number;
   type: 'folder' | 'file';
