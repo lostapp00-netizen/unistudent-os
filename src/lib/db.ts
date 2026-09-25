@@ -5146,6 +5146,8 @@ export function resolveTemplateParentIdDetailed(
     parentName?: string;
     yearIndex?: number;
     semesterIndex?: number;
+    /** Scopes an ambiguous name (e.g. the "Lectures" of one specific subject). */
+    subjectId?: string | null;
   }
 ): { id: string | null; found: boolean } {
   const list = driveFiles || [];
@@ -5170,13 +5172,27 @@ export function resolveTemplateParentIdDetailed(
   if (normName) {
     const year = opts.yearIndex;
     const sem = opts.semesterIndex;
-    const byName = list.find(f =>
+    const byName = list.filter(f =>
       isFolder(f) &&
       normalizeSubjectName(f.name || '') === normName &&
       (year === undefined || f.yearIndex === undefined || Number(f.yearIndex) === year) &&
       (sem === undefined || f.semesterIndex === undefined || Number(f.semesterIndex) === sem)
-    ) || list.find(f => isFolder(f) && normalizeSubjectName(f.name || '') === normName);
-    if (byName) return { id: byName.id, found: true };
+    );
+
+    if (byName.length === 1) return { id: byName[0].id, found: true };
+
+    if (byName.length > 1) {
+      // كل مادة فيها فولدر اسمه "Lectures" — المطابقة بالاسم لوحدها كانت بتختار
+      // واحد عشوائي فالعنصر ينزل جوه مادة تانية. لو الاسم مش وحيد، نجرّب نحدده
+      // بالمادة، ولو لسه مش واضح بنرفض التخمين وبنرجّع "مش موجود" عشان ينبّه
+      // الأدمن بدل ما يحط العنصر في المكان الغلط.
+      const subjectRef = opts.subjectId || null;
+      if (subjectRef) {
+        const bySubject = byName.filter(f => !f.subjectId || f.subjectId === subjectRef);
+        if (bySubject.length === 1) return { id: bySubject[0].id, found: true };
+      }
+      return { id: null, found: false };
+    }
   }
 
   return { id: null, found: false };
@@ -5229,14 +5245,23 @@ export function matchDriveItemInDatabase(targetDb: UniversityDatabase, data: any
   const year = data.yearIndex !== undefined ? Number(data.yearIndex) : undefined;
   const sem = data.semesterIndex !== undefined ? Number(data.semesterIndex) : undefined;
   const parentName = normalizeSubjectName((data.parentName || '').trim());
+  const parentTemplateId = data.parentTemplateId || data.parent_template_id;
 
   const byName = files.filter(f => f.type === type && normalizeSubjectName(f.name || '') === normName);
   if (byName.length === 0) return null;
   if (byName.length === 1) return byName[0];
 
+  // Folders like "Lectures" exist once per subject, so the parent is the only
+  // thing that tells two same-named items apart. Prefer the parent identity, then
+  // the parent name, before falling back to the phase.
+  const parentScopeId = parentTemplateId
+    ? (files.find(p => p.type === 'folder' && (p.id === parentTemplateId || (p as any).originId === parentTemplateId))?.id || null)
+    : null;
+
   const scoped = byName.filter(f => {
     if (year !== undefined && f.yearIndex !== undefined && Number(f.yearIndex) !== year) return false;
     if (sem !== undefined && f.semesterIndex !== undefined && Number(f.semesterIndex) !== sem) return false;
+    if (parentScopeId && (f.parentId || null) !== parentScopeId) return false;
     if (parentName) {
       const parent = files.find(p => p.id === f.parentId);
       if (parent && normalizeSubjectName(parent.name || '') !== parentName) return false;
@@ -5490,7 +5515,8 @@ export function applyPendingUpdateToDatabase(
       parentTemplateId: file.parentTemplateId || file.parent_template_id,
       parentName: file.parentName,
       yearIndex: file.yearIndex,
-      semesterIndex: file.semesterIndex
+      semesterIndex: file.semesterIndex,
+      subjectId: file.subjectTemplateId || file.subject_template_id || file.subjectId || null
     });
     const resolvedParentId = parentResolution.id;
     const parentFolder = resolvedParentId ? driveFiles.find(f => f.id === resolvedParentId) : undefined;
@@ -5586,7 +5612,8 @@ export function applyPendingUpdateToDatabase(
       parentTemplateId: targetParentTemplateId,
       parentName: targetParentName,
       yearIndex: itemYear,
-      semesterIndex: itemSem
+      semesterIndex: itemSem,
+      subjectId: upd.subjectTemplateId || upd.subject_template_id || upd.subjectId || prev.subjectId || null
     });
     const resolvedParentId = resolvedParent.id;
     const parentFound = resolvedParent.found;
@@ -5639,23 +5666,31 @@ export function applyPendingUpdateToDatabase(
         )
       );
     }
-    // 3. Name + type + phase match
-    if (targetIdx < 0 && (normPrevName || normTargetName)) {
-      targetIdx = driveFiles.findIndex(f => {
-        const normFName = normalizeSubjectName(f.name || '');
-        const nameMatches = (normPrevName && normFName === normPrevName) || (normTargetName && normFName === normTargetName);
-        if (!nameMatches || f.type !== itemType) return false;
-        if (itemYear !== undefined && f.yearIndex !== undefined && Number(f.yearIndex) !== itemYear) return false;
-        if (itemSem !== undefined && f.semesterIndex !== undefined && Number(f.semesterIndex) !== itemSem) return false;
-        return true;
-      });
+    // 3. Name + type (+ phase) — only accepted when it is UNAMBIGUOUS. Same-named
+    //    folders ("Lectures" in every subject) used to make this edit the first
+    //    match anywhere in the drive, i.e. the wrong course's item.
+    const nameMatches = (normPrevName || normTargetName)
+      ? driveFiles.filter(f => {
+          const normFName = normalizeSubjectName(f.name || '');
+          const sameName = (normPrevName && normFName === normPrevName) || (normTargetName && normFName === normTargetName);
+          if (!sameName || f.type !== itemType) return false;
+          if (itemYear !== undefined && f.yearIndex !== undefined && Number(f.yearIndex) !== itemYear) return false;
+          if (itemSem !== undefined && f.semesterIndex !== undefined && Number(f.semesterIndex) !== itemSem) return false;
+          return true;
+        })
+      : [];
+    if (targetIdx < 0 && nameMatches.length > 1 && resolvedParentId) {
+      const withinParent = nameMatches.filter(f => (f.parentId || null) === resolvedParentId);
+      if (withinParent.length === 1) {
+        targetIdx = driveFiles.findIndex(f => f.id === withinParent[0].id);
+      }
     }
-    // 4. Fallback name + type match
-    if (targetIdx < 0 && (normPrevName || normTargetName)) {
-      targetIdx = driveFiles.findIndex(f => {
-        const normFName = normalizeSubjectName(f.name || '');
-        return f.type === itemType && ((normPrevName && normFName === normPrevName) || (normTargetName && normFName === normTargetName));
-      });
+    if (targetIdx < 0 && nameMatches.length === 1) {
+      targetIdx = driveFiles.findIndex(f => f.id === nameMatches[0].id);
+    } else if (targetIdx < 0 && nameMatches.length > 1) {
+      warnings?.push(
+        `تعذّر تحديد "${targetName || prevName}" للتعديل: فيه ${nameMatches.length} عنصر بنفس الاسم في أماكن مختلفة، فاتجاهل التعديل بدل ما يتحفظ على العنصر الغلط.`
+      );
     }
 
     if (targetIdx >= 0) {
@@ -5756,26 +5791,59 @@ export function applyPendingUpdateToDatabase(
 
     const deletedFolderIds = new Set<string>();
 
-    driveFiles = driveFiles.filter(f => {
-      const normFName = normalizeSubjectName(f.name || '');
-      const isIdMatch = Boolean((templateFileId && f.id === templateFileId) || (targetId && f.id === targetId));
-      const isUrlMatch = Boolean((targetUrl && f.url === targetUrl) || (targetB2 && f.b2FileId === targetB2));
-      const isNameMatch = Boolean(
-        normTargetName && normFName === normTargetName &&
-        (targetType === undefined || f.type === targetType) &&
-        (targetYear === undefined || Number(f.yearIndex || 1) === targetYear) &&
-        (targetSem === undefined || Number(f.semesterIndex || 1) === targetSem) &&
-        (isIdMatch || !parentKnown || (f.parentId || null) === (parentScopeId || null))
-      );
+    // 1. Identity first — nothing else is allowed to override it.
+    const hasIdentity = Boolean(templateFileId || targetId || targetUrl || targetB2);
+    const identityMatches = hasIdentity
+      ? driveFiles.filter(f =>
+          (targetType === undefined || f.type === targetType) &&
+          ((templateFileId && f.id === templateFileId) ||
+            (targetId && f.id === targetId) ||
+            (targetUrl && f.url && f.url === targetUrl) ||
+            (targetB2 && f.b2FileId && f.b2FileId === targetB2))
+        )
+      : [];
 
-      if (isIdMatch || isUrlMatch || isNameMatch) {
-        if (f.type === 'folder') {
-          deletedFolderIds.add(f.id);
-        }
-        return false;
+    // 2. Name candidates, used only when there is no identity to go by.
+    const nameCandidates = normTargetName
+      ? driveFiles.filter(f =>
+          normalizeSubjectName(f.name || '') === normTargetName &&
+          (targetType === undefined || f.type === targetType) &&
+          (targetYear === undefined || Number(f.yearIndex || 1) === targetYear) &&
+          (targetSem === undefined || Number(f.semesterIndex || 1) === targetSem)
+        )
+      : [];
+    const scopedByName = parentKnown
+      ? nameCandidates.filter(f => (f.parentId || null) === (parentScopeId || null))
+      : nameCandidates;
+
+    let idsToDelete: string[] = [];
+    if (hasIdentity) {
+      if (identityMatches.length > 0) {
+        idsToDelete = identityMatches.map(f => f.id);
+      } else {
+        // An identity was pinned but the row is gone: deleting "the one with the
+        // same name" is what removed an unrelated folder (Lecture 1 instead of
+        // Lecture 2, and from the wrong subject). Refuse and report instead.
+        warnings?.push(
+          `تعذّر حذف "${targetName}": العنصر مش موجود في قاعدة البيانات بالمعرّف المرسل (${templateFileId || targetId})، فاتجاهل الحذف بدل حذف عنصر بنفس الاسم من مكان تاني.`
+        );
       }
-      return true;
-    });
+    } else if (scopedByName.length === 1) {
+      idsToDelete = [scopedByName[0].id];
+    } else if (scopedByName.length > 1) {
+      warnings?.push(
+        `تعذّر تحديد "${targetName}" للحذف: فيه ${scopedByName.length} عنصر بنفس الاسم${parentKnown ? ' جوه نفس الفولدر' : ' في فولدرات مختلفة'}، فاتجاهل الحذف لحد ما يتحدد العنصر بالضبط.`
+      );
+    }
+
+    if (idsToDelete.length > 0) {
+      const deleteSet = new Set(idsToDelete);
+      driveFiles = driveFiles.filter(f => {
+        if (!deleteSet.has(f.id)) return true;
+        if (f.type === 'folder') deletedFolderIds.add(f.id);
+        return false;
+      });
+    }
 
     // If a folder was deleted, cascade delete all items inside it
     if (deletedFolderIds.size > 0) {

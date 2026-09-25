@@ -2254,16 +2254,27 @@ export async function checkAndNotifySourceUpdate(
     // duplicate behind and make the original vanish.
     let resolvedData = data;
     try {
-      if (data && (type === 'update_file' || type === 'delete_file')) {
-        const item = matchDriveItemInDatabase(targetDb, data);
-        if (item) {
-          resolvedData = {
-            ...data,
-            universityTemplateId: item.id,
-            ...(item.parentId !== undefined ? { parentTemplateId: item.parentId } : {}),
-            ...(item.subjectId ? { subjectTemplateId: item.subjectId } : {})
-          };
-        }
+      if (data && (type === 'add_file' || type === 'update_file' || type === 'delete_file')) {
+        // The item itself: for a brand-new upload there is no template row yet
+        // (the item IS the new content), so nothing is pinned — but the FOLDER it
+        // lives in must be pinned, otherwise "Lectures" matches a "Lectures" of a
+        // different subject and the file is filed under the wrong course.
+        const item = type === 'add_file' ? null : matchDriveItemInDatabase(targetDb, data);
+        const localFiles: any[] = storeState.files || [];
+        const parentLocalId = data.parentId !== undefined ? data.parentId : data.previous?.parentId;
+        const parentLocal = parentLocalId ? localFiles.find((f: any) => f.id === parentLocalId) : undefined;
+        const parentTemplate = parentLocal
+          ? matchDriveItemInDatabase(targetDb, { ...parentLocal, parentName: data.parentName })
+          : null;
+
+        const parentTemplateId = item?.parentId || parentTemplate?.id || null;
+
+        resolvedData = {
+          ...data,
+          ...(item ? { universityTemplateId: item.id } : {}),
+          ...(parentTemplateId ? { parentTemplateId } : {}),
+          ...(item?.subjectId ? { subjectTemplateId: item.subjectId } : {})
+        };
       } else if (data && (type === 'update_subject' || type === 'delete_subject')) {
         const subject = matchSubjectInDatabase(targetDb, data);
         if (subject) {
