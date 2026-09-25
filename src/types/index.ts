@@ -143,6 +143,7 @@ export type UserSettings = {
   specializationStartYear?: number;
   specializationStartSemester?: number;
   specializationDatabaseId?: string;
+  alternatingLectures?: AlternatingLecture[];
 };
 
 export type Appointment = {
@@ -191,6 +192,25 @@ export type Group = {
   id: string;
   name: string;
   color?: string;
+};
+
+/**
+ * A pair of lectures that take turns appearing in the schedule. From
+ * `startDate` onwards the two swap every `intervalDays`, starting with
+ * `startItemId`; the other one stays hidden for that period.
+ */
+export type AlternatingLecture = {
+  id: string;
+  itemAId: string;
+  itemBId: string;
+  /** Which of the two shows first (must equal itemAId or itemBId). */
+  startItemId: string;
+  /** 'yyyy-MM-dd' — the day the swapping begins. */
+  startDate: string;
+  /** How often the two swap, in days (7 = every week). */
+  intervalDays: number;
+  active: boolean;
+  createdAt: string;
 };
 
 export type FeedbackMessage = {

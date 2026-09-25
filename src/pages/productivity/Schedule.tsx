@@ -1,16 +1,71 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore } from '../../store/useAppStore';
 import { ScheduleItem } from '../../types';
-import { Clock, Plus, Trash2, Edit2, LayoutGrid, Calendar as CalendarIcon, User, ChevronLeft, ChevronRight, Paperclip, FileText, CheckSquare, StickyNote, BookOpen, MapPin } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
+import { Clock, Plus, Trash2, Edit2, LayoutGrid, Calendar as CalendarIcon, User, ChevronLeft, ChevronRight, Paperclip, FileText, CheckSquare, StickyNote, BookOpen, MapPin, ArrowLeftRight } from 'lucide-react';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, addDays, startOfWeek } from 'date-fns';
+import { formatTimeRange12, parseTimeToParts, to24HourTime, type Meridiem } from '../../lib/utils';
+import { AlternatingLecturesModal } from '../../components/productivity/AlternatingLecturesModal';
+import { isItemHiddenOnDate } from '../../lib/alternatingLectures';
 import { EntityLinker } from '../../components/ui/EntityLinker';
 import { LocalAttachmentUploader } from '../../components/ui/LocalAttachmentUploader';
 import { AttachmentBadge } from '../../components/ui/AttachmentBadge';
 import { ConfirmModal } from '../../components/ui/CustomModal';
 import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../../components/ui/UnifiedSemesterFilter';
 import { EntityPreviewModal, PreviewEntity } from '../../components/ui/EntityPreviewModal';
+
+/**
+ * 12-hour time picker. The value is always stored back as a 24-hour "HH:mm"
+ * string, so sorting, comparisons and the database stay untouched.
+ */
+function Time12Input({ value, onChange, isAr }: { value?: string; onChange: (next: string) => void; isAr: boolean }) {
+  const parts = parseTimeToParts(value) || { hour12: 8, minute: 0, meridiem: 'am' as Meridiem };
+  const hours = Array.from({ length: 12 }, (_, i) => i + 1);
+  const minutes = Array.from({ length: 12 }, (_, i) => i * 5);
+  if (!minutes.includes(parts.minute)) {
+    minutes.push(parts.minute);
+    minutes.sort((a, b) => a - b);
+  }
+
+  const update = (next: Partial<{ hour12: number; minute: number; meridiem: Meridiem }>) => {
+    const merged = { ...parts, ...next };
+    onChange(to24HourTime(merged.hour12, merged.minute, merged.meridiem));
+  };
+
+  const selectClass = "bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 text-sm font-bold cursor-pointer";
+
+  return (
+    <div className="flex items-center gap-2">
+      <select
+        value={parts.hour12}
+        onChange={e => update({ hour12: Number(e.target.value) })}
+        className={`${selectClass} flex-1`}
+        aria-label={isAr ? 'الساعة' : 'Hour'}
+      >
+        {hours.map(h => <option key={h} value={h}>{h}</option>)}
+      </select>
+      <span className="font-black text-zinc-400">:</span>
+      <select
+        value={parts.minute}
+        onChange={e => update({ minute: Number(e.target.value) })}
+        className={`${selectClass} flex-1`}
+        aria-label={isAr ? 'الدقيقة' : 'Minute'}
+      >
+        {minutes.map(m => <option key={m} value={m}>{String(m).padStart(2, '0')}</option>)}
+      </select>
+      <select
+        value={parts.meridiem}
+        onChange={e => update({ meridiem: e.target.value as Meridiem })}
+        className={`${selectClass} w-[76px]`}
+        aria-label={isAr ? 'صباحًا أو مساءً' : 'AM or PM'}
+      >
+        <option value="am">{isAr ? 'ص' : 'AM'}</option>
+        <option value="pm">{isAr ? 'م' : 'PM'}</option>
+      </select>
+    </div>
+  );
+}
 
 export function Schedule() {
   const { t, i18n } = useTranslation();
@@ -27,6 +82,10 @@ export function Schedule() {
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('day');
   const [selectedDayOfWeek, setSelectedDayOfWeek] = useState<number>(new Date().getDay());
   const [currentDate, setCurrentDate] = useState(new Date());
+  // The concrete date a view is showing. The week view used to be a generic
+  // weekday grid with no date at all, which made a date-based swap impossible.
+  const [anchorDate, setAnchorDate] = useState<Date>(new Date());
+  const [showAlternatingModal, setShowAlternatingModal] = useState(false);
   const [previewEntity, setPreviewEntity] = useState<PreviewEntity | null>(null);
 
   const [newItem, setNewItem] = useState<Partial<ScheduleItem>>({
@@ -70,6 +129,49 @@ export function Schedule() {
     const semMatch = filterSemesters.length === 0 || filterSemesters.includes(subject.semesterIndex);
     return yearMatch && semMatch;
   });
+
+  const alternatingPairs = settings.alternatingLectures || [];
+
+  /** The concrete date each weekday maps to in the week currently shown. */
+  const weekDates = useMemo(() => {
+    const start = startOfWeek(anchorDate);
+    return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+  }, [anchorDate]);
+
+  /**
+   * Alternating lectures: of the two paired lectures only one is visible at a
+   * time. The decision depends on the date, so every view filters per date.
+   */
+  const itemsVisibleOnDate = (date: Date) =>
+    filteredScheduleItems.filter(item => !isItemHiddenOnDate(item.id, date, alternatingPairs));
+
+  // The day view shows the anchor date itself. Picking another weekday moves the
+  // anchor to that weekday inside the week on screen, so the date being viewed
+  // never drifts a week away from the tabs.
+  const dayViewItems = itemsVisibleOnDate(anchorDate);
+
+  const selectDayOfWeek = (dayIdx: number) => {
+    setSelectedDayOfWeek(dayIdx);
+    setAnchorDate(addDays(anchorDate, dayIdx - anchorDate.getDay()));
+  };
+
+  const goToDate = (date: Date) => {
+    setAnchorDate(date);
+    setSelectedDayOfWeek(date.getDay());
+  };
+
+  const goToAdjacentDay = (delta: number) => goToDate(addDays(anchorDate, delta));
+  const goToAdjacentWeek = (delta: number) => goToDate(addDays(anchorDate, delta * 7));
+
+  /** The other half of the pair this item swaps with, when it is swapping. */
+  const alternatingPartnerOf = (item: ScheduleItem) => {
+    const pair = alternatingPairs.find(p => p.active && (p.itemAId === item.id || p.itemBId === item.id));
+    if (!pair) return null;
+    const partnerId = pair.itemAId === item.id ? pair.itemBId : pair.itemAId;
+    return scheduleItems.find(s => s.id === partnerId) || null;
+  };
+
+  const weekLabel = `${new Intl.DateTimeFormat(i18n.language, { day: 'numeric', month: 'short' }).format(weekDates[0])} — ${new Intl.DateTimeFormat(i18n.language, { day: 'numeric', month: 'short', year: 'numeric' }).format(weekDates[6])}`;
 
   const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
   const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
@@ -126,7 +228,9 @@ export function Schedule() {
   };
 
   const getCountsForDay = (dayIdx: number) => {
-    const dayItems = filteredScheduleItems.filter(s => s.dayOfWeek === dayIdx);
+    // Count only what is actually visible on that weekday's date in this week,
+    // so an alternating lecture that is standing down is not counted.
+    const dayItems = itemsVisibleOnDate(weekDates[dayIdx]);
     const lectures = dayItems.filter(s => s.type === 'lecture').length;
     const tutorials = dayItems.filter(s => s.type === 'tutorial').length;
     const labs = dayItems.filter(s => s.type === 'lab').length;
@@ -138,9 +242,10 @@ export function Schedule() {
   // Header counter: per-type counts only (lectures / sections / labs) — the
   // generic "حصة ومحاضرة" total was confusing ("0 حصة ومحاضرة").
   const headerCountParts: string[] = (() => {
-    const lectures = filteredScheduleItems.filter(s => s.type === 'lecture').length;
-    const tutorials = filteredScheduleItems.filter(s => s.type === 'tutorial').length;
-    const labs = filteredScheduleItems.filter(s => s.type === 'lab').length;
+    const headerItems = itemsVisibleOnDate(anchorDate);
+    const lectures = headerItems.filter(s => s.type === 'lecture').length;
+    const tutorials = headerItems.filter(s => s.type === 'tutorial').length;
+    const labs = headerItems.filter(s => s.type === 'lab').length;
     const parts: string[] = [];
     if (lectures > 0) parts.push(`${lectures} ${isAr ? (lectures === 1 ? 'محاضرة' : 'محاضرات') : (lectures === 1 ? 'Lecture' : 'Lectures')}`);
     if (tutorials > 0) parts.push(`${tutorials} ${isAr ? (tutorials === 1 ? 'سكشن' : 'سكاشن') : (tutorials === 1 ? 'Section' : 'Sections')}`);
@@ -205,6 +310,20 @@ export function Schedule() {
             </button>
           </div>
 
+          <button
+            onClick={() => setShowAlternatingModal(true)}
+            title={isAr ? 'محاضرات تبادلية' : 'Alternating lectures'}
+            className="relative flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-800 transition-colors cursor-pointer"
+          >
+            <ArrowLeftRight size={15} />
+            <span className="hidden sm:inline">{isAr ? 'محاضرات تبادلية' : 'Alternating'}</span>
+            {alternatingPairs.length > 0 && (
+              <span className="absolute -top-1.5 -end-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-600 text-white text-[10px] font-black flex items-center justify-center shadow-sm">
+                {alternatingPairs.length}
+              </span>
+            )}
+          </button>
+
           <button 
             onClick={() => openAdd(viewMode === 'day' ? selectedDayOfWeek : 0)}
             className="flex-1 sm:flex-none bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all shadow-md shadow-blue-500/25 cursor-pointer"
@@ -230,7 +349,7 @@ export function Schedule() {
                   <button
                     key={idx}
                     type="button"
-                    onClick={() => setSelectedDayOfWeek(idx)}
+                    onClick={() => selectDayOfWeek(idx)}
                     className={`py-2.5 px-2 rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer border text-center ${
                       isSelected
                         ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-transparent shadow-md shadow-blue-500/20'
@@ -266,7 +385,7 @@ export function Schedule() {
             <div className="flex items-center justify-between pt-2 border-t border-zinc-100 dark:border-zinc-800">
               <button
                 type="button"
-                onClick={() => setSelectedDayOfWeek((prev) => (prev === 0 ? 6 : prev - 1))}
+                onClick={() => goToAdjacentDay(-1)}
                 className="p-2 text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl transition-all shadow-2xs cursor-pointer"
                 title={isAr ? 'اليوم السابق' : 'Previous Day'}
               >
@@ -275,7 +394,7 @@ export function Schedule() {
               
               <button
                 type="button"
-                onClick={() => setSelectedDayOfWeek(new Date().getDay())}
+                onClick={() => goToDate(new Date())}
                 className="px-4 py-1.5 text-xs font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 rounded-xl transition-all cursor-pointer"
               >
                 {isAr ? 'العودة لليوم الحالي' : 'Go to Today'}
@@ -283,7 +402,7 @@ export function Schedule() {
 
               <button
                 type="button"
-                onClick={() => setSelectedDayOfWeek((prev) => (prev === 6 ? 0 : prev + 1))}
+                onClick={() => goToAdjacentDay(1)}
                 className="p-2 text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl transition-all shadow-2xs cursor-pointer"
                 title={isAr ? 'اليوم التالي' : 'Next Day'}
               >
@@ -302,6 +421,9 @@ export function Schedule() {
                 <div>
                   <h2 className="font-extrabold text-lg sm:text-xl text-zinc-900 dark:text-white">
                     {days[selectedDayOfWeek]}
+                    <span className="ms-2 text-xs font-bold text-zinc-400">
+                      {new Intl.DateTimeFormat(i18n.language, { day: 'numeric', month: 'long' }).format(anchorDate)}
+                    </span>
                   </h2>
                   <p className="text-xs font-bold text-blue-600 dark:text-blue-400 mt-0.5">
                     {selectedDayCounts.lectures} {isAr ? 'محاضرة' : 'Lectures'} • {selectedDayCounts.tutorials} {isAr ? 'سكشن' : 'Sections'} • {selectedDayCounts.labs} {isAr ? 'معمل' : 'Labs'}
@@ -320,12 +442,16 @@ export function Schedule() {
 
             {/* List of items for selected day */}
             <div className="space-y-3">
-              {filteredScheduleItems
-                .filter(s => s.dayOfWeek === selectedDayOfWeek)
+              {dayViewItems
                 .sort((a, b) => a.startTime.localeCompare(b.startTime))
                 .map(item => {
                   const subject = subjects.find(s => s.id === item.subjectId);
                   const typeLabel = item.type === 'lecture' ? (isAr ? 'محاضرة' : 'Lecture') : item.type === 'tutorial' ? (isAr ? 'سكشن' : 'Tutorial') : (isAr ? 'معمل' : 'Lab');
+                  // A lecture that takes turns with another one: show which one
+                  // is standing down, so its absence from the schedule makes
+                  // sense instead of looking like a missing class.
+                  const partner = alternatingPartnerOf(item);
+                  const partnerName = partner ? (subjects.find(s => s.id === partner.subjectId)?.name || (isAr ? 'محاضرة أخرى' : 'another lecture')) : '';
                   
                   return (
                     <div 
@@ -336,7 +462,7 @@ export function Schedule() {
                         <div className="space-y-1.5 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="flex items-center gap-1 text-xs font-black text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800/50 px-2.5 py-1 rounded-lg">
-                              <Clock size={12} /> {item.startTime} - {item.endTime}
+                              <Clock size={12} /> {formatTimeRange12(item.startTime, item.endTime, isAr ? 'ar' : 'en')}
                             </span>
                             <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
                               item.type === 'lecture' ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300' :
@@ -348,6 +474,16 @@ export function Schedule() {
                             {item.location && (
                               <span className="text-xs text-zinc-500 font-medium flex items-center gap-1">
                                 <MapPin size={12} /> {item.location}
+                              </span>
+                            )}
+                            {partner && (
+                              <span
+                                title={isAr
+                                  ? `محاضرة تبادلية مع "${partnerName}" — بتظهر بالتناوب`
+                                  : `Alternating with "${partnerName}" — they take turns`}
+                                className="flex items-center gap-1 text-[10px] font-black text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/50 px-2.5 py-1 rounded-lg"
+                              >
+                                <ArrowLeftRight size={11} /> {isAr ? 'تبادلية' : 'Alternating'}
                               </span>
                             )}
                           </div>
@@ -449,7 +585,7 @@ export function Schedule() {
                   );
                 })}
 
-              {filteredScheduleItems.filter(s => s.dayOfWeek === selectedDayOfWeek).length === 0 && (
+              {dayViewItems.length === 0 && (
                 <div className="py-16 text-center text-zinc-400 flex flex-col items-center justify-center bg-zinc-50/50 dark:bg-zinc-800/20 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800">
                   <Clock size={40} className="mb-2 opacity-30 text-blue-500" />
                   <p className="font-bold text-sm text-zinc-600 dark:text-zinc-400">
@@ -472,10 +608,41 @@ export function Schedule() {
       {/* View Mode: Week */}
       {viewMode === 'week' && (
         <div className="flex-1 bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden overflow-y-auto">
+          {/* Week navigation — the week has a real date range now, so an
+              alternating lecture can be seen standing down or coming back. */}
+          <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-2 bg-zinc-50/70 dark:bg-zinc-800/40">
+            <button
+              onClick={() => goToAdjacentWeek(-1)}
+              className="p-2 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-colors shadow-2xs cursor-pointer"
+              title={isAr ? 'الأسبوع السابق' : 'Previous Week'}
+            >
+              <ChevronRight size={18} className={isAr ? '' : 'rotate-180'} />
+            </button>
+            <div className="text-center">
+              <h2 className="text-sm sm:text-lg font-bold text-zinc-900 dark:text-white">{weekLabel}</h2>
+              <p className="text-[11px] text-zinc-400">{isAr ? 'أسبوع واحد — المحاضرات التبادلية تتبدل كل أسبوع' : 'One week at a time'}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => goToDate(new Date())}
+                className="px-3.5 py-2 font-bold text-xs rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md shadow-blue-500/20 transition-all cursor-pointer"
+              >
+                {isAr ? 'اليوم' : 'Today'}
+              </button>
+              <button
+                onClick={() => goToAdjacentWeek(1)}
+                className="p-2 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-colors shadow-2xs cursor-pointer"
+                title={isAr ? 'الأسبوع التالي' : 'Next Week'}
+              >
+                <ChevronLeft size={18} className={isAr ? '' : 'rotate-180'} />
+              </button>
+            </div>
+          </div>
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {days.map((day, idx) => {
-              const dayItems = filteredScheduleItems.filter(s => s.dayOfWeek === idx).sort((a, b) => a.startTime.localeCompare(b.startTime));
+              const dayItems = itemsVisibleOnDate(weekDates[idx]).sort((a, b) => a.startTime.localeCompare(b.startTime));
               const counts = getCountsForDay(idx);
+              const isToday = isSameDay(weekDates[idx], new Date());
               return (
                 <div key={idx} className="p-6">
                   <div className="flex justify-between items-center mb-4">
@@ -484,8 +651,17 @@ export function Schedule() {
                         {idx + 1}
                       </span>
                       <div>
-                        <h3 className="font-extrabold text-base sm:text-lg text-zinc-900 dark:text-white">{day}</h3>
+                        <h3 className="font-extrabold text-base sm:text-lg text-zinc-900 dark:text-white flex items-center gap-2">
+                          {day}
+                          {isToday && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 text-[9px] font-black">
+                              {isAr ? 'اليوم' : 'Today'}
+                            </span>
+                          )}
+                        </h3>
                         <p className="text-[11px] font-bold text-zinc-400">
+                          {new Intl.DateTimeFormat(i18n.language, { day: 'numeric', month: 'short' }).format(weekDates[idx])}
+                          {' • '}
                           {counts.lectures} {isAr ? 'محاضرة' : 'Lec'} • {counts.tutorials} {isAr ? 'سكشن' : 'Sec'} • {counts.labs} {isAr ? 'معمل' : 'Lab'}
                         </p>
                       </div>
@@ -500,6 +676,7 @@ export function Schedule() {
                       {dayItems.map(item => {
                         const subject = subjects.find(s => s.id === item.subjectId);
                         const typeLabel = item.type === 'lecture' ? (isAr ? 'محاضرة' : 'Lec') : item.type === 'tutorial' ? (isAr ? 'سكشن' : 'Sec') : (isAr ? 'معمل' : 'Lab');
+                        const partner = alternatingPartnerOf(item);
                         return (
                           <div key={item.id} className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 relative group flex flex-col justify-between">
                             <div className="flex justify-between items-start gap-2 mb-2">
@@ -534,9 +711,19 @@ export function Schedule() {
                             
                             <div className="flex items-center justify-between text-xs text-zinc-500 mt-2 pt-2 border-t border-zinc-200/50 dark:border-zinc-700/40">
                               <span className="flex items-center gap-1 font-bold text-blue-600 dark:text-blue-400">
-                                <Clock size={11} /> {item.startTime} - {item.endTime}
+                                <Clock size={11} /> {formatTimeRange12(item.startTime, item.endTime, isAr ? 'ar' : 'en')}
                               </span>
-                              {item.location && <span className="flex items-center gap-0.5"><MapPin size={11} /> {item.location}</span>}
+                              <span className="flex items-center gap-1.5">
+                                {partner && (
+                                  <span
+                                    title={isAr ? 'محاضرة تبادلية — بتظهر بالتناوب' : 'Alternating lecture'}
+                                    className="flex items-center gap-0.5 font-black text-indigo-600 dark:text-indigo-400"
+                                  >
+                                    <ArrowLeftRight size={11} />
+                                  </span>
+                                )}
+                                {item.location && <span className="flex items-center gap-0.5"><MapPin size={11} /> {item.location}</span>}
+                              </span>
                             </div>
                           </div>
                         );
@@ -597,8 +784,7 @@ export function Schedule() {
               
               <div className="grid grid-cols-7 auto-rows-fr bg-zinc-200 dark:bg-zinc-800 gap-px">
                 {calendarDays.map((day) => {
-                  const dayOfWeek = day.getDay();
-                  const dayItems = filteredScheduleItems.filter(s => s.dayOfWeek === dayOfWeek).sort((a, b) => a.startTime.localeCompare(b.startTime));
+                  const dayItems = itemsVisibleOnDate(day).sort((a, b) => a.startTime.localeCompare(b.startTime));
                   const isToday = isSameDay(day, new Date());
                   const isCurrentMonth = isSameMonth(day, currentDate);
 
@@ -637,7 +823,7 @@ export function Schedule() {
                               ) : null;
                             })()}
                             <button
-                              onClick={() => openAdd(dayOfWeek)}
+                              onClick={() => openAdd(day.getDay())}
                               className="p-1 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition-colors cursor-pointer"
                               title={isAr ? 'إضافة إلى هذا اليوم' : 'Add to this day'}
                             >
@@ -677,7 +863,7 @@ export function Schedule() {
                                       {typeText}
                                     </span>
                                     <span className="flex items-center gap-1 font-black text-[10px] opacity-90 whitespace-nowrap">
-                                      <Clock size={10} className="shrink-0" /> {item.startTime} - {item.endTime}
+                                      <Clock size={10} className="shrink-0" /> {formatTimeRange12(item.startTime, item.endTime, isAr ? 'ar' : 'en')}
                                     </span>
                                   </div>
                                   <h4 className="font-black text-xs sm:text-sm text-zinc-900 dark:text-white leading-tight line-clamp-2">
@@ -780,20 +966,18 @@ export function Schedule() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">{isAr ? 'وقت البدء' : 'Start Time'}</label>
-                  <input 
-                    type="time" 
-                    value={newItem.startTime} 
-                    onChange={e => setNewItem({ ...newItem, startTime: e.target.value })}
-                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  <Time12Input
+                    value={newItem.startTime}
+                    onChange={next => setNewItem({ ...newItem, startTime: next })}
+                    isAr={isAr}
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">{isAr ? 'وقت الانتهاء' : 'End Time'}</label>
-                  <input 
-                    type="time" 
-                    value={newItem.endTime} 
-                    onChange={e => setNewItem({ ...newItem, endTime: e.target.value })}
-                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  <Time12Input
+                    value={newItem.endTime}
+                    onChange={next => setNewItem({ ...newItem, endTime: next })}
+                    isAr={isAr}
                   />
                 </div>
               </div>
@@ -863,6 +1047,15 @@ export function Schedule() {
           </div>
         </div>
       )}
+
+      {/* Alternating Lectures (المحاضرات التبادلية) */}
+      <AlternatingLecturesModal
+        isOpen={showAlternatingModal}
+        onClose={() => setShowAlternatingModal(false)}
+        scheduleItems={scheduleItems}
+        subjects={subjects}
+        isAr={isAr}
+      />
 
       {/* Delete Confirmation Modal */}
       <ConfirmModal

@@ -525,6 +525,7 @@ export const db = {
     if ('specializationStartYear' in settings) payload.specialization_start_year = (settings.specializationStartYear != null && (settings.specializationStartYear as unknown as string) !== '' && Number(settings.specializationStartYear) > 0) ? Number(settings.specializationStartYear) : null;
     if ('specializationStartSemester' in settings) payload.specialization_start_semester = (settings.specializationStartSemester != null && (settings.specializationStartSemester as unknown as string) !== '' && Number(settings.specializationStartSemester) > 0) ? Number(settings.specializationStartSemester) : null;
     if ('specializationDatabaseId' in settings) payload.specialization_database_id = settings.specializationDatabaseId || null;
+    if ('alternatingLectures' in settings) payload.alternating_lectures = settings.alternatingLectures || [];
 
     try {
       const existingRaw = localStorage.getItem(`unistudent_settings_${userId}`);
@@ -539,7 +540,8 @@ export const db = {
         specialization: 'specialization' in settings ? settings.specialization : existingObj.specialization,
         specializationStartYear: 'specializationStartYear' in settings ? settings.specializationStartYear : existingObj.specializationStartYear,
         specializationStartSemester: 'specializationStartSemester' in settings ? settings.specializationStartSemester : existingObj.specializationStartSemester,
-        specializationDatabaseId: 'specializationDatabaseId' in settings ? settings.specializationDatabaseId : existingObj.specializationDatabaseId
+        specializationDatabaseId: 'specializationDatabaseId' in settings ? settings.specializationDatabaseId : existingObj.specializationDatabaseId,
+        alternatingLectures: 'alternatingLectures' in settings ? (settings.alternatingLectures || []) : (existingObj.alternatingLectures || [])
       }));
 
       // Embed student specialization & database metadata inside grading_scale JSONB as a dual-layer backup
@@ -594,6 +596,11 @@ export const db = {
         delete payload.specialization_start_year;
         delete payload.specialization_start_semester;
         delete payload.specialization_database_id;
+        // المحاضرات التبادلية live in their own column (migration
+        // 202609250001). Without this the retry would fail too and NO setting
+        // would reach Supabase until the migration is applied — the pairs stay
+        // safe in localStorage meanwhile.
+        delete payload.alternating_lectures;
         const retryRes = await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
         error = retryRes.error;
       }
@@ -4290,7 +4297,10 @@ function mapSettingsFromDB(row: any): UserSettings {
     specialization: resolvedSpecialization,
     specializationStartYear: resolvedStartYear,
     specializationStartSemester: resolvedStartSemester,
-    specializationDatabaseId: resolvedSpecDbId
+    specializationDatabaseId: resolvedSpecDbId,
+    alternatingLectures: Array.isArray(row.alternating_lectures)
+      ? row.alternating_lectures
+      : (localExtra.alternatingLectures || [])
   };
 }
 

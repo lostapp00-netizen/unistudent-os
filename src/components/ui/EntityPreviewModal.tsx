@@ -1,7 +1,9 @@
 import React from 'react';
-import { X, Calendar, Clock, BookOpen, User, MapPin, CheckSquare, StickyNote, Calendar as CalendarIcon, FileText, CheckCircle2, AlertCircle, Edit2 } from 'lucide-react';
+import { X, Calendar, Clock, BookOpen, User, MapPin, CheckSquare, StickyNote, Calendar as CalendarIcon, FileText, CheckCircle2, AlertCircle, Edit2, ArrowLeftRight } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { Priority } from '../../types';
+import { formatTimeRange12 } from '../../lib/utils';
+import { findPairForItem, isItemHiddenOnDate } from '../../lib/alternatingLectures';
 
 export type PreviewEntity = 
   | { type: 'note'; id: string }
@@ -169,9 +171,39 @@ export function EntityPreviewModal({ preview, onClose, onEdit }: EntityPreviewMo
               {days[item.dayOfWeek]}
             </span>
             <span className="text-xs font-black px-3 py-1 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl flex items-center gap-1.5">
-              <Clock size={13} /> {item.startTime} - {item.endTime}
+              <Clock size={13} /> {formatTimeRange12(item.startTime, item.endTime, isAr ? 'ar' : 'en')}
             </span>
           </div>
+
+          {/* Alternating lectures: name the lecture this one takes turns with,
+              and whether its turn is showing right now. */}
+          {(() => {
+            const pairs = settings.alternatingLectures || [];
+            const pair = findPairForItem(item.id, pairs);
+            if (!pair || !pair.active) return null;
+            const partnerId = pair.itemAId === item.id ? pair.itemBId : pair.itemAId;
+            const partner = scheduleItems.find(s => s.id === partnerId);
+            const partnerName = partner
+              ? (subjects.find(s => s.id === partner.subjectId)?.name || (isAr ? 'محاضرة أخرى' : 'another lecture'))
+              : (isAr ? 'محاضرة محذوفة' : 'a deleted lecture');
+            const standingDown = isItemHiddenOnDate(item.id, new Date(), pairs);
+            return (
+              <div className="p-3.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/50 flex items-center gap-3 text-xs">
+                <div className="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
+                  <ArrowLeftRight size={16} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400">{isAr ? 'محاضرة تبادلية مع' : 'Alternating with'}</p>
+                  <p className="font-extrabold text-sm text-indigo-900 dark:text-indigo-100 truncate">{partnerName}</p>
+                  <p className="text-[11px] font-bold text-indigo-600/80 dark:text-indigo-300/80 mt-0.5">
+                    {standingDown
+                      ? (isAr ? 'دورها حاليًا: مخفية' : 'Currently standing down')
+                      : (isAr ? 'دورها حاليًا: ظاهرة' : 'Currently showing')}
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {item.doctorName ? (

@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, GraduationGradeRule, UniversityDatabase } from '../types';
+import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, GraduationGradeRule, UniversityDatabase, AlternatingLecture } from '../types';
 import { db, flushPendingWrites, matchDriveItemInDatabase, matchSubjectInDatabase } from '../lib/db';
 import { normalizeSubjectName } from '../lib/academicTranslation';
-import { matchesDriveItem } from '../lib/utils';
+import { matchesDriveItem, reconcileTemplateDriveFiles } from '../lib/utils';
 
 let activeSyncPromise: Promise<void> | null = null;
 let isImportInProgress = false;
@@ -113,6 +113,9 @@ export interface AppState {
   clearData: () => void;
   
   updateSettings: (settings: Partial<UserSettings>) => void;
+  addAlternatingLecture: (pair: AlternatingLecture) => void;
+  updateAlternatingLecture: (id: string, pair: Partial<AlternatingLecture>) => void;
+  deleteAlternatingLecture: (id: string) => void;
   updateTheme: (theme: 'light' | 'dark') => void;
   updateLanguage: (lang: 'ar' | 'en') => void;
   addSubject: (subject: Subject) => void;
@@ -382,6 +385,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       scheduleItems: [],
       groups: []
     });
+  },
+
+  // المحاضرات التبادلية: زوجان يتبادلان الظهور. تختفي واحدة ويظهر بدلها
+  // التانية كل `intervalDays` بداية من `startDate`.
+  addAlternatingLecture: (pair) => {
+    const { settings, updateSettings } = get();
+    updateSettings({ alternatingLectures: [...(settings.alternatingLectures || []), pair] });
+  },
+
+  updateAlternatingLecture: (id, changes) => {
+    const { settings, updateSettings } = get();
+    updateSettings({
+      alternatingLectures: (settings.alternatingLectures || []).map(p => p.id === id ? { ...p, ...changes } : p)
+    });
+  },
+
+  deleteAlternatingLecture: (id) => {
+    const { settings, updateSettings } = get();
+    updateSettings({ alternatingLectures: (settings.alternatingLectures || []).filter(p => p.id !== id) });
   },
 
   updateSettings: (newSettings) => {
@@ -1174,6 +1196,13 @@ export const useAppStore = create<AppState>((set, get) => ({
             const twin = currentDriveSnapshot.find(f => matchesDriveItem(f, file, newParentId));
             if (twin) {
               idMap.set(file.id, twin.id);
+              // The twin may sit at the root because its parent could not be
+              // resolved on an earlier pull. Now that the parent is known, move
+              // it into place instead of cloning the whole subtree again.
+              if (newParentId && !twin.parentId) {
+                twin.parentId = newParentId;
+                await db.updateDriveFile(userId, twin.id, { parentId: newParentId }).catch(() => {});
+              }
               return;
             }
 
@@ -1225,12 +1254,24 @@ export const useAppStore = create<AppState>((set, get) => ({
             await cloneFile(file);
           }
 
-          if (clonedFiles.length > 0) {
-            const updatedDrive = [...get().files, ...clonedFiles];
-            set({ files: updatedDrive });
+          // Heal what an EARLIER restore left behind: a copy of a folder whose
+          // parent could not be resolved back then sits at the root next to the
+          // real one, with the same files inside. Template-derived copies are
+          // merged into one; personal items are never deleted.
+          const afterClone = [...get().files, ...clonedFiles];
+          const { files: healedDrive, moved, removedIds } = reconcileTemplateDriveFiles(afterClone, incomingDriveFiles);
+          for (const id of removedIds) {
+            await db.deleteDriveFile(userId, id).catch(() => {});
+          }
+          for (const move of moved) {
+            await db.updateDriveFile(userId, move.id, { parentId: move.parentId }).catch(() => {});
+          }
+
+          if (clonedFiles.length > 0 || removedIds.length > 0 || moved.length > 0) {
+            set({ files: healedDrive });
             try {
-              localStorage.setItem(`unistudent_drive_files_${userId}`, JSON.stringify(updatedDrive));
-              localStorage.setItem(`unistudent_files_${userId}`, JSON.stringify(updatedDrive));
+              localStorage.setItem(`unistudent_drive_files_${userId}`, JSON.stringify(healedDrive));
+              localStorage.setItem(`unistudent_files_${userId}`, JSON.stringify(healedDrive));
             } catch {}
           }
         }
@@ -1933,6 +1974,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               (tFile.url && existingFile.url !== tFile.url) ||
               (tFile.name && existingFile.name !== tFile.name) ||
               existingFile.universityTemplateId !== tFile.id ||
+              (expectedParentId && !existingFile.parentId) ||
               (tFile.yearIndex !== undefined && existingFile.yearIndex !== tFile.yearIndex) ||
               (tFile.semesterIndex !== undefined && existingFile.semesterIndex !== tFile.semesterIndex) ||
               (mappedSubjectId && existingFile.subjectId !== mappedSubjectId);
@@ -1942,6 +1984,9 @@ export const useAppStore = create<AppState>((set, get) => ({
               if (tFile.b2FileId) existingFile.b2FileId = tFile.b2FileId;
               if (tFile.name) existingFile.name = tFile.name;
               existingFile.universityTemplateId = tFile.id;
+              // Re-attach an item that was left at the root because its parent
+              // was unresolvable when it was first pulled.
+              if (expectedParentId && !existingFile.parentId) existingFile.parentId = expectedParentId;
               if (tFile.yearIndex !== undefined) existingFile.yearIndex = tFile.yearIndex;
               if (tFile.semesterIndex !== undefined) existingFile.semesterIndex = tFile.semesterIndex;
               if (mappedSubjectId) existingFile.subjectId = mappedSubjectId;
@@ -1965,27 +2010,22 @@ export const useAppStore = create<AppState>((set, get) => ({
           await importTemplateFile(tFile);
         }
 
-        // Heal duplicates created by older restores: collapse template-derived
-        // rows that share the same logical path (name + type + phase + local
-        // parent + subject + identical content) into one row — personal items are never
-        // touched.
-        const dedupedFiles: DriveFile[] = [];
-        const seenDriveKeys = new Set<string>();
-        for (const f of currentFiles) {
-          if (!f.universityTemplateId) {
-            dedupedFiles.push(f);
-            continue;
-          }
-          const key = `${(f.name || '').trim().toLowerCase()}-${f.type}-${f.parentId || 'root'}`;
-          if (seenDriveKeys.has(key)) {
-            await db.deleteDriveFile(userId, f.id);
-            hasFileChanges = true;
-            continue;
-          }
-          seenDriveKeys.add(key);
-          dedupedFiles.push(f);
+        // Heal duplicates created by older restores: every template-derived row
+        // is traced back to its template entry, re-attached to the local copy of
+        // its template parent when it was left at the root, and merged with a
+        // copy that already sits in the same place with the same files inside.
+        // Personal items are never deleted — only re-parented when the folder
+        // they lived in was merged away.
+        const { files: healedFiles, moved, removedIds } = reconcileTemplateDriveFiles(currentFiles, combinedDriveFiles);
+        for (const id of removedIds) {
+          await db.deleteDriveFile(userId, id).catch(() => {});
+          hasFileChanges = true;
         }
-        currentFiles = dedupedFiles;
+        for (const move of moved) {
+          await db.updateDriveFile(userId, move.id, { parentId: move.parentId }).catch(() => {});
+          hasFileChanges = true;
+        }
+        currentFiles = healedFiles;
 
         // Remove drive files ONLY if the user explicitly deleted them (tombstoned).
         // The old "delete if not in template" logic was too aggressive: it wiped
