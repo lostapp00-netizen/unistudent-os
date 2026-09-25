@@ -60,6 +60,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       totalFiles: backupData?.files?.length || 0,
     };
 
+    // كل الجداول اللي النسخة بتحتويها — بتتعرض في الإيميل عشان الأدمن يتأكد إن
+    // النسخة شاملة (بما فيها قوالب الجامعات وأنظمة الحساب GPA/النقط).
+    const includedTables: string[] = Array.isArray(backupData?.includedTables) && backupData.includedTables.length > 0
+      ? backupData.includedTables
+      : Object.keys(backupData?.data || {});
+
     // HTML Email Template
     const htmlContent = `
       <!DOCTYPE html>
@@ -115,10 +121,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                   </td>
                   <td class="stat-cell">
                     <p class="stat-num">${summary.totalNotes || 0}</p>
-                    <p class="stat-label">الملاحظات والملفات</p>
+                    <p class="stat-label">الملاحظات</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="stat-cell">
+                    <p class="stat-num">${summary.totalFiles || 0}</p>
+                    <p class="stat-label">ملفات الدرايف</p>
+                  </td>
+                  <td class="stat-cell">
+                    <p class="stat-num">${summary.totalUniversityDatabases || 0}</p>
+                    <p class="stat-label">قواعد بيانات الجامعات والدفعات</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="stat-cell">
+                    <p class="stat-num">${summary.totalRestoreLinks || 0}</p>
+                    <p class="stat-label">روابط الاسترداد</p>
+                  </td>
+                  <td class="stat-cell">
+                    <p class="stat-num">${summary.totalSuggestions || 0}</p>
+                    <p class="stat-label">المقترحات والشكاوى</p>
                   </td>
                 </tr>
               </table>
+              <p style="margin: 12px 0 0; font-size: 11px; color: #64748b; line-height: 1.7;">
+                النسخة شاملة كل جداول المنصة (${includedTables.length} جدول):
+                ${includedTables.join(' — ')}.
+                <br>
+                نظام الحساب (GPA / النقط) محفوظ مع بيانات كل طالب في جدول <code>settings</code>، ومع كل قاعدة بيانات في جدول <code>university_databases</code>.
+              </p>
             </div>
 
             <p style="font-size: 12px; color: #64748b; line-height: 1.6;">

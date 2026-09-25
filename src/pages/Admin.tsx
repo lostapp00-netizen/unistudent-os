@@ -756,7 +756,9 @@ export function Admin() {
 
       setBackupMessage({
         type: 'success',
-        text: isAr ? 'تم تنزيل النسخة الاحتياطية بنجاح على جهازك!' : 'Database backup downloaded successfully!'
+        text: isAr
+          ? `تم تنزيل النسخة الاحتياطية الشاملة (${backup.includedTables?.length || 0} جدول): ${backup.summary.totalStudents} طالب • ${backup.summary.totalSubjects} مادة • ${backup.summary.totalFiles} ملف • ${backup.summary.totalUniversityDatabases || 0} قاعدة بيانات جامعة • ${backup.summary.totalRestoreLinks || 0} رابط استرداد.`
+          : `Full backup downloaded (${backup.includedTables?.length || 0} tables): ${backup.summary.totalStudents} students • ${backup.summary.totalSubjects} subjects • ${backup.summary.totalFiles} files • ${backup.summary.totalUniversityDatabases || 0} university databases • ${backup.summary.totalRestoreLinks || 0} restore links.`
       });
     } catch (err: any) {
       setBackupMessage({
@@ -1825,7 +1827,7 @@ export function Admin() {
                     <div className="bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 flex items-center justify-between">
                       <div>
                         <h4 className="font-bold text-xs text-zinc-800 dark:text-zinc-200">{isAr ? 'تصدير نسخة احتياطية كاملة' : 'Export Full Snapshot'}</h4>
-                        <p className="text-[11px] text-zinc-400">{isAr ? 'تنزيل كافة الإعدادات، المواد، المهام، والملاحظات' : 'All students data, settings, and files'}</p>
+                        <p className="text-[11px] text-zinc-400">{isAr ? 'كل جداول المنصة: الطلاب، المواد، المقترحات، قوالب الجامعات، وروابط الاسترداد' : 'All platform tables: students, subjects, feedback, university templates, restore links'}</p>
                       </div>
                       <button
                         onClick={handleExportBackup}
@@ -1835,6 +1837,21 @@ export function Admin() {
                         <Download size={14} />
                         <span>{backupLoading ? (isAr ? 'جاري التجهيز...' : 'Preparing...') : (isAr ? 'تنزيل JSON' : 'Export')}</span>
                       </button>
+                    </div>
+
+                    {/* اللي النسخة الاحتياطية بتشيله فعلاً */}
+                    <div className="p-4 rounded-2xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 space-y-2">
+                      <p className="text-[11px] font-black text-blue-800 dark:text-blue-300">
+                        {isAr ? 'النسخة بتشمل كل حاجة في الموقع:' : 'The snapshot covers everything on the site:'}
+                      </p>
+                      <ul className="text-[11px] text-blue-700/90 dark:text-blue-300/80 leading-relaxed space-y-0.5 list-disc ps-4">
+                        <li>{isAr ? 'settings — بيانات كل طالب وإعداداته، ومعاها نظام الحساب (GPA أو النقط)، قيمة النقطة، التوتال، والدرجات السابقة' : 'settings — every student profile, plus the grading system (GPA / points), marks per point, total and previous marks'}</li>
+                        <li>{isAr ? 'subjects و drive_files — المواد وتقييماتها ودرجاتها، وملفات الدرايف' : 'subjects & drive_files — courses, their evaluations and marks, and drive files'}</li>
+                        <li>{isAr ? 'tasks و notes و appointments و schedule_items و groups — الإنتاجية والجدول والمجموعات (بما فيها المحاضرات التبادلية)' : 'tasks, notes, appointments, schedule_items & groups — productivity, schedule (alternating lectures included) and groups'}</li>
+                        <li>{isAr ? 'university_databases — قوالب الجامعات والكليات والدفعات والتخصصات بنظام حساب كل قاعدة' : 'university_databases — university / college / cohort / specialization templates with each database grading system'}</li>
+                        <li>{isAr ? 'university_pending_updates و registered_universities و database_restore_links و suggestions — طلبات التعديل، الجامعات المسجّلة، روابط الاسترداد، والمقترحات' : 'university_pending_updates, registered_universities, database_restore_links & suggestions — approvals, registered universities, restore links and feedback'}</li>
+                        <li>{isAr ? 'auth_users — حسابات الدخول (إيميلات وتواريخ التسجيل) من الـ Edge Function' : 'auth_users — login accounts (emails + dates) from the Edge Function'}</li>
+                      </ul>
                     </div>
 
                     <div className="bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 flex items-center justify-between">

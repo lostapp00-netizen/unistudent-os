@@ -346,6 +346,8 @@ export type DatabaseBackup = {
   version: string;
   timestamp: string;
   environment: string;
+  /** What this snapshot contains — lets an old backup be recognised as partial. */
+  includedTables?: string[];
   data: {
     settings: any[];
     subjects: any[];
@@ -356,8 +358,18 @@ export type DatabaseBackup = {
     groups: any[];
     drive_files: any[];
     suggestions: any[];
+    /** قواعد بيانات الجامعات/الكليات/الدفعات/التخصصات — تشمل نظام الحساب لكل قاعدة. */
     university_databases?: any[];
+    /** طلبات التعديل المعتمدة/المعلّقة على قواعد البيانات. */
+    university_pending_updates?: any[];
+    /** legacy alias kept so old backups still import */
     pending_updates?: any[];
+    /** الجامعات المسجّلة على المنصة. */
+    registered_universities?: any[];
+    /** روابط الطلاب بقواعد البيانات المصدر. */
+    database_restore_links?: any[];
+    /** حسابات الدخول (من الـ Edge Function بالـ service role) — للقراءة فقط. */
+    auth_users?: any[];
   };
   summary: {
     totalStudents: number;
@@ -367,6 +379,13 @@ export type DatabaseBackup = {
     totalFiles: number;
     totalSuggestions: number;
     totalUniversityDatabases?: number;
+    totalPendingUpdates?: number;
+    totalRegisteredUniversities?: number;
+    totalRestoreLinks?: number;
+    totalAuthUsers?: number;
+    totalAppointments?: number;
+    totalSchedule?: number;
+    totalGroups?: number;
   };
 };
 

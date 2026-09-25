@@ -3639,6 +3639,14 @@ export const db = {
     let rawGroups: any[] = [];
     let rawFiles: any[] = [];
     let feedbacks: any[] = [];
+    // كل الأجزاء اللي لازم تدخل في النسخة الاحتياطية: قوالب الجامعات، طلبات
+    // التعديل، الجامعات المسجّلة، وروابط الاسترداد — بالإضافة لحسابات الدخول
+    // اللي بتيجي من الـ Edge Function.
+    let rawUniversityDatabases: any[] = [];
+    let rawPendingUpdates: any[] = [];
+    let rawRegisteredUniversities: any[] = [];
+    let rawRestoreLinks: any[] = [];
+    let rawAuthUsers: any[] = [];
 
     // 1. Try Direct Supabase Query
     try {
@@ -3651,7 +3659,11 @@ export const db = {
         scheduleRes,
         groupsRes,
         filesRes,
-        fbList
+        fbList,
+        uniDbsRes,
+        pendingRes,
+        registeredRes,
+        restoreLinksRes
       ] = await Promise.all([
         supabase.from('settings').select('*'),
         supabase.from('subjects').select('*'),
@@ -3661,7 +3673,13 @@ export const db = {
         supabase.from('schedule_items').select('*'),
         supabase.from('groups').select('*'),
         supabase.from('drive_files').select('*'),
-        this.getAllFeedbacks()
+        this.getAllFeedbacks(),
+        // The backup must be complete: tables are queried defensively so a
+        // restricted / not-yet-migrated table never breaks the whole snapshot.
+        supabase.from('university_databases').select('*'),
+        supabase.from('university_pending_updates').select('*'),
+        supabase.from('registered_universities').select('*'),
+        supabase.from('database_restore_links').select('*')
       ]);
 
       if (settingsRes.data && settingsRes.data.length > 0) rawSettings = settingsRes.data;
@@ -3673,6 +3691,10 @@ export const db = {
       if (groupsRes.data && groupsRes.data.length > 0) rawGroups = groupsRes.data;
       if (filesRes.data && filesRes.data.length > 0) rawFiles = filesRes.data;
       if (fbList && fbList.length > 0) feedbacks = fbList;
+      if (uniDbsRes.data && uniDbsRes.data.length > 0) rawUniversityDatabases = uniDbsRes.data;
+      if (pendingRes.data && pendingRes.data.length > 0) rawPendingUpdates = pendingRes.data;
+      if (registeredRes.data && registeredRes.data.length > 0) rawRegisteredUniversities = registeredRes.data;
+      if (restoreLinksRes.data && restoreLinksRes.data.length > 0) rawRestoreLinks = restoreLinksRes.data;
     } catch (e) {
       console.warn('Direct Supabase query warning:', e);
     }
@@ -3686,6 +3708,37 @@ export const db = {
 
       if (!edgeErr && edgeData?.backup?.data) {
         const bData = edgeData.backup.data;
+
+        // حسابات الدخول (service role) — مش بتتحفظ في أي جدول تاني.
+        if (Array.isArray(bData.auth_users) && bData.auth_users.length > 0) {
+          rawAuthUsers = bData.auth_users;
+        }
+
+        // قوالب الجامعات وطلبات التعديل لو الـ Edge Function بترجّعها.
+        if (Array.isArray(bData.university_databases) && bData.university_databases.length > 0) {
+          bData.university_databases.forEach((row: any) => {
+            if (!row?.id) return;
+            if (!rawUniversityDatabases.some(d => d.id === row.id)) rawUniversityDatabases.push(row);
+          });
+        }
+        if (Array.isArray(bData.university_pending_updates) && bData.university_pending_updates.length > 0) {
+          bData.university_pending_updates.forEach((row: any) => {
+            if (!row?.id) return;
+            if (!rawPendingUpdates.some(p => p.id === row.id)) rawPendingUpdates.push(row);
+          });
+        }
+        if (Array.isArray(bData.registered_universities) && bData.registered_universities.length > 0) {
+          bData.registered_universities.forEach((row: any) => {
+            if (!row?.key) return;
+            if (!rawRegisteredUniversities.some(u => u.key === row.key)) rawRegisteredUniversities.push(row);
+          });
+        }
+        if (Array.isArray(bData.database_restore_links) && bData.database_restore_links.length > 0) {
+          bData.database_restore_links.forEach((row: any) => {
+            if (!row?.subscriber_id) return;
+            if (!rawRestoreLinks.some(l => l.subscriber_id === row.subscriber_id)) rawRestoreLinks.push(row);
+          });
+        }
         
         // Merge Settings
         if (Array.isArray(bData.settings) && bData.settings.length > 0) {
@@ -4121,17 +4174,43 @@ export const db = {
       rawSchedule,
       rawGroups,
       rawFiles,
-      feedbacks
+      feedbacks,
+      rawUniversityDatabases,
+      rawPendingUpdates,
+      rawRegisteredUniversities,
+      rawRestoreLinks,
+      rawAuthUsers
     };
   },
 
   // --- Full Database Backup & Restore ---
   async exportFullDatabaseBackup(): Promise<DatabaseBackup> {
     const data = await this.getAdminAllData();
+
+    // كل جدول في المنصة لازم يكون هنا. القايمة دي بتتكتب جوه الملف نفسه
+    // (includedTables) عشان أي نسخة ناقصة تتعرَف بسهولة.
+    const includedTables = [
+      'settings',
+      'subjects',
+      'tasks',
+      'notes',
+      'appointments',
+      'schedule_items',
+      'groups',
+      'drive_files',
+      'suggestions',
+      'university_databases',
+      'university_pending_updates',
+      'registered_universities',
+      'database_restore_links',
+      'auth_users'
+    ];
+
     return {
-      version: '1.0.0',
+      version: '2.0.0',
       timestamp: new Date().toISOString(),
       environment: 'production',
+      includedTables,
       data: {
         settings: data.rawSettings,
         subjects: data.rawSubjects,
@@ -4141,7 +4220,12 @@ export const db = {
         schedule_items: data.rawSchedule,
         groups: data.rawGroups,
         drive_files: data.rawFiles,
-        suggestions: data.feedbacks
+        suggestions: data.feedbacks,
+        university_databases: data.rawUniversityDatabases,
+        university_pending_updates: data.rawPendingUpdates,
+        registered_universities: data.rawRegisteredUniversities,
+        database_restore_links: data.rawRestoreLinks,
+        auth_users: data.rawAuthUsers
       },
       summary: {
         totalStudents: data.userIds.length,
@@ -4149,7 +4233,15 @@ export const db = {
         totalTasks: data.rawTasks.length,
         totalNotes: data.rawNotes.length,
         totalFiles: data.rawFiles.length,
-        totalSuggestions: data.feedbacks.length
+        totalSuggestions: data.feedbacks.length,
+        totalAppointments: data.rawAppointments.length,
+        totalSchedule: data.rawSchedule.length,
+        totalGroups: data.rawGroups.length,
+        totalUniversityDatabases: data.rawUniversityDatabases.length,
+        totalPendingUpdates: data.rawPendingUpdates.length,
+        totalRegisteredUniversities: data.rawRegisteredUniversities.length,
+        totalRestoreLinks: data.rawRestoreLinks.length,
+        totalAuthUsers: data.rawAuthUsers.length
       }
     };
   },
@@ -4298,6 +4390,54 @@ export const db = {
       }
     }
 
+    // 10. University databases (قوالب الجامعات/الكليات/الدفعات/التخصصات، ومعاها
+    //     نظام الحساب بتاع كل قاعدة جوه grading_scale والأعمدة الجديدة).
+    const universityDatabases = backup.data.university_databases || [];
+    if (universityDatabases.length > 0) {
+      try {
+        const { error } = await supabase.from('university_databases').upsert(universityDatabases, { onConflict: 'id' });
+        if (error) errors.push(`University databases: ${error.message}`);
+        try { localStorage.removeItem('unistudent_university_databases'); } catch {}
+      } catch (err: any) {
+        errors.push(`University databases: ${err.message}`);
+      }
+    }
+
+    // 11. Pending updates on those databases (accepted + legacy key)
+    const pendingUpdates = backup.data.university_pending_updates || backup.data.pending_updates || [];
+    if (pendingUpdates.length > 0) {
+      try {
+        const { error } = await supabase.from('university_pending_updates').upsert(pendingUpdates, { onConflict: 'id' });
+        if (error) errors.push(`Pending updates: ${error.message}`);
+        try { localStorage.removeItem('unistudent_pending_updates'); } catch {}
+      } catch (err: any) {
+        errors.push(`Pending updates: ${err.message}`);
+      }
+    }
+
+    // 12. Registered universities
+    const registeredUniversities = backup.data.registered_universities || [];
+    if (registeredUniversities.length > 0) {
+      try {
+        const { error } = await supabase.from('registered_universities').upsert(registeredUniversities, { onConflict: 'key' });
+        if (error) errors.push(`Registered universities: ${error.message}`);
+        try { localStorage.removeItem('unistudent_registered_universities'); } catch {}
+      } catch (err: any) {
+        errors.push(`Registered universities: ${err.message}`);
+      }
+    }
+
+    // 13. Student ↔ source database links
+    const restoreLinks = backup.data.database_restore_links || [];
+    if (restoreLinks.length > 0) {
+      try {
+        const { error } = await supabase.from('database_restore_links').upsert(restoreLinks, { onConflict: 'subscriber_id' });
+        if (error) errors.push(`Restore links: ${error.message}`);
+      } catch (err: any) {
+        errors.push(`Restore links: ${err.message}`);
+      }
+    }
+
     return {
       success: errors.length === 0,
       message: errors.length === 0 ? 'تمت استعادة كافة بيانات قاعدة البيانات بنجاح!' : `تمت الاستعادة مع بعض التنبيهات: ${errors.join(', ')}`,
@@ -4309,8 +4449,13 @@ export const db = {
           notes: notes.length,
           appointments: appointments.length,
           schedule: schedule_items.length,
+          groups: groups.length,
           files: drive_files.length,
-          suggestions: suggestions.length
+          suggestions: suggestions.length,
+          universityDatabases: universityDatabases.length,
+          pendingUpdates: pendingUpdates.length,
+          registeredUniversities: registeredUniversities.length,
+          restoreLinks: restoreLinks.length
         },
         errors
       }

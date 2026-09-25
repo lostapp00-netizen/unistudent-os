@@ -27,6 +27,10 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // 1. Fetch all database tables & auth users
+    //    Every platform table is included so the emailed snapshot is a complete
+    //    restore point: student data, the university/college templates (which
+    //    carry each database's grading system), pending updates, registered
+    //    universities and the student↔source restore links.
     const [
       settingsRes,
       subjectsRes,
@@ -37,6 +41,10 @@ serve(async (req) => {
       groupsRes,
       filesRes,
       suggestionsRes,
+      uniDbsRes,
+      pendingUpdatesRes,
+      registeredUnisRes,
+      restoreLinksRes,
       authUsersRes,
     ] = await Promise.all([
       supabase.from("settings").select("*"),
@@ -48,6 +56,10 @@ serve(async (req) => {
       supabase.from("groups").select("*"),
       supabase.from("drive_files").select("*"),
       supabase.from("suggestions").select("*"),
+      supabase.from("university_databases").select("*"),
+      supabase.from("university_pending_updates").select("*"),
+      supabase.from("registered_universities").select("*"),
+      supabase.from("database_restore_links").select("*"),
       supabase.auth.admin.listUsers().catch(() => ({ data: { users: [] } })),
     ]);
 
@@ -59,9 +71,25 @@ serve(async (req) => {
     }));
 
     const backupPayload = {
-      version: "1.0.0",
+      version: "2.0.0",
       timestamp: new Date().toISOString(),
       environment: "production",
+      includedTables: [
+        "settings",
+        "subjects",
+        "tasks",
+        "notes",
+        "appointments",
+        "schedule_items",
+        "groups",
+        "drive_files",
+        "suggestions",
+        "university_databases",
+        "university_pending_updates",
+        "registered_universities",
+        "database_restore_links",
+        "auth_users",
+      ],
       data: {
         settings: settingsRes.data || [],
         subjects: subjectsRes.data || [],
@@ -72,17 +100,28 @@ serve(async (req) => {
         groups: groupsRes.data || [],
         drive_files: filesRes.data || [],
         suggestions: suggestionsRes.data || [],
+        university_databases: uniDbsRes?.data || [],
+        university_pending_updates: pendingUpdatesRes?.data || [],
+        registered_universities: registeredUnisRes?.data || [],
+        database_restore_links: restoreLinksRes?.data || [],
         auth_users: realAuthUsers,
       },
       summary: {
+        totalStudents: settingsRes.data?.length || 0,
         totalSettings: settingsRes.data?.length || 0,
         totalSubjects: subjectsRes.data?.length || 0,
         totalTasks: tasksRes.data?.length || 0,
         totalNotes: notesRes.data?.length || 0,
         totalAppointments: appointmentsRes.data?.length || 0,
         totalSchedule: scheduleRes.data?.length || 0,
+        totalGroups: groupsRes.data?.length || 0,
         totalFiles: filesRes.data?.length || 0,
         totalSuggestions: suggestionsRes.data?.length || 0,
+        totalUniversityDatabases: uniDbsRes?.data?.length || 0,
+        totalPendingUpdates: pendingUpdatesRes?.data?.length || 0,
+        totalRegisteredUniversities: registeredUnisRes?.data?.length || 0,
+        totalRestoreLinks: restoreLinksRes?.data?.length || 0,
+        totalAuthUsers: realAuthUsers.length,
       },
     };
 
@@ -117,9 +156,22 @@ serve(async (req) => {
                     <li><strong>Subjects:</strong> ${backupPayload.summary.totalSubjects}</li>
                     <li><strong>Tasks:</strong> ${backupPayload.summary.totalTasks}</li>
                     <li><strong>Notes:</strong> ${backupPayload.summary.totalNotes}</li>
+                    <li><strong>Appointments:</strong> ${backupPayload.summary.totalAppointments}</li>
+                    <li><strong>Schedule items:</strong> ${backupPayload.summary.totalSchedule}</li>
+                    <li><strong>Groups:</strong> ${backupPayload.summary.totalGroups}</li>
                     <li><strong>Drive Files:</strong> ${backupPayload.summary.totalFiles}</li>
                     <li><strong>Feedback / Complaints:</strong> ${backupPayload.summary.totalSuggestions}</li>
+                    <li><strong>University / College databases:</strong> ${backupPayload.summary.totalUniversityDatabases}</li>
+                    <li><strong>Pending updates:</strong> ${backupPayload.summary.totalPendingUpdates}</li>
+                    <li><strong>Registered universities:</strong> ${backupPayload.summary.totalRegisteredUniversities}</li>
+                    <li><strong>Restore links:</strong> ${backupPayload.summary.totalRestoreLinks}</li>
+                    <li><strong>Auth accounts:</strong> ${backupPayload.summary.totalAuthUsers}</li>
                   </ul>
+                  <p style="margin: 0; font-size: 12px; color: #555;">
+                    This snapshot covers every table on the platform (${backupPayload.includedTables.length} tables):
+                    ${backupPayload.includedTables.join(", ")}.
+                    The student grading system (GPA / points) is included with each settings row and with every university database.
+                  </p>
                 </div>
                 <p>The complete backup JSON is attached to this email.</p>
               </div>
