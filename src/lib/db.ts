@@ -466,6 +466,83 @@ function extractMissingColumnName(message: string, payload: Record<string, any>)
 /** Last settings row read from Supabase, per user — see upsertSettings(). */
 const lastRemoteSettingsRow = new Map<string, any>();
 
+/**
+ * Order updates so that a folder is applied before anything inside it, then by
+ * creation time. Depth is computed from the parentId chains of the batch itself.
+ */
+export function sortUpdatesByParentOrder(updates: UniversityPendingUpdate[]): UniversityPendingUpdate[] {
+  const byItemId = new Map<string, UniversityPendingUpdate>();
+  updates.forEach(u => {
+    if (u.data?.id) byItemId.set(u.data.id, u);
+    const templateId = u.data?.universityTemplateId || u.data?.university_template_id;
+    if (templateId) byItemId.set(templateId, u);
+  });
+
+  const depthOf = (update: UniversityPendingUpdate): number => {
+    let depth = 0;
+    let cursor: UniversityPendingUpdate | undefined = update;
+    const seen = new Set<string>([update.id]);
+    while (cursor && depth < 20) {
+      const parentRef = cursor.data?.parentId || cursor.data?.parentTemplateId || cursor.data?.parent_template_id;
+      const parent = parentRef ? byItemId.get(parentRef) : undefined;
+      if (!parent || seen.has(parent.id)) break;
+      seen.add(parent.id);
+      depth++;
+      cursor = parent;
+    }
+    return depth;
+  };
+
+  return [...updates].sort((a, b) => {
+    const depthDiff = depthOf(a) - depthOf(b);
+    if (depthDiff !== 0) return depthDiff;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
+}
+
+/**
+ * Are two pending updates about the SAME item?
+ *
+ * The old check compared name + year + semester only, so two different items
+ * that happened to share a name (e.g. a second folder with the same name, or two
+ * uploads called "ملف.pdf" in different folders) were treated as one update and
+ * the later one silently overwrote the earlier — the item then never reached the
+ * database when the admin approved it.
+ *
+ * Identity now wins: the student-side item id, then the pinned template id, then
+ * (as a last resort) name + phase **and the same parent**.
+ */
+function isSamePendingTarget(existing: any, incoming: any, type?: string): boolean {
+  if (type === 'update_grading_scale') return true;
+  if (!existing || !incoming) return false;
+
+  // The pinned template id is the most stable identity: it survives a re-pull
+  // that regenerates the student-side ids.
+  const existingTemplate = existing.universityTemplateId || existing.university_template_id;
+  const incomingTemplate = incoming.universityTemplateId || incoming.university_template_id;
+  if (existingTemplate && incomingTemplate) return existingTemplate === incomingTemplate;
+
+  // Otherwise the student-side item id decides. Two DIFFERENT ids are two
+  // different items — never merge them, even when the names match.
+  if (existing.id && incoming.id) return existing.id === incoming.id;
+
+  // Fallback for legacy payloads with no ids: only merge when the items also live
+  // in the same place, so items inside different folders stay separate updates.
+  const sameParent =
+    (existing.parentId ?? null) === (incoming.parentId ?? null) &&
+    (existing.parentTemplateId ?? existing.parent_template_id ?? null) ===
+      (incoming.parentTemplateId ?? incoming.parent_template_id ?? null);
+  const samePhase =
+    Number(existing.yearIndex || 1) === Number(incoming.yearIndex || 1) &&
+    Number(existing.semesterIndex || 1) === Number(incoming.semesterIndex || 1);
+
+  return Boolean(
+    existing.name && incoming.name &&
+    String(existing.name).trim().toLowerCase() === String(incoming.name).trim().toLowerCase() &&
+    sameParent && samePhase
+  );
+}
+
 function isMissingPatchRpcError(error: any): boolean {
   if (!error) return false;
   const code = String(error.code || '');
@@ -563,6 +640,7 @@ export const db = {
     if ('specializationStartSemester' in settings) payload.specialization_start_semester = (settings.specializationStartSemester != null && (settings.specializationStartSemester as unknown as string) !== '' && Number(settings.specializationStartSemester) > 0) ? Number(settings.specializationStartSemester) : null;
     if ('specializationDatabaseId' in settings) payload.specialization_database_id = settings.specializationDatabaseId || null;
     if ('alternatingLectures' in settings) payload.alternating_lectures = settings.alternatingLectures || [];
+    if ('bonusPoints' in settings) payload.bonus_points = settings.bonusPoints || [];
 
     // نظام الحساب: GPA أو النقط (migration 202609260001)
     if ('gradingSystem' in settings) payload.grading_system = settings.gradingSystem || 'gpa';
@@ -631,6 +709,7 @@ export const db = {
         specializationStartSemester: 'specializationStartSemester' in settings ? settings.specializationStartSemester : existingObj.specializationStartSemester,
         specializationDatabaseId: 'specializationDatabaseId' in settings ? settings.specializationDatabaseId : existingObj.specializationDatabaseId,
         alternatingLectures: 'alternatingLectures' in settings ? (settings.alternatingLectures || []) : (existingObj.alternatingLectures || []),
+        bonusPoints: 'bonusPoints' in settings ? (settings.bonusPoints || []) : (existingObj.bonusPoints || []),
         gradingSystem: resolvedGradingSystem,
         marksPerPoint: resolvedMarksPerPoint,
         totalPoints: resolvedTotalPoints,
@@ -655,6 +734,12 @@ export const db = {
       const curMarksPerPoint = resolvedMarksPerPoint;
       const curTotalPoints = resolvedTotalPoints;
       const curInitialMarks = resolvedInitialMarks;
+      // النقط الإضافية: من الإعدادات، وبعدها الكاش المحلي، وبعدها اللي على السيرفر.
+      const curBonusPoints = 'bonusPoints' in settings
+        ? (settings.bonusPoints || [])
+        : (Array.isArray(existingObj.bonusPoints) ? existingObj.bonusPoints
+          : (Array.isArray((remoteMeta as any)?.bonusPoints) ? (remoteMeta as any).bonusPoints
+            : (Array.isArray(remoteObj.bonus_points) ? remoteObj.bonus_points : [])));
 
       if (curUniDbId || curSpec || curStartYr || curStartSem || curSpecDbId || curGradingSystem) {
         scale.push({
@@ -667,7 +752,9 @@ export const db = {
           gradingSystem: curGradingSystem,
           marksPerPoint: (curMarksPerPoint != null && Number(curMarksPerPoint) > 0) ? Number(curMarksPerPoint) : null,
           totalPoints: (curTotalPoints != null && Number(curTotalPoints) > 0) ? Number(curTotalPoints) : null,
-          initialAccumulatedMarks: (curInitialMarks != null && Number(curInitialMarks) >= 0) ? Number(curInitialMarks) : null
+          initialAccumulatedMarks: (curInitialMarks != null && Number(curInitialMarks) >= 0) ? Number(curInitialMarks) : null,
+          // النقط الإضافية بتحفظ هنا كمان عشان تشتغل قبل تنفيذ عمود bonus_points.
+          bonusPoints: Array.isArray(curBonusPoints) ? curBonusPoints : []
         } as any);
       }
 
@@ -727,6 +814,8 @@ export const db = {
         delete payload.marks_per_point;
         delete payload.total_points;
         delete payload.initial_accumulated_marks;
+        // النقط الإضافية (migration 202609280001)
+        delete payload.bonus_points;
         const retryRes = await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
         error = retryRes.error;
       }
@@ -2939,11 +3028,7 @@ export const db = {
         p.universityDatabaseId === cleanUpdate.universityDatabaseId &&
         p.type === cleanUpdate.type &&
         p.status === 'pending' &&
-        (
-          (cleanUpdate.data?.id && p.data?.id && cleanUpdate.data.id === p.data.id) ||
-          (cleanUpdate.type === 'update_grading_scale') ||
-          (cleanUpdate.data?.name && p.data?.name && cleanUpdate.data.name === p.data.name && cleanUpdate.data.yearIndex === p.data.yearIndex && cleanUpdate.data.semesterIndex === p.data.semesterIndex)
-        )
+        isSamePendingTarget(p.data, cleanUpdate.data, cleanUpdate.type)
       );
 
       let updatedList: UniversityPendingUpdate[];
@@ -2969,12 +3054,7 @@ export const db = {
         .eq('status', 'pending');
 
       if (existingRows && existingRows.length > 0) {
-        const matched = existingRows.find(e => {
-          const d = e.data;
-          return (cleanUpdate.data?.id && d?.id && cleanUpdate.data.id === d.id) ||
-                 (cleanUpdate.type === 'update_grading_scale') ||
-                 (cleanUpdate.data?.name && d?.name && cleanUpdate.data.name === d.name && cleanUpdate.data.yearIndex === d.yearIndex && cleanUpdate.data.semesterIndex === d.semesterIndex);
-        });
+        const matched = existingRows.find(e => isSamePendingTarget(e.data, cleanUpdate.data, cleanUpdate.type));
         if (matched) {
           cleanUpdate.id = matched.id;
         }
@@ -3033,6 +3113,46 @@ export const db = {
     if (!updates || updates.length === 0) return { warnings: [] };
 
     const resolvedAt = status === 'pending' ? undefined : new Date().toISOString();
+
+    // A child must never be applied before the folder it lives in. The admin UI
+    // approves updates one at a time (newest first), so without this the files of
+    // a freshly created folder were approved before the folder itself existed and
+    // ended up at the drive root. Folders that are still pending are pulled into
+    // the same approval, parents first.
+    if (status === 'approved') {
+      const fullList = await this.getPendingUpdates().catch(() => [] as UniversityPendingUpdate[]);
+      const inBatch = new Set(updates.map(u => u.id));
+      const chain: UniversityPendingUpdate[] = [];
+
+      for (const item of updates) {
+        let cursor: UniversityPendingUpdate | undefined = item;
+        for (let depth = 0; depth < 20; depth++) {
+          const parentRef = (cursor?.data?.parentId)
+            || (cursor?.data?.parentTemplateId)
+            || (cursor?.data?.parent_template_id);
+          if (!parentRef) break;
+
+          const candidates = fullList.filter(p =>
+            !inBatch.has(p.id) &&
+            p.universityDatabaseId === item.universityDatabaseId &&
+            (p.type === 'add_file' || p.type === 'update_file') &&
+            p.data?.id === parentRef
+          );
+          const parentUpdate = candidates.find(p => p.data?.type === 'folder') || candidates[0];
+          if (!parentUpdate) break;
+
+          inBatch.add(parentUpdate.id);
+          chain.push(parentUpdate);
+          cursor = parentUpdate;
+        }
+      }
+
+      if (chain.length > 0) {
+        // Parents first, then the approved items themselves.
+        updates = [...chain.reverse(), ...updates];
+      }
+    }
+
     const updateIdsSet = new Set(updates.map(u => u.id));
     const collectedWarnings: string[] = [];
 
@@ -3119,8 +3239,7 @@ export const db = {
             };
             console.log(`[batchRespond] Step 3: currentDb → driveFiles=${currentDb.driveFiles.length}, subjects=${currentDb.subjects.length}`);
             
-            const dbUpdates = byDb[dbId];
-            dbUpdates.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+            const dbUpdates = sortUpdatesByParentOrder(byDb[dbId]);
 
             const removedDriveFileIds = new Set<string>();
             const removedSubjectIds = new Set<string>();
@@ -4609,6 +4728,10 @@ function mapSettingsFromDB(row: any): UserSettings {
     alternatingLectures: Array.isArray(row.alternating_lectures)
       ? row.alternating_lectures
       : (localExtra.alternatingLectures || []),
+    // النقط الإضافية: الميتا الأول (بتتكتب مع كل حفظ)، وبعدها العمود، وبعدها الكاش.
+    bonusPoints: Array.isArray(specMeta?.bonusPoints)
+      ? specMeta.bonusPoints
+      : (Array.isArray(row.bonus_points) ? row.bonus_points : (localExtra.bonusPoints || [])),
     // نظام الحساب — ترتيب الأولوية مقصود:
     //   1. صف الميتا جوه grading_scale (بيتكتب مع كل حفظ، فلو فيه القيمة فهي الأحدث).
     //   2. الكاش المحلي: لو الميتا لسه مفيهاش القيمة (حفظ من نسخة أقدم) والعمود
@@ -5362,14 +5485,29 @@ export function applyPendingUpdateToDatabase(
     if (!fileName) return targetDb;
 
     // Resolve parent folder in template
-    const resolvedParentId = resolveTemplateParentId(driveFiles, {
+    const parentResolution = resolveTemplateParentIdDetailed(driveFiles, {
       parentId: file.parentId,
       parentTemplateId: file.parentTemplateId || file.parent_template_id,
       parentName: file.parentName,
       yearIndex: file.yearIndex,
       semesterIndex: file.semesterIndex
     });
+    const resolvedParentId = parentResolution.id;
     const parentFolder = resolvedParentId ? driveFiles.find(f => f.id === resolvedParentId) : undefined;
+
+    // Silently dropping an item at the drive root is what made the admin see
+    // "the files ended up outside the general folder" with no explanation: say it
+    // loudly so the item can be placed correctly instead of going unnoticed.
+    const claimsAParent = Boolean(
+      file.parentId || file.parentTemplateId || file.parent_template_id ||
+      (file.parentName && String(file.parentName).trim())
+    );
+    if (!resolvedParentId && claimsAParent && warnings) {
+      warnings.push(
+        `⚠️ "${fileName}": الفولدر الأب (${String(file.parentName || file.parentId || '').trim()}) مش موجود في قاعدة البيانات، فالعنصر اتضاف في الجذر. ` +
+        `اتأكد إن تحديث الفولدر الأب اتعمل عليه موافقة، وبعدين انقله مكانه الصحيح.`
+      );
+    }
 
     // Resolve linked subject in template
     let resolvedSubjectId: string | undefined = undefined;
@@ -5532,6 +5670,15 @@ export function applyPendingUpdateToDatabase(
         finalParentId = resolvedParentId;
       } else {
         finalParentId = existing.parentId !== undefined ? existing.parentId : null;
+        // The student moved this item, but the destination folder is not in the
+        // database yet: keep the current place and SAY so instead of silently
+        // ignoring the move.
+        if (placementChanged && !parentFound && (targetParentId || targetParentTemplateId || targetParentName) && warnings) {
+          warnings.push(
+            `⚠️ "${targetName || existing.name}": الفولدر الأب مش موجود في قاعدة البيانات، فالنقل اتحفظ زي ما هو. ` +
+            `وافق على تحديث الفولدر (${targetParentName || targetParentId}) الأول، وبعدين أعد الموافقة على النقل.`
+          );
+        }
       }
 
       const finalSubjectId = placementChanged && subjectFound ? resolvedSubjectId : existing.subjectId;

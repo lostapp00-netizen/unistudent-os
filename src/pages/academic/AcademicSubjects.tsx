@@ -3,11 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppStore } from '../../store/useAppStore';
-import { calculateSubjectGrade } from '../../lib/academic';
+import { calculateSubjectGrade, getPointsSummary } from '../../lib/academic';
 import { Subject } from '../../types';
-import { Plus, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, Award } from 'lucide-react';
 import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../../components/ui/UnifiedSemesterFilter';
 import { ConfirmModal } from '../../components/ui/CustomModal';
+import { BonusPointsModal } from '../../components/academic/BonusPointsModal';
 
 export function AcademicSubjects() {
   const { t } = useTranslation();
@@ -20,6 +21,7 @@ export function AcademicSubjects() {
   const [showModal, setShowModal] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null);
+  const [showBonusModal, setShowBonusModal] = useState(false);
 
   const [formData, setFormData] = useState<{
     code: string;
@@ -129,6 +131,8 @@ export function AcademicSubjects() {
   const isAr = settings.language === 'ar';
   const gradingSystem = settings.gradingSystem === 'points' ? 'points' : 'gpa';
   const marksPerPoint = Number(settings.marksPerPoint || 0);
+  // النقط الإضافية: بتظهر بس في نظام النقط (وزرار «إضافة نقاط» فوق خالص).
+  const pointsSummary = gradingSystem === 'points' ? getPointsSummary(settings, subjects) : null;
 
   return (
     <div className="flex flex-col min-h-full gap-6 pb-8">
@@ -151,6 +155,25 @@ export function AcademicSubjects() {
             setFilterSemesters={setFilterSemesters}
           />
 
+          {/* إضافة نقاط (نظام النقط فقط): نقط حصل عليها الطالب خارج درجات المواد */}
+          {gradingSystem === 'points' && (
+            <button
+              onClick={() => setShowBonusModal(true)}
+              title={isAr
+                ? 'سجّل نقط بونص أو نقط لدرجات خارجية — بتتضاف على اللي حصلته ومش بتغيّر التوتال الكلي'
+                : 'Record bonus / external points — they add to what you earned without changing the total'}
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-xs sm:text-sm shadow-xs transition-all cursor-pointer"
+            >
+              <Award size={16} />
+              <span>{isAr ? 'إضافة نقاط' : 'Add Points'}</span>
+              {pointsSummary && pointsSummary.bonusPoints > 0 && (
+                <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[11px] font-black">
+                  +{pointsSummary.bonusPoints}
+                </span>
+              )}
+            </button>
+          )}
+
           <button 
             onClick={handleOpenAdd}
             className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-xs sm:text-sm shadow-xs transition-all cursor-pointer"
@@ -160,6 +183,32 @@ export function AcademicSubjects() {
           </button>
         </div>
       </header>
+
+      {/* شريط مختصر: النقط المُحصَّلة (بما فيها الإضافية) مقابل التوتال — نظام النقط فقط */}
+      {gradingSystem === 'points' && pointsSummary && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 text-[11px] sm:text-xs font-bold text-emerald-800 dark:text-emerald-300">
+          <span>
+            {isAr ? 'المُحصَّل:' : 'Earned:'} {pointsSummary.points.toFixed(1)}
+            {pointsSummary.totalPoints > 0 ? ` / ${pointsSummary.totalPoints}` : ''} {isAr ? 'نقطة' : 'pts'}
+          </span>
+          <span className="text-emerald-400">•</span>
+          <span>{isAr ? 'من الدرجات:' : 'From marks:'} {pointsSummary.marksPoints.toFixed(1)}</span>
+          <span className="text-emerald-400">•</span>
+          <button
+            onClick={() => setShowBonusModal(true)}
+            className="underline decoration-dotted hover:text-emerald-600 dark:hover:text-emerald-200 cursor-pointer"
+          >
+            {isAr ? 'نقط إضافية:' : 'Extra points:'} +{pointsSummary.bonusPoints}
+            {pointsSummary.bonusCount > 0 ? ` (${pointsSummary.bonusCount})` : ''}
+          </button>
+          {pointsSummary.totalPoints > 0 && (
+            <>
+              <span className="text-emerald-400">•</span>
+              <span>{isAr ? 'المتبقي:' : 'Left:'} {pointsSummary.remainingPoints.toFixed(1)}</span>
+            </>
+          )}
+        </div>
+      )}
       
       <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden flex-1">
         <div className="overflow-x-auto h-full">
@@ -378,6 +427,13 @@ export function AcademicSubjects() {
           </div>
         </div>
       )}
+
+      {/* النقط الإضافية (نظام النقط) */}
+      <BonusPointsModal
+        isOpen={showBonusModal}
+        onClose={() => setShowBonusModal(false)}
+        isAr={isAr}
+      />
 
       {/* In-app confirmation modal for deleting subject */}
       <ConfirmModal

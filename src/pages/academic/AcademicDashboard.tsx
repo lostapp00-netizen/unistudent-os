@@ -191,8 +191,8 @@ export function AcademicDashboard() {
               {gradingSystem === 'points'
                 ? (pointsSummary
                     ? (isAr
-                        ? `${pointsSummary.accumulatedMarks.toFixed(0)} درجة • المتبقي ${pointsSummary.remainingPoints.toFixed(1)} نقطة`
-                        : `${pointsSummary.accumulatedMarks.toFixed(0)} marks • ${pointsSummary.remainingPoints.toFixed(1)} pts left`)
+                        ? `${pointsSummary.accumulatedMarks.toFixed(0)} درجة • المتبقي ${pointsSummary.remainingPoints.toFixed(1)} نقطة${pointsSummary.bonusPoints > 0 ? ` • منها +${pointsSummary.bonusPoints} إضافية` : ''}`
+                        : `${pointsSummary.accumulatedMarks.toFixed(0)} marks • ${pointsSummary.remainingPoints.toFixed(1)} pts left${pointsSummary.bonusPoints > 0 ? ` • +${pointsSummary.bonusPoints} extra` : ''}`)
                     : (isAr ? 'حدد قيمة النقطة والتوتال من الإعدادات' : 'Set marks per point & total in settings'))
                 : (isAr ? 'المعدل الكلي لجميع السنوات' : 'All-time cumulative')}
             </span>

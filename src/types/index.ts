@@ -148,6 +148,8 @@ export type UserSettings = {
   /** Marks already collected before using the app (points-system equivalent
    *  of initialCumulativeGpa + initialCompletedCreditHours). */
   initialAccumulatedMarks?: number | null;
+  /** نقط إضافية حصل عليها الطالب: بتزوّد المجموع المُحصَّل، ومش بتغيّر التوتال. */
+  bonusPoints?: BonusPointEntry[];
   warningGradeLetter?: string;
   warningGpaPoints?: number;
   enableGraduationScale?: boolean;
@@ -163,6 +165,21 @@ export type UserSettings = {
 
 /** Accounting system: GPA (ساعات معتمدة + نقاط) أو نظام النقط. */
 export type GradingSystem = 'gpa' | 'points';
+
+/**
+ * نقط حصل عليها الطالب خارج درجات المواد (نقط بونص، أنشطة، درجات خارجية…).
+ * بتتضاف على النقط المُحصَّلة، لكن **مش** بتغيّر التوتال الكلي المحدد في الإعدادات.
+ */
+export type BonusPointEntry = {
+  id: string;
+  /** عدد النقط المضافة. */
+  points: number;
+  /** سبب أو ملاحظة اختيارية (مثال: نقط بونص، نشاط). */
+  note?: string;
+  /** تاريخ الحصول عليها 'yyyy-MM-dd'. */
+  date: string;
+  createdAt: string;
+};
 
 export type Appointment = {
   id: string;

@@ -1,4 +1,4 @@
-import { Subject, GradeRule, GraduationGradeRule } from '../types';
+import { Subject, GradeRule, GraduationGradeRule, BonusPointEntry } from '../types';
 
 export function sanitizeGradingScale(scale?: GradeRule[]): GradeRule[] {
   if (!Array.isArray(scale)) return [];
@@ -183,7 +183,16 @@ export type PointsSummary = {
   previousMarks: number;
   /** All collected marks, previous ones included. */
   accumulatedMarks: number;
-  /** accumulatedMarks ÷ marksPerPoint — النقط المجمعة. */
+  /** النقط المحسوبة من الدرجات = accumulatedMarks ÷ marksPerPoint. */
+  marksPoints: number;
+  /** مجموع النقط الإضافية اللي الطالب سجّلها بنفسه (بونص/أنشطة). */
+  bonusPoints: number;
+  /** عدد الإضافات المسجّلة. */
+  bonusCount: number;
+  /**
+   * إجمالي النقط المُحصَّلة = marksPoints + bonusPoints.
+   * النقط الإضافية بتزوّد المُحصَّل بس، والتوتال (totalPoints) ما بيتغيّرش.
+   */
   points: number;
   /** What is left of the total (0 when it was already passed). */
   remainingPoints: number;
@@ -198,9 +207,18 @@ export type PointsSummary = {
 /**
  * The points-system equivalent of calculateGPA: how many points the student has
  * collected so far, out of the configured total, and how many are left.
+ *
+ * النقط الإضافية (`settings.bonusPoints`) بتتضاف على المُحصَّل فقط — التوتال
+ * المحدد في الإعدادات بيفضل زي ما هو، فالزيادة بتقرّب الطالب من التوتال.
  */
 export function getPointsSummary(
-  settings: { marksPerPoint?: number | null; totalPoints?: number | null; initialAccumulatedMarks?: number | null; gradingScale?: GradeRule[] },
+  settings: {
+    marksPerPoint?: number | null;
+    totalPoints?: number | null;
+    initialAccumulatedMarks?: number | null;
+    bonusPoints?: BonusPointEntry[];
+    gradingScale?: GradeRule[];
+  },
   subjects: Subject[],
   opts?: { years?: number[]; semesters?: number[] }
 ): PointsSummary | null {
@@ -214,7 +232,11 @@ export function getPointsSummary(
   // التراكمي = درجات كل المواد (بدون فلتر) + الدرجات السابقة المجمعة.
   const accumulatedMarks = calculateAccumulatedMarks(subjects, scale) + (Number.isFinite(previousMarks) ? previousMarks : 0);
 
-  const points = accumulatedMarks / marksPerPoint;
+  const bonusEntries = Array.isArray(settings?.bonusPoints) ? settings.bonusPoints : [];
+  const bonusPointsTotal = bonusEntries.reduce((acc, entry) => acc + (Number(entry?.points) || 0), 0);
+
+  const marksPoints = accumulatedMarks / marksPerPoint;
+  const points = marksPoints + bonusPointsTotal;
   const termPoints = termMarks / marksPerPoint;
 
   return {
@@ -222,6 +244,9 @@ export function getPointsSummary(
     totalPoints,
     previousMarks: previousMarks || 0,
     accumulatedMarks,
+    marksPoints,
+    bonusPoints: bonusPointsTotal,
+    bonusCount: bonusEntries.length,
     points,
     remainingPoints: totalPoints > 0 ? Math.max(0, totalPoints - points) : 0,
     percentOfTotal: totalPoints > 0 ? (points / totalPoints) * 100 : 0,
