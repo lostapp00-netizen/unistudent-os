@@ -437,6 +437,35 @@ function buildUniversityScalarsPayload(partialData: Partial<UniversityDatabase>)
   return payload;
 }
 
+/**
+ * Pull the offending column name out of a PostgREST / Postgres "missing column"
+ * error, but only when that column is actually present in the payload we sent —
+ * so a retry can drop exactly the field the database does not know yet.
+ *
+ * Handles the shapes seen in practice:
+ *   Could not find the 'grading_system' column of 'settings' in the schema cache
+ *   column "grading_system" of relation "settings" does not exist
+ *   column settings.grading_system does not exist
+ */
+function extractMissingColumnName(message: string, payload: Record<string, any>): string | null {
+  if (!message) return null;
+  const patterns = [
+    /'([a-z0-9_]+)'\s+column/i,
+    /column\s+"([a-z0-9_]+)"/i,
+    /column\s+(?:[\w]+\.)?([a-z0-9_]+)\s+does not exist/i,
+    /'([a-z0-9_]+)'/
+  ];
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    const candidate = match?.[1];
+    if (candidate && Object.prototype.hasOwnProperty.call(payload, candidate)) return candidate;
+  }
+  return null;
+}
+
+/** Last settings row read from Supabase, per user — see upsertSettings(). */
+const lastRemoteSettingsRow = new Map<string, any>();
+
 function isMissingPatchRpcError(error: any): boolean {
   if (!error) return false;
   const code = String(error.code || '');
@@ -466,6 +495,9 @@ export const db = {
       const { data, error } = await supabase.from('settings').select('*').eq('user_id', userId).maybeSingle();
       if (error && error.code !== 'PGRST116') console.warn('Notice fetching settings from Supabase:', error);
       if (data) remoteData = data;
+      // Remembered so a later PARTIAL settings write can fall back to the values
+      // the server already has instead of silently resetting them.
+      if (data) lastRemoteSettingsRow.set(userId, data);
     } catch (e) {
       console.warn('Network / fetch exception in getSettings:', e);
     }
@@ -541,6 +573,52 @@ export const db = {
     try {
       const existingRaw = localStorage.getItem(`unistudent_settings_${userId}`);
       const existingObj = existingRaw ? JSON.parse(existingRaw) : {};
+
+      // A partial write (theme / email / a single flag) must not lose values it
+      // was not told about — especially on a device whose local cache is empty
+      // (fresh login), where the server copy is the only remaining source.
+      const remoteObj = lastRemoteSettingsRow.get(userId) || {};
+      const remoteMeta = Array.isArray(remoteObj.grading_scale)
+        ? remoteObj.grading_scale.find((g: any) => g && g.id === '__student_spec_meta__')
+        : null;
+
+      const resolveGradingSystem = (): 'gpa' | 'points' => {
+        if ('gradingSystem' in settings) {
+          return settings.gradingSystem === 'points' ? 'points' : 'gpa';
+        }
+        const candidates = [existingObj.gradingSystem, remoteMeta?.gradingSystem, remoteObj.grading_system];
+        for (const value of candidates) {
+          if (value === 'points' || value === 'gpa') return value;
+        }
+        return 'gpa';
+      };
+      const resolveNumberOrNull = (
+        key: 'marksPerPoint' | 'totalPoints' | 'initialAccumulatedMarks',
+        remoteColumn: string,
+        metaKey: string,
+        allowZero: boolean
+      ): number | null => {
+        // An explicit value (including an explicit null = "clear it") wins.
+        if (key in settings) {
+          const raw = (settings as any)[key];
+          if (raw == null || raw === '') return null;
+          const num = Number(raw);
+          return (Number.isFinite(num) && (allowZero ? num >= 0 : num > 0)) ? num : null;
+        }
+        const candidates = [(existingObj as any)[key], (remoteMeta as any)?.[metaKey], (remoteObj as any)[remoteColumn]];
+        for (const value of candidates) {
+          if (value == null || value === '') continue;
+          const num = Number(value);
+          if (Number.isFinite(num) && (allowZero ? num >= 0 : num > 0)) return num;
+        }
+        return null;
+      };
+
+      const resolvedGradingSystem = resolveGradingSystem();
+      const resolvedMarksPerPoint = resolveNumberOrNull('marksPerPoint', 'marks_per_point', 'marksPerPoint', false);
+      const resolvedTotalPoints = resolveNumberOrNull('totalPoints', 'total_points', 'totalPoints', false);
+      const resolvedInitialMarks = resolveNumberOrNull('initialAccumulatedMarks', 'initial_accumulated_marks', 'initialAccumulatedMarks', true);
+
       localStorage.setItem(`unistudent_settings_${userId}`, JSON.stringify({
         ...existingObj,
         ...settings,
@@ -553,10 +631,10 @@ export const db = {
         specializationStartSemester: 'specializationStartSemester' in settings ? settings.specializationStartSemester : existingObj.specializationStartSemester,
         specializationDatabaseId: 'specializationDatabaseId' in settings ? settings.specializationDatabaseId : existingObj.specializationDatabaseId,
         alternatingLectures: 'alternatingLectures' in settings ? (settings.alternatingLectures || []) : (existingObj.alternatingLectures || []),
-        gradingSystem: 'gradingSystem' in settings ? settings.gradingSystem : (existingObj.gradingSystem || 'gpa'),
-        marksPerPoint: 'marksPerPoint' in settings ? settings.marksPerPoint : existingObj.marksPerPoint,
-        totalPoints: 'totalPoints' in settings ? settings.totalPoints : existingObj.totalPoints,
-        initialAccumulatedMarks: 'initialAccumulatedMarks' in settings ? settings.initialAccumulatedMarks : existingObj.initialAccumulatedMarks
+        gradingSystem: resolvedGradingSystem,
+        marksPerPoint: resolvedMarksPerPoint,
+        totalPoints: resolvedTotalPoints,
+        initialAccumulatedMarks: resolvedInitialMarks
       }));
 
       // Embed student specialization & database metadata inside grading_scale JSONB as a dual-layer backup
@@ -570,15 +648,26 @@ export const db = {
       const curStartSem = 'specializationStartSemester' in settings ? settings.specializationStartSemester : existingObj.specializationStartSemester;
       const curSpecDbId = 'specializationDatabaseId' in settings ? settings.specializationDatabaseId : existingObj.specializationDatabaseId;
       const curUniDbId = 'universityDatabaseId' in settings ? settings.universityDatabaseId : existingObj.universityDatabaseId;
+      // نظام الحساب بقى جزء من صف الميتا كمان: لو عمود grading_system لسه مش
+      // منفَّذ (أو الـ retry شاله)، القيمة تفضل محفوظة على السيرفر وتتزامن بين
+      // الأجهزة بدل ما ترجع GPA من قيمة العمود الافتراضية.
+      const curGradingSystem = resolvedGradingSystem;
+      const curMarksPerPoint = resolvedMarksPerPoint;
+      const curTotalPoints = resolvedTotalPoints;
+      const curInitialMarks = resolvedInitialMarks;
 
-      if (curUniDbId || curSpec || curStartYr || curStartSem || curSpecDbId) {
+      if (curUniDbId || curSpec || curStartYr || curStartSem || curSpecDbId || curGradingSystem) {
         scale.push({
           id: '__student_spec_meta__',
           specialization: curSpec || null,
           specializationStartYear: curStartYr || null,
           specializationStartSemester: curStartSem || null,
           specializationDatabaseId: curSpecDbId || null,
-          universityDatabaseId: curUniDbId || null
+          universityDatabaseId: curUniDbId || null,
+          gradingSystem: curGradingSystem,
+          marksPerPoint: (curMarksPerPoint != null && Number(curMarksPerPoint) > 0) ? Number(curMarksPerPoint) : null,
+          totalPoints: (curTotalPoints != null && Number(curTotalPoints) > 0) ? Number(curTotalPoints) : null,
+          initialAccumulatedMarks: (curInitialMarks != null && Number(curInitialMarks) >= 0) ? Number(curInitialMarks) : null
         } as any);
       }
 
@@ -594,8 +683,25 @@ export const db = {
     } catch {}
 
     let { error } = await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
+
+    // A single missing optional column rejects the WHOLE payload, so retry by
+    // removing only the offending column — dropping every optional field at once
+    // is what silently kept students on the GPA system whenever one later
+    // migration (e.g. alternating_lectures) was still pending, even though the
+    // grading-system columns themselves were already deployed.
+    let retryGuard = 0;
+    while (error && retryGuard < 6) {
+      const missing = extractMissingColumnName(String(error.message || ''), payload);
+      if (!missing) break;
+      delete payload[missing];
+      retryGuard++;
+      const targeted = await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
+      error = targeted.error;
+    }
+
     if (error) {
-      // If error is due to missing columns in Supabase, retry without new columns but keep in localStorage
+      // Still failing: legacy fallback — strip every optional column so at least
+      // the core settings reach the database.
       if (error.message && (error.message.includes('column') || error.message.includes('does not exist'))) {
         delete payload.initial_cumulative_gpa;
         delete payload.initial_completed_credit_hours;
@@ -4358,21 +4464,49 @@ function mapSettingsFromDB(row: any): UserSettings {
     alternatingLectures: Array.isArray(row.alternating_lectures)
       ? row.alternating_lectures
       : (localExtra.alternatingLectures || []),
-    // نظام الحساب: the column wins once the migration ran; until then the local
-    // copy keeps the student's choice and their points configuration.
-    gradingSystem: (row.grading_system === 'points' || row.grading_system === 'gpa')
-      ? row.grading_system
-      : (localExtra.gradingSystem || 'gpa'),
-    marksPerPoint: (row.marks_per_point != null && Number(row.marks_per_point) > 0)
-      ? Number(row.marks_per_point)
-      : (localExtra.marksPerPoint != null && Number(localExtra.marksPerPoint) > 0 ? Number(localExtra.marksPerPoint) : null),
-    totalPoints: (row.total_points != null && Number(row.total_points) > 0)
-      ? Number(row.total_points)
-      : (localExtra.totalPoints != null && Number(localExtra.totalPoints) > 0 ? Number(localExtra.totalPoints) : null),
-    initialAccumulatedMarks: (row.initial_accumulated_marks != null && Number(row.initial_accumulated_marks) >= 0)
-      ? Number(row.initial_accumulated_marks)
-      : (localExtra.initialAccumulatedMarks != null && Number(localExtra.initialAccumulatedMarks) >= 0 ? Number(localExtra.initialAccumulatedMarks) : null)
+    // نظام الحساب — ترتيب الأولوية مقصود:
+    //   1. صف الميتا جوه grading_scale (بيتكتب مع كل حفظ، فلو فيه القيمة فهي الأحدث).
+    //   2. الكاش المحلي: لو الميتا لسه مفيهاش القيمة (حفظ من نسخة أقدم) والعمود
+    //      جايب القيمة الافتراضية من الـ migration، فالقيمة المحلية هي الحقيقية.
+    //   3. العمود، وأخيراً GPA.
+    // من غير الترتيب ده، عمود grading_system اللي اتملى بـ DEFAULT 'gpa' كان
+    // بيرجّع كل طالب اختار نظام النقط لـ GPA بعد أول refresh.
+    gradingSystem: (() => {
+      if (specMeta?.gradingSystem === 'points' || specMeta?.gradingSystem === 'gpa') return specMeta.gradingSystem;
+      if (localExtra.gradingSystem === 'points' || localExtra.gradingSystem === 'gpa') return localExtra.gradingSystem;
+      if (row.grading_system === 'points' || row.grading_system === 'gpa') return row.grading_system;
+      return 'gpa';
+    })(),
+    marksPerPoint: pickPointsNumber(specMeta, 'marksPerPoint', row.marks_per_point, localExtra.marksPerPoint, false),
+    totalPoints: pickPointsNumber(specMeta, 'totalPoints', row.total_points, localExtra.totalPoints, false),
+    initialAccumulatedMarks: pickPointsNumber(specMeta, 'initialAccumulatedMarks', row.initial_accumulated_marks, localExtra.initialAccumulatedMarks, true)
   };
+}
+
+/**
+ * A points-config number with the same precedence as `gradingSystem`:
+ * meta row → local cache → column. An explicit `null` in the meta row is a real
+ * value ("cleared"), not a missing one, so it stops the search.
+ */
+function pickPointsNumber(
+  metaRow: any,
+  metaKey: string,
+  columnValue: any,
+  localValue: any,
+  allowZero: boolean
+): number | null {
+  const isValid = (v: any) => {
+    if (v == null || v === '') return false;
+    const n = Number(v);
+    return Number.isFinite(n) && (allowZero ? n >= 0 : n > 0);
+  };
+
+  if (metaRow && metaKey in metaRow) {
+    return isValid(metaRow[metaKey]) ? Number(metaRow[metaKey]) : null;
+  }
+  if (isValid(localValue)) return Number(localValue);
+  if (isValid(columnValue)) return Number(columnValue);
+  return null;
 }
 
 function mapSubjectFromDB(row: any): Subject {
