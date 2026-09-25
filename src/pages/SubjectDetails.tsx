@@ -86,6 +86,11 @@ export function SubjectDetails() {
   
   const gradeInfo = calculateSubjectGrade(subject, settings.gradingScale);
 
+  // نظام الحساب: في نظام النقط بنعرض نقط المادة بدل الساعات وبدل نقاط الـ GPA.
+  const isPoints = settings.gradingSystem === 'points';
+  const marksPerPoint = Number(settings.marksPerPoint || 0);
+  const pointsPerSubject = gradeInfo && marksPerPoint > 0 ? gradeInfo.totalAchieved / marksPerPoint : null;
+
   const handleAddDistribution = () => {
     if (!newDistName.trim()) {
       alert(isRtl ? 'يرجى إدخال اسم بند التقييم.' : 'Please enter item name.');
@@ -164,7 +169,7 @@ export function SubjectDetails() {
       alert(isRtl ? 'يرجى إدخال اسم المادة وكود المادة.' : 'Please enter subject name and code.');
       return;
     }
-    if (editForm.creditHours === '' || isNaN(Number(editForm.creditHours)) || Number(editForm.creditHours) <= 0) {
+    if (!isPoints && (editForm.creditHours === '' || isNaN(Number(editForm.creditHours)) || Number(editForm.creditHours) <= 0)) {
       alert(isRtl ? 'يرجى إدخال عدد الساعات المعتمدة بشكل صحيح (أكبر من 0).' : 'Please enter valid credit hours.');
       return;
     }
@@ -335,9 +340,21 @@ export function SubjectDetails() {
               <span className="bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-bold px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-900/50">
                 {subject.code}
               </span>
-              <span>الساعات: <strong className="text-zinc-700 dark:text-zinc-300">{subject.creditHours}</strong></span>
-              <span className="text-zinc-300 dark:text-zinc-700 hidden sm:inline">•</span>
+              {!isPoints && (
+                <>
+                  <span>الساعات: <strong className="text-zinc-700 dark:text-zinc-300">{subject.creditHours}</strong></span>
+                  <span className="text-zinc-300 dark:text-zinc-700 hidden sm:inline">•</span>
+                </>
+              )}
               <span>الدرجة الكلية: <strong className="text-zinc-700 dark:text-zinc-300">{subject.totalMarks}</strong></span>
+              {isPoints && pointsPerSubject !== null && (
+                <>
+                  <span className="text-zinc-300 dark:text-zinc-700 hidden sm:inline">•</span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                    النقط: {pointsPerSubject.toFixed(2)}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -348,7 +365,9 @@ export function SubjectDetails() {
               onClick={() => updateSubject(subject.id, { includeInGpa: subject.includeInGpa === false ? true : false })}
               className={`px-3 md:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${subject.includeInGpa !== false ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
             >
-              {isRtl ? (subject.includeInGpa !== false ? 'متضمن في المعدل' : 'مستبعد من المعدل') : (subject.includeInGpa !== false ? 'Included in GPA' : 'Excluded from GPA')}
+              {isRtl
+                ? (subject.includeInGpa !== false ? (isPoints ? 'متضمن في الحساب' : 'متضمن في المعدل') : (isPoints ? 'مستبعد من الحساب' : 'مستبعد من المعدل'))
+                : (subject.includeInGpa !== false ? (isPoints ? 'Included in record' : 'Included in GPA') : (isPoints ? 'Excluded from record' : 'Excluded from GPA'))}
             </button>
             <div className="w-px bg-zinc-200 dark:bg-zinc-700 mx-0.5 my-1.5"></div>
             <button 
@@ -755,18 +774,22 @@ export function SubjectDetails() {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">{t('credit_hours')}</label>
-                  <input 
-                    type="number" 
-                    min="1" 
-                    value={editForm.creditHours === '' ? '' : editForm.creditHours} 
-                    onChange={e => setEditForm({...editForm, creditHours: e.target.value === '' ? '' : Number(e.target.value)})} 
-                    className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">{t('total_marks')}</label>
+                {!isPoints && (
+                  <div>
+                    <label className="block text-sm font-medium mb-1">{t('credit_hours')}</label>
+                    <input 
+                      type="number" 
+                      min="1" 
+                      value={editForm.creditHours === '' ? '' : editForm.creditHours} 
+                      onChange={e => setEditForm({...editForm, creditHours: e.target.value === '' ? '' : Number(e.target.value)})} 
+                      className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
+                    />
+                  </div>
+                )}
+                <div className={isPoints ? 'col-span-2' : ''}>
+                  <label className="block text-sm font-medium mb-1">
+                    {isPoints ? (isRtl ? 'الدرجة الكلية في الكلية' : 'Total marks in college') : t('total_marks')}
+                  </label>
                   <input 
                     type="number" 
                     min="1" 

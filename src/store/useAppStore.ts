@@ -932,6 +932,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       const specStartYr = Number(specDb?.specializationStartYear || mainCollegeDb.specializationStartYear || 2);
       const specStartSem = Number(specDb?.specializationStartSemester || mainCollegeDb.specializationStartSemester || 1);
 
+      // نظام الحساب المعتمد للجامعة/الكلية: التخصص أولاً (لو له نظام محدَّد)،
+      // وبعده الكلية العامة. لو القاعدة مش محدِّدة نظام، بنسيب نظام الطالب زي ما هو.
+      const systemSource = (specDb?.gradingSystem ? specDb : null) || (mainCollegeDb.gradingSystem ? mainCollegeDb : null);
+      const dbGradingSystem = systemSource?.gradingSystem === 'points' || systemSource?.gradingSystem === 'gpa'
+        ? systemSource.gradingSystem
+        : undefined;
+
       const updatedSettings: Partial<UserSettings> = {
         university: chosenUni,
         college: chosenCollege,
@@ -943,6 +950,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         specializationStartYear: specStartYr,
         specializationStartSemester: specStartSem,
       };
+
+      if (dbGradingSystem) {
+        updatedSettings.gradingSystem = dbGradingSystem;
+        // قيمة النقطة والتوتال بتيجي مع القاعدة لما تكون بنظام النقط.
+        if (dbGradingSystem === 'points') {
+          const dbMarksPerPoint = Number(systemSource?.marksPerPoint || 0);
+          const dbTotalPoints = Number(systemSource?.totalPoints || 0);
+          if (dbMarksPerPoint > 0) updatedSettings.marksPerPoint = dbMarksPerPoint;
+          if (dbTotalPoints > 0) updatedSettings.totalPoints = dbTotalPoints;
+        }
+      }
 
       if (specDb) {
         updatedSettings.specialization = specDb.specializationNameAr || specDb.specializationNameEn || '';

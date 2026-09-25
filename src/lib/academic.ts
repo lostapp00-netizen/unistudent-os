@@ -32,27 +32,7 @@ export function calculateSubjectGrade(subject: Subject, gradingScale: GradeRule[
   if (!hasAnyAchievement) return null;
 
   const percentage = (totalAchieved / subject.totalMarks) * 100;
-  
-  // Find grade by percentage (descending order sort to match highest first)
-  const sortedScale = [...cleanScale].sort((a, b) => b.minPercentage - a.minPercentage);
-  
-  const grade = sortedScale.find((g, idx) => {
-    if (percentage < g.minPercentage) return false;
-    
-    // Determine operator for upper bound
-    const isMaxInclusive = g.maxOperator 
-      ? g.maxOperator === '<=' 
-      : (g.maxPercentage >= 100 || idx === 0);
-      
-    if (isMaxInclusive) {
-      return percentage <= g.maxPercentage;
-    } else {
-      return percentage < g.maxPercentage;
-    }
-  });
-  
-  // If not found in scale with strict upper bounds, fallback to finding by minPercentage or lowest grade
-  const matchedGrade = grade || sortedScale.find(g => percentage >= g.minPercentage) || sortedScale[sortedScale.length - 1];
+  const matchedGrade = matchGradeRuleByPercentage(percentage, cleanScale);
 
   return {
     totalAchieved,
@@ -60,6 +40,206 @@ export function calculateSubjectGrade(subject: Subject, gradingScale: GradeRule[
     letter: matchedGrade?.letter || 'F',
     points: typeof matchedGrade?.points === 'number' ? matchedGrade.points : 0
   };
+}
+
+/**
+ * The grade rule a percentage falls into. Shared by the per-subject grade and
+ * the overall (تقدير) calculation so both always pick the same rule.
+ */
+export function matchGradeRuleByPercentage(percentage: number, gradingScale: GradeRule[]): GradeRule | undefined {
+  const cleanScale = sanitizeGradingScale(gradingScale);
+  if (cleanScale.length === 0) return undefined;
+
+  const sortedScale = [...cleanScale].sort((a, b) => b.minPercentage - a.minPercentage);
+
+  const grade = sortedScale.find((g, idx) => {
+    if (percentage < g.minPercentage) return false;
+
+    // Determine operator for upper bound
+    const isMaxInclusive = g.maxOperator
+      ? g.maxOperator === '<='
+      : (g.maxPercentage >= 100 || idx === 0);
+
+    return isMaxInclusive ? percentage <= g.maxPercentage : percentage < g.maxPercentage;
+  });
+
+  // If not found in scale with strict upper bounds, fallback to finding by minPercentage or lowest grade
+  return grade || sortedScale.find(g => percentage >= g.minPercentage) || sortedScale[sortedScale.length - 1];
+}
+
+/**
+ * A subject's grade from its entered marks, falling back to its manual final
+ * letter when no marks were entered at all. Used by every automated calculation
+ * (overall grade, points, warnings) so they never disagree with each other.
+ */
+export function resolveSubjectGrade(subject: Subject, gradingScale: GradeRule[]) {
+  const scale = sanitizeGradingScale(gradingScale);
+  const fromMarks = calculateSubjectGrade(subject, scale);
+  if (fromMarks) return fromMarks;
+
+  if (subject.finalGradeLetter) {
+    const rule = getMatchingGradeRuleByLetter(subject.finalGradeLetter, scale);
+    if (rule) {
+      return {
+        totalAchieved: Number(((rule.minPercentage / 100) * (Number(subject.totalMarks) || 0)).toFixed(2)),
+        percentage: rule.minPercentage,
+        letter: rule.letter,
+        points: rule.points
+      };
+    }
+  }
+  return null;
+}
+
+/** Subjects honouring an optional year/semester filter. */
+export function filterBySemester<T extends { yearIndex: number; semesterIndex: number }>(
+  list: T[],
+  opts?: { years?: number[]; semesters?: number[] }
+): T[] {
+  if (!opts) return list;
+  const years = opts.years || [];
+  const semesters = opts.semesters || [];
+  return list.filter(s =>
+    (years.length === 0 || years.includes(Number(s.yearIndex))) &&
+    (semesters.length === 0 || semesters.includes(Number(s.semesterIndex)))
+  );
+}
+
+/**
+ * The overall التقدير (تقدير عام) across the given subjects: symbol, Arabic/
+ * English name and the percentage it was derived from. This is what replaces the
+ * GPA badge in the points system, and sits next to it in the GPA system.
+ *
+ * Subjects are weighted by their total marks, so a 200-mark course counts twice
+ * a 100-mark one — the same weighting the percentage of the whole record uses.
+ */
+export function calculateOverallGrade(
+  subjects: Subject[],
+  gradingScale: GradeRule[],
+  opts?: { years?: number[]; semesters?: number[] }
+): {
+  totalAchieved: number;
+  totalMarks: number;
+  percentage: number;
+  letter: string;
+  nameAr: string;
+  nameEn: string;
+  rule?: GradeRule;
+} | null {
+  const list = filterBySemester(subjects || [], opts);
+  let weightedMarks = 0;
+  let totalMarks = 0;
+
+  list.forEach(subject => {
+    if (subject.includeInGpa === false) return;
+    const grade = resolveSubjectGrade(subject, gradingScale);
+    if (!grade) return;
+    const marks = Number(subject.totalMarks) || 0;
+    if (marks <= 0) return;
+    weightedMarks += (grade.percentage / 100) * marks;
+    totalMarks += marks;
+  });
+
+  if (totalMarks <= 0) return null;
+
+  const percentage = (weightedMarks / totalMarks) * 100;
+  const rule = matchGradeRuleByPercentage(percentage, gradingScale);
+
+  return {
+    totalAchieved: Number(weightedMarks.toFixed(2)),
+    totalMarks,
+    percentage,
+    letter: rule?.letter || 'F',
+    nameAr: rule?.nameAr || '',
+    nameEn: rule?.nameEn || '',
+    rule
+  };
+}
+
+/** Marks a subject contributes to the record (0 when it has no grade yet). */
+export function subjectMarksContribution(subject: Subject, gradingScale: GradeRule[]): number {
+  const grade = resolveSubjectGrade(subject, gradingScale);
+  return grade ? grade.totalAchieved : 0;
+}
+
+/** Marks collected across the given subjects (all of them when no filter). */
+export function calculateAccumulatedMarks(
+  subjects: Subject[],
+  gradingScale: GradeRule[],
+  opts?: { years?: number[]; semesters?: number[] }
+): number {
+  return filterBySemester(subjects || [], opts).reduce(
+    (acc, subject) => acc + subjectMarksContribution(subject, gradingScale),
+    0
+  );
+}
+
+export type PointsSummary = {
+  /** Every how many marks one point is earned. */
+  marksPerPoint: number;
+  /** The full points total the student is heading towards. */
+  totalPoints: number;
+  /** Marks carried over from before using the app. */
+  previousMarks: number;
+  /** All collected marks, previous ones included. */
+  accumulatedMarks: number;
+  /** accumulatedMarks ÷ marksPerPoint — النقط المجمعة. */
+  points: number;
+  /** What is left of the total (0 when it was already passed). */
+  remainingPoints: number;
+  /** How much of the total has been collected, in percent. */
+  percentOfTotal: number;
+  /** Marks collected inside the given (current) filter only. */
+  termMarks: number;
+  /** النقط الفصلية — the filtered part of the points. */
+  termPoints: number;
+};
+
+/**
+ * The points-system equivalent of calculateGPA: how many points the student has
+ * collected so far, out of the configured total, and how many are left.
+ */
+export function getPointsSummary(
+  settings: { marksPerPoint?: number | null; totalPoints?: number | null; initialAccumulatedMarks?: number | null; gradingScale?: GradeRule[] },
+  subjects: Subject[],
+  opts?: { years?: number[]; semesters?: number[] }
+): PointsSummary | null {
+  const marksPerPoint = Number(settings?.marksPerPoint || 0);
+  const totalPoints = Number(settings?.totalPoints || 0);
+  if (!Number.isFinite(marksPerPoint) || marksPerPoint <= 0) return null;
+
+  const scale = sanitizeGradingScale(settings?.gradingScale);
+  const previousMarks = Number(settings?.initialAccumulatedMarks || 0);
+  const termMarks = calculateAccumulatedMarks(subjects, scale, opts);
+  // التراكمي = درجات كل المواد (بدون فلتر) + الدرجات السابقة المجمعة.
+  const accumulatedMarks = calculateAccumulatedMarks(subjects, scale) + (Number.isFinite(previousMarks) ? previousMarks : 0);
+
+  const points = accumulatedMarks / marksPerPoint;
+  const termPoints = termMarks / marksPerPoint;
+
+  return {
+    marksPerPoint,
+    totalPoints,
+    previousMarks: previousMarks || 0,
+    accumulatedMarks,
+    points,
+    remainingPoints: totalPoints > 0 ? Math.max(0, totalPoints - points) : 0,
+    percentOfTotal: totalPoints > 0 ? (points / totalPoints) * 100 : 0,
+    termMarks,
+    termPoints
+  };
+}
+
+/** Is the subject at or below the warning threshold, judged by percentage? */
+export function isSubjectAtPercentageRisk(
+  subject: Subject,
+  gradingScale: GradeRule[],
+  thresholdMinPercentage: number
+): boolean {
+  if (subject.status === 'finished') return false; // Finished / locked subjects cannot be improved
+  const grade = resolveSubjectGrade(subject, gradingScale);
+  if (!grade) return false;
+  return grade.percentage <= thresholdMinPercentage;
 }
 
 export function calculateGPA(
@@ -201,6 +381,21 @@ export function isSubjectAtWarningRisk(subject: Subject, scale: GradeRule[], thr
   }
   if (!gradeObj) return false;
   return gradeObj.points <= thresholdPoints;
+}
+
+/**
+ * The warning threshold expressed as a percentage, for the points system where
+ * no grade points exist. Falls back to the threshold letter's floor, then to 60%.
+ */
+export function getWarningThresholdPercentage(settings: {
+  warningGradeLetter?: string;
+  warningGpaPoints?: number;
+  gradingScale?: GradeRule[];
+}): number {
+  const threshold = getWarningThreshold(settings);
+  const rule = threshold.rule || getMatchingGradeRuleByLetter(threshold.letter, settings.gradingScale || []);
+  if (rule && Number.isFinite(Number(rule.minPercentage))) return Number(rule.minPercentage);
+  return 60;
 }
 
 export function calculateGraduationEstimate(

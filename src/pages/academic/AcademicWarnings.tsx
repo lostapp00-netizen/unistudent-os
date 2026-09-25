@@ -5,9 +5,11 @@ import { useAppStore } from '../../store/useAppStore';
 import { 
   calculateSubjectGrade, 
   getWarningThreshold, 
+  getWarningThresholdPercentage,
   getMatchingGradeRuleByLetter, 
   getMatchingGradeRuleByPoints, 
-  isSubjectAtWarningRisk 
+  isSubjectAtWarningRisk,
+  isSubjectAtPercentageRisk
 } from '../../lib/academic';
 import { 
   AlertTriangle, 
@@ -43,6 +45,9 @@ export function AcademicWarnings() {
   const threshold = getWarningThreshold(settings);
   const currentLetter = threshold.letter;
   const currentPoints = Number(threshold.points || 0);
+  // نظام الحساب: في نظام النقط المقارنة بالنسبة المئوية بدل نقاط الـ GPA.
+  const isPoints = settings.gradingSystem === 'points';
+  const currentPercentage = getWarningThresholdPercentage(settings);
 
   // Temp state while editing in modal
   const [tempLetter, setTempLetter] = useState(currentLetter);
@@ -62,7 +67,9 @@ export function AcademicWarnings() {
 
   // Warning subjects using the configured threshold
   const warningSubjects = scopedSubjects.filter(s => 
-    isSubjectAtWarningRisk(s, settings.gradingScale, currentPoints)
+    isPoints
+      ? isSubjectAtPercentageRisk(s, settings.gradingScale, currentPercentage)
+      : isSubjectAtWarningRisk(s, settings.gradingScale, currentPoints)
   );
 
   const openModal = () => {
@@ -191,13 +198,17 @@ export function AcademicWarnings() {
                 {isAr ? 'حد الإنذار الأكاديمي المعتمد' : 'Active Warning Threshold'}
               </h2>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40">
-                {currentLetter} ({currentPoints.toFixed(2)} GPA)
+                {currentLetter} ({isPoints ? `${currentPercentage}%` : `${currentPoints.toFixed(2)} GPA`})
               </span>
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-              {isAr 
-                ? `أي مادة يقل تقديرها عن (${currentLetter}) أو يقل معدلها عن (${currentPoints.toFixed(2)} نقاط) تعتبر في مرحلة الإنذار.`
-                : `Any subject with grade below (${currentLetter}) or GPA below (${currentPoints.toFixed(2)}) is flagged for risk.`}
+              {isPoints
+                ? (isAr
+                    ? `أي مادة نسبتها المئوية أقل من أو تساوي (${currentPercentage}%) — يعني تقدير (${currentLetter}) أو أقل — تعتبر في مرحلة الإنذار. مفيش حساب GPA في نظام النقط.`
+                    : `Any subject with a percentage at or below (${currentPercentage}%) — grade (${currentLetter}) or lower — is flagged for risk.`)
+                : (isAr 
+                    ? `أي مادة يقل تقديرها عن (${currentLetter}) أو يقل معدلها عن (${currentPoints.toFixed(2)} نقاط) تعتبر في مرحلة الإنذار.`
+                    : `Any subject with grade below (${currentLetter}) or GPA below (${currentPoints.toFixed(2)}) is flagged for risk.`)}
             </p>
           </div>
         </div>
@@ -293,7 +304,7 @@ export function AcademicWarnings() {
                         >
                           <span>{grade.letter}</span>
                           <span className={`text-[10px] ${isSelected ? 'text-white' : 'text-zinc-400'}`}>
-                            ({Number(grade.points || 0).toFixed(1)})
+                            ({isPoints ? `${grade.minPercentage}%` : Number(grade.points || 0).toFixed(1)})
                           </span>
                         </button>
                       );
@@ -302,14 +313,17 @@ export function AcademicWarnings() {
                 </div>
 
                 <div className="mt-3 pt-2 border-t border-zinc-200 dark:border-zinc-700/50 flex items-center justify-between text-xs text-zinc-500">
-                  <span>{isAr ? 'النقاط المقابلة:' : 'Equivalent GPA:'}</span>
+                  <span>{isPoints ? (isAr ? 'النسبة المقابلة:' : 'Equivalent percent:') : (isAr ? 'النقاط المقابلة:' : 'Equivalent GPA:')}</span>
                   <span className="font-bold text-amber-600 dark:text-amber-400 text-sm">
-                    {typeof tempPoints === 'number' ? tempPoints.toFixed(2) : (tempPoints || '0.00')} GPA
+                    {isPoints
+                      ? `${currentPercentage}%`
+                      : `${typeof tempPoints === 'number' ? tempPoints.toFixed(2) : (tempPoints || '0.00')} GPA`}
                   </span>
                 </div>
               </div>
 
-              {/* 2. GPA Points */}
+              {/* 2. GPA Points — مخفية في نظام النقط لأن مفيش نقاط GPA */}
+              {!isPoints && (
               <div className="bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 flex flex-col justify-between">
                 <div>
                   <label className="block text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1">
@@ -364,6 +378,7 @@ export function AcademicWarnings() {
                   </span>
                 </div>
               </div>
+              )}
             </div>
 
             {/* Actions */}
@@ -430,12 +445,16 @@ export function AcademicWarnings() {
                 : 'text-emerald-700 dark:text-emerald-400/90'
             }`}>
               {warningSubjects.length > 0
-                ? (isAr 
-                    ? `المواد الموضحة أدناه حققت معدل نقاط أقل من أو يساوي ${currentPoints.toFixed(2)} (${currentLetter}). ركّز على رفع درجات هذه المواد لتفادي تراجع المعدل التراكمي.`
-                    : `The subjects below achieved grade points at or below ${currentPoints.toFixed(2)} (${currentLetter}). Focus on improving these grades to avoid a GPA decrease.`)
+                ? (isPoints
+                    ? (isAr
+                        ? `المواد الموضحة أدناه نسبتها المئوية أقل من أو تساوي ${currentPercentage}% (${currentLetter}). ركّز على رفع درجات هذه المواد.`
+                        : `The subjects below scored at or below ${currentPercentage}% (${currentLetter}). Focus on improving them.`)
+                    : (isAr 
+                        ? `المواد الموضحة أدناه حققت معدل نقاط أقل من أو يساوي ${currentPoints.toFixed(2)} (${currentLetter}). ركّز على رفع درجات هذه المواد لتفادي تراجع المعدل التراكمي.`
+                        : `The subjects below achieved grade points at or below ${currentPoints.toFixed(2)} (${currentLetter}). Focus on improving these grades to avoid a GPA decrease.`))
                 : (isAr
-                    ? `جميع المواد في ${selectedSemesterScope === 'current' ? 'الفصل الحالي' : 'سجلك'} أعلى من حد الإنذار (${currentLetter} / ${currentPoints.toFixed(2)} GPA). واصل هذا الأداء الرائع!`
-                    : `All subjects in ${selectedSemesterScope === 'current' ? 'the current semester' : 'your record'} are above the warning threshold (${currentLetter} / ${currentPoints.toFixed(2)} GPA). Keep it up!`)}
+                    ? `جميع المواد في ${selectedSemesterScope === 'current' ? 'الفصل الحالي' : 'سجلك'} أعلى من حد الإنذار (${currentLetter} / ${isPoints ? `${currentPercentage}%` : `${currentPoints.toFixed(2)} GPA`}). واصل هذا الأداء الرائع!`
+                    : `All subjects in ${selectedSemesterScope === 'current' ? 'the current semester' : 'your record'} are above the warning threshold (${currentLetter}). Keep it up!`)}
             </p>
           </div>
         </div>
@@ -486,7 +505,11 @@ export function AcademicWarnings() {
                       <p className="text-xs text-zinc-500 mt-1 flex items-center gap-1.5 font-medium">
                         <span>{subject.code}</span>
                         <span>•</span>
-                        <span>{subject.creditHours} {isAr ? 'ساعات' : 'Credits'}</span>
+                        <span>
+                          {isPoints
+                            ? `${subject.totalMarks} ${isAr ? 'درجة كلية' : 'total marks'}`
+                            : `${subject.creditHours} ${isAr ? 'ساعات' : 'Credits'}`}
+                        </span>
                         {selectedSemesterScope === 'all' && (
                           <>
                             <span>•</span>
@@ -502,7 +525,7 @@ export function AcademicWarnings() {
                         {subjectLetter}
                       </div>
                       <span className="text-[11px] font-black text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded-lg border border-rose-200 dark:border-rose-900/40">
-                        {subjectPoints.toFixed(2)} GPA
+                        {isPoints ? `${(gradeInfo?.percentage || 0).toFixed(1)}%` : `${subjectPoints.toFixed(2)} GPA`}
                       </span>
                     </div>
                   </div>
@@ -527,7 +550,7 @@ export function AcademicWarnings() {
                     <div className="mt-3 pt-3 border-t border-zinc-200/60 dark:border-zinc-700/60 flex items-center justify-between text-[11px]">
                       <span className="text-zinc-500">{isAr ? 'حد الإنذار:' : 'Warning Threshold:'}</span>
                       <span className="font-bold text-amber-600 dark:text-amber-400">
-                        {currentLetter} ({currentPoints.toFixed(2)} GPA)
+                        {currentLetter} ({isPoints ? `${currentPercentage}%` : `${currentPoints.toFixed(2)} GPA`})
                       </span>
                     </div>
 
@@ -560,8 +583,8 @@ export function AcademicWarnings() {
             </h3>
             <p className="text-zinc-500 max-w-md text-sm leading-relaxed">
               {isAr 
-                ? `عمل رائع! جميع المواد المسجلة حققت تقديرات ومعدلات أعلى من حد الإنذار (${currentLetter} / ${currentPoints.toFixed(2)} GPA).` 
-                : `Great job! All your subjects are currently performing above the warning threshold (${currentLetter} / ${currentPoints.toFixed(2)} GPA).`}
+                ? `عمل رائع! جميع المواد المسجلة أعلى من حد الإنذار (${currentLetter} / ${isPoints ? `${currentPercentage}%` : `${currentPoints.toFixed(2)} GPA`}).` 
+                : `Great job! All your subjects are currently performing above the warning threshold (${currentLetter}).`}
             </p>
           </div>
         )}

@@ -6,9 +6,11 @@ interface Props {
   grade: GradeRule;
   onUpdate: (id: string, updates: Partial<GradeRule>) => void;
   onDelete: (id: string) => void;
+  /** Hide the grade-points column (نظام النقط — لا يوجد GPA). */
+  showPoints?: boolean;
 }
 
-export function GradingScaleRow({ grade, onUpdate, onDelete }: Props) {
+export function GradingScaleRow({ grade, onUpdate, onDelete, showPoints = true }: Props) {
   const [isEditing, setIsEditing] = useState(false);
   const [tempData, setTempData] = useState({ ...grade });
 
@@ -16,10 +18,10 @@ export function GradingScaleRow({ grade, onUpdate, onDelete }: Props) {
     if (
       tempData.minPercentage === ('' as any) ||
       tempData.maxPercentage === ('' as any) ||
-      tempData.points === ('' as any) ||
+      (showPoints && tempData.points === ('' as any)) ||
       isNaN(Number(tempData.minPercentage)) ||
       isNaN(Number(tempData.maxPercentage)) ||
-      isNaN(Number(tempData.points))
+      (showPoints && isNaN(Number(tempData.points)))
     ) {
       alert('يرجى إدخال جميع النسب والنقاط بالأرقام بشكل صحيح (لا يمكن ترك الخانة فارغة).');
       return;
@@ -32,7 +34,7 @@ export function GradingScaleRow({ grade, onUpdate, onDelete }: Props) {
       ...tempData,
       minPercentage: Number(tempData.minPercentage),
       maxPercentage: Number(tempData.maxPercentage),
-      points: Number(tempData.points)
+      points: showPoints ? Number(tempData.points) : Number(grade.points || 0)
     });
     setIsEditing(false);
   };
@@ -97,13 +99,15 @@ export function GradingScaleRow({ grade, onUpdate, onDelete }: Props) {
           </div>
         </td>
         <td className="py-2 px-1">
-          <input 
-            type="number" 
-            step="0.05"
-            value={tempData.points === ('' as any) ? '' : tempData.points}
-            onChange={(e) => setTempData({...tempData, points: e.target.value === '' ? ('' as any) : Number(e.target.value)})}
-            className="w-16 px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-zinc-800 outline-none"
-          />
+          {showPoints ? (
+            <input 
+              type="number" 
+              step="0.05"
+              value={tempData.points === ('' as any) ? '' : tempData.points}
+              onChange={(e) => setTempData({...tempData, points: e.target.value === '' ? ('' as any) : Number(e.target.value)})}
+              className="w-16 px-2 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-zinc-800 outline-none"
+            />
+          ) : null}
         </td>
         <td className="py-2 px-2">
           <div className="flex items-center justify-center gap-1">
@@ -143,7 +147,7 @@ export function GradingScaleRow({ grade, onUpdate, onDelete }: Props) {
           <span className="font-black">{grade.maxPercentage}%</span>
         </span>
       </td>
-      <td className="py-2 px-3 font-bold">{Number(grade.points || 0).toFixed(2)}</td>
+      {showPoints && <td className="py-2 px-3 font-bold">{Number(grade.points || 0).toFixed(2)}</td>}
       <td className="py-2 px-2">
         <div className="flex items-center justify-center gap-1.5">
           <button 

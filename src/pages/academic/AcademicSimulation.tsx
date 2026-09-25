@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
-import { calculateGPA, calculateSubjectGrade } from '../../lib/academic';
-import { ArrowLeft, Calculator, Save, RefreshCw } from 'lucide-react';
+import { calculateGPA, calculateSubjectGrade, calculateOverallGrade, getPointsSummary } from '../../lib/academic';
+import { ArrowLeft, Calculator, Save, RefreshCw, Award } from 'lucide-react';
 import { Subject, GradeRule } from '../../types';
 
 export function AcademicSimulation() {
@@ -49,6 +49,21 @@ export function AcademicSimulation() {
   const simulatedGPA = calculateGPA(simulatedSubjects, settings.gradingScale, currentSemester?.yearIndex, currentSemester?.semesterIndex);
   
   const isAr = settings.language === 'ar';
+  // نظام الحساب: GPA أو النقط. المحاكاة بتعدّل الدرجات وبتوري النتيجة في النظامين
+  // (التقدير بالرمز والاسم والنسبة يظهر دايماً).
+  const gradingSystem = settings.gradingSystem === 'points' ? 'points' : 'gpa';
+
+  // التقدير الناتج عن الدرجات المُحاكاة: نسبة مئوية + رمز + اسم
+  const simulatedGrade = calculateOverallGrade(
+    simulatedSubjects,
+    settings.gradingScale,
+    { years: currentSemester ? [currentSemester.yearIndex] : [], semesters: currentSemester ? [currentSemester.semesterIndex] : [] }
+  );
+  // النقط الناتجة عن المحاكاة (مع إضافة الدرجات السابقة زي ما هي في الحساب الفعلي)
+  const simulatedPoints = getPointsSummary(settings, simulatedSubjects, {
+    years: currentSemester ? [currentSemester.yearIndex] : [],
+    semesters: currentSemester ? [currentSemester.semesterIndex] : []
+  });
 
   return (
     <div className="flex flex-col min-h-full gap-6 pb-8">
@@ -61,22 +76,62 @@ export function AcademicSimulation() {
         </button>
         <div>
           <h1 className="text-3xl font-extrabold flex items-center gap-3">
-            <Calculator className="text-indigo-600" />
-            {isAr ? 'محاكاة المعدل (GPA)' : 'GPA Simulation'}
+            {gradingSystem === 'points' ? <Award className="text-emerald-600" /> : <Calculator className="text-indigo-600" />}
+            {gradingSystem === 'points'
+              ? (isAr ? 'محاكاة التقدير (نظام النقط)' : 'Grade Simulation (Points)')
+              : (isAr ? 'محاكاة المعدل (GPA)' : 'GPA Simulation')}
           </h1>
           <p className="text-zinc-500 mt-1">
-            {isAr ? 'قم بتجربة درجات مختلفة لترى تأثيرها على المعدل التراكمي للفصل الحالي' : 'Experiment with different grades to see their impact on your semester GPA'}
+            {gradingSystem === 'points'
+              ? (isAr
+                  ? 'جرّب درجات مختلفة وشوف هتوصل لأي تقدير بالرمز والاسم والنسبة المئوية، وهتجمع كام نقطة.'
+                  : 'Try different marks to see the grade you would reach — symbol, name, percentage and points.')
+              : (isAr
+                  ? 'قم بتجربة درجات مختلفة لترى تأثيرها على المعدل التراكمي للفصل الحالي ومعها التقدير المتوقع'
+                  : 'Experiment with different grades to see their impact on your semester GPA and the resulting grade')}
           </p>
         </div>
       </header>
 
       <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <div>
-          <p className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-1">
-            {isAr ? 'المعدل المتوقع للفصل' : 'Expected Semester GPA'}
-          </p>
-          <div className="text-5xl font-black text-indigo-600 dark:text-indigo-400">
-            {simulatedGPA > 0 ? simulatedGPA.toFixed(2) : '--'}
+        <div className="flex flex-wrap items-center gap-6">
+          <div>
+            <p className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-1">
+              {gradingSystem === 'points'
+                ? (isAr ? 'النقط المتوقعة (تراكمي)' : 'Expected Points (cumulative)')
+                : (isAr ? 'المعدل المتوقع للفصل' : 'Expected Semester GPA')}
+            </p>
+            <div className={`text-5xl font-black ${gradingSystem === 'points' ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400'}`}>
+              {gradingSystem === 'points'
+                ? (simulatedPoints ? simulatedPoints.points.toFixed(1) : '--')
+                : (simulatedGPA > 0 ? simulatedGPA.toFixed(2) : '--')}
+              {gradingSystem === 'points' && simulatedPoints && simulatedPoints.totalPoints > 0 && (
+                <span className="text-lg font-bold text-zinc-400 ms-2">/ {simulatedPoints.totalPoints}</span>
+              )}
+            </div>
+            {gradingSystem === 'points' && simulatedPoints && (
+              <p className="text-[11px] font-bold text-zinc-500 mt-1">
+                {isAr
+                  ? `${simulatedPoints.accumulatedMarks.toFixed(0)} درجة • المتبقي ${simulatedPoints.remainingPoints.toFixed(1)} نقطة`
+                  : `${simulatedPoints.accumulatedMarks.toFixed(0)} marks • ${simulatedPoints.remainingPoints.toFixed(1)} pts left`}
+              </p>
+            )}
+          </div>
+
+          {/* التقدير المتوقع: الرمز + الاسم + النسبة */}
+          <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 min-w-[190px]">
+            <p className="text-[10px] font-black text-amber-700 dark:text-amber-300 uppercase tracking-wider">
+              {isAr ? 'التقدير المتوقع' : 'Expected Grade'}
+            </p>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-3xl font-black text-amber-600 dark:text-amber-400">{simulatedGrade ? simulatedGrade.letter : '--'}</span>
+              {simulatedGrade && <span className="text-xs font-black text-zinc-500">{simulatedGrade.percentage.toFixed(1)}%</span>}
+            </div>
+            <p className="text-[11px] font-bold text-zinc-600 dark:text-zinc-300 mt-0.5">
+              {simulatedGrade
+                ? (isAr ? simulatedGrade.nameAr : (simulatedGrade.nameEn || simulatedGrade.nameAr))
+                : (isAr ? 'لا توجد درجات بعد' : 'No marks yet')}
+            </p>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
@@ -111,8 +166,22 @@ export function AcademicSimulation() {
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h3 className="font-bold text-lg">{subject.name}</h3>
-                  <p className="text-sm text-zinc-500 flex items-center gap-2">
-                    <span>{subject.creditHours} {isAr ? 'ساعات' : 'Credits'}</span>
+                  <p className="text-sm text-zinc-500 flex items-center gap-2 flex-wrap">
+                    {gradingSystem === 'points' ? (
+                      <>
+                        <span>{gradeInfo ? `${gradeInfo.totalAchieved} / ${subject.totalMarks}` : `0 / ${subject.totalMarks}`} {isAr ? 'درجة' : 'marks'}</span>
+                        {simulatedPoints && simulatedPoints.marksPerPoint > 0 && gradeInfo && (
+                          <>
+                            <span>&bull;</span>
+                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                              {(gradeInfo.totalAchieved / simulatedPoints.marksPerPoint).toFixed(1)} {isAr ? 'نقطة' : 'pts'}
+                            </span>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <span>{subject.creditHours} {isAr ? 'ساعات' : 'Credits'}</span>
+                    )}
                     {isFinished && (
                       <>
                         <span>&bull;</span>

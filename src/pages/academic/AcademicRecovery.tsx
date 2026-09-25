@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
-import { calculateGPA, calculateSubjectGrade } from '../../lib/academic';
+import { calculateGPA, calculateSubjectGrade, resolveSubjectGrade, matchGradeRuleByPercentage, getPointsSummary } from '../../lib/academic';
 import { ArrowLeft, Target, AlertTriangle, TrendingUp, CheckCircle2, Sparkles, Award, BarChart3, HelpCircle } from 'lucide-react';
 import { Subject, GradeRule } from '../../types';
 
@@ -17,6 +17,20 @@ export function AcademicRecovery() {
 
   const isAr = settings.language === 'ar';
   const numTargetGPA = Number(targetGPA);
+
+  // نظام الحساب: في نظام النقط الهدف تقدير (رمز أو نسبة مئوية) مش معدل.
+  const gradingSystem = settings.gradingSystem === 'points' ? 'points' : 'gpa';
+  const isPoints = gradingSystem === 'points';
+  const [targetPercent, setTargetPercent] = useState<string>('80');
+  const [targetLetter, setTargetLetter] = useState<string>('');
+
+  const gradeScale = (settings.gradingScale || []).filter(g => g && !String(g.id || '').startsWith('__'));
+  const sortedScaleByPercent = [...gradeScale].sort((a, b) => b.minPercentage - a.minPercentage);
+  // النسبة المستهدفة: الرقم اللي الطالب كتبه (واختيار الرمز بيملاه تلقائياً).
+  const effectiveTargetPercent = Number(targetPercent);
+  const targetRule = Number.isFinite(effectiveTargetPercent) && gradeScale.length > 0
+    ? matchGradeRuleByPercentage(effectiveTargetPercent, gradeScale)
+    : undefined;
 
   // Active semester subjects
   const semesterSubjects = useMemo(() => {
@@ -259,6 +273,150 @@ export function AcademicRecovery() {
     };
   }, [numTargetGPA, subjects, semesterSubjects, settings, calculationMode, activeCurrentGPA]);
 
+  /**
+   * نظام النقط: الهدف تقدير بالنسبة المئوية (نسبة مكتوبة أو رمز تقدير)، والخطة
+   * بتحسب كام درجة ناقصة في كل مادة عشان توصل للنسبة دي وتوزعها على التقييمات
+   * القابلة للزيادة — بنفس شكل خطة الـ GPA عشان الواجهة تكون واحدة.
+   */
+  const pointsAnalysis = useMemo(() => {
+    if (!isPoints) return null;
+    const targetPercent = effectiveTargetPercent;
+    if (!Number.isFinite(targetPercent) || targetPercent <= 0 || gradeScale.length === 0) return null;
+
+    const sanitized = gradeScale.map(g => ({ ...g, points: Number(g.points || 0), minPercentage: Number(g.minPercentage || 0), maxPercentage: Number(g.maxPercentage || 100) }));
+    const sortedScale = [...sanitized].sort((a, b) => b.minPercentage - a.minPercentage);
+    const lowestGradeRule = sortedScale[sortedScale.length - 1];
+
+    const relevantSubjects = calculationMode === 'cumulative' ? subjects : semesterSubjects;
+    // إجمالي الدرجات في النطاق المختار (المواد المقفلة بتحسب في المقام كمان).
+    const totalMarksAll = relevantSubjects.reduce((acc, s) => acc + (Number(s.totalMarks) || 0), 0);
+    if (totalMarksAll === 0) return { status: 'no_credits' as const };
+
+    const unfinishedSubjects = relevantSubjects.filter(s => s.status !== 'finished');
+
+    let totalAvailableGains = 0;
+    let currentAchievedAll = 0;
+
+    relevantSubjects.forEach(sub => {
+      const grade = resolveSubjectGrade(sub, sanitized);
+      currentAchievedAll += grade?.totalAchieved || 0;
+    });
+
+    // كل مادة ودرجاتها القابلة للزيادة (التقييمات المفتوحة اللي لسه فيها متسع).
+    const subjectRooms = unfinishedSubjects.map(sub => {
+      const grade = resolveSubjectGrade(sub, sanitized);
+      const currentAchieved = grade?.totalAchieved || 0;
+      const totalMarks = Number(sub.totalMarks) || 0;
+      const currentPercentage = totalMarks > 0 ? (currentAchieved / totalMarks) * 100 : 0;
+      const validMutableDists = sub.distributions.filter(d =>
+        d.status === 'current' && ((d.achievedMarks === null || d.achievedMarks === undefined) || d.achievedMarks < d.maxMarks)
+      );
+      const availableGains = validMutableDists.reduce((sum, d) => sum + (d.maxMarks - (d.achievedMarks || 0)), 0);
+      totalAvailableGains += availableGains;
+      return { subject: sub, currentAchieved, totalMarks, currentPercentage, validMutableDists, availableGains };
+    });
+
+    // الدرجات المطلوب جمعها ككل عشان النسبة العامة توصل للهدف، وبتتوزع على
+    // المواد بتناسب المساحة المتاحة في كل مادة (نفس أسلوب توزيع التقييمات).
+    const requiredMarks = Math.max(0, Math.ceil(((targetPercent / 100) * totalMarksAll) - currentAchievedAll));
+    const distributableMarks = Math.min(requiredMarks, totalAvailableGains);
+
+    const allocations = subjectRooms.map(r =>
+      totalAvailableGains > 0
+        ? Math.min(r.availableGains, Math.floor(distributableMarks * (r.availableGains / totalAvailableGains)))
+        : 0
+    );
+    // توزيع الباقي من التقريب على المواد اللي لسه فيها مساحة.
+    let allocated = allocations.reduce((a, b) => a + b, 0);
+    for (let guard = 0; allocated < distributableMarks && guard < 10000; guard++) {
+      const idx = guard % Math.max(1, subjectRooms.length);
+      if (allocations[idx] < subjectRooms[idx].availableGains) {
+        allocations[idx] += 1;
+        allocated += 1;
+      }
+    }
+
+    const subjectPlans = subjectRooms.map((room, roomIdx) => {
+      const { subject: sub, currentAchieved, totalMarks, currentPercentage, validMutableDists, availableGains } = room;
+      const currentGradeRule = matchGradeRuleByPercentage(currentPercentage, sanitized) || lowestGradeRule;
+      const neededMarks = allocations[roomIdx] || 0;
+      const expectedPercentage = totalMarks > 0 ? ((currentAchieved + neededMarks) / totalMarks) * 100 : 0;
+      const targetGradeRule = matchGradeRuleByPercentage(expectedPercentage, sanitized) || lowestGradeRule;
+
+      let distributedSoFar = 0;
+      const updatedDists = validMutableDists.map((d, dIdx) => {
+        if (availableGains === 0 || neededMarks === 0) {
+          return { id: d.id, name: d.name, maxMarks: d.maxMarks, achievedMarks: d.achievedMarks || 0, availableGain: d.maxMarks - (d.achievedMarks || 0), targetAchievedMarks: d.achievedMarks || 0, neededMarks: 0 };
+        }
+        let distNeeded: number;
+        if (dIdx === validMutableDists.length - 1) {
+          distNeeded = Math.min(d.maxMarks - (d.achievedMarks || 0), neededMarks - distributedSoFar);
+        } else {
+          distNeeded = Math.min(
+            d.maxMarks - (d.achievedMarks || 0),
+            Math.round(neededMarks * ((d.maxMarks - (d.achievedMarks || 0)) / availableGains))
+          );
+        }
+        distNeeded = Math.max(0, distNeeded);
+        distributedSoFar += distNeeded;
+        return {
+          id: d.id,
+          name: d.name,
+          maxMarks: d.maxMarks,
+          achievedMarks: d.achievedMarks || 0,
+          availableGain: d.maxMarks - (d.achievedMarks || 0),
+          targetAchievedMarks: (d.achievedMarks || 0) + distNeeded,
+          neededMarks: distNeeded
+        };
+      });
+
+      return {
+        subject: sub,
+        currentAchieved,
+        currentPercentage,
+        currentGradeRule,
+        targetGradeRule,
+        availableGains,
+        maxPossibleMarks: currentAchieved + availableGains,
+        // الدرجة المتوقعة بعد إضافة المطلوب للمادة (بتحدد تقدير المادة بعد الخطة).
+        targetTotalMarks: currentAchieved + neededMarks,
+        neededMarks,
+        isMaxed: availableGains === 0,
+        mutableDists: updatedDists
+      };
+    });
+
+    const totalNeededMarksAcrossAllSubjects = subjectPlans.reduce((acc, p) => acc + p.neededMarks, 0);
+    const currentPercentage = (currentAchievedAll / totalMarksAll) * 100;
+    const maxAttainablePercentage = ((currentAchievedAll + totalAvailableGains) / totalMarksAll) * 100;
+    const expectedPercentage = ((currentAchievedAll + totalNeededMarksAcrossAllSubjects) / totalMarksAll) * 100;
+
+    return {
+      status: 'ready' as const,
+      isImpossible: requiredMarks > totalAvailableGains,
+      isTargetAlreadyAchieved: currentPercentage >= targetPercent,
+      maxAttainablePercentage,
+      currentPercentage,
+      expectedPercentage,
+      totalMarksAll,
+      requiredMarks,
+      totalNeededMarksAcrossAllSubjects,
+      subjectPlans
+    };
+  }, [isPoints, effectiveTargetPercent, subjects, semesterSubjects, gradeScale, calculationMode]);
+
+  // الخطة المعروضة: حسب النظام المختار.
+  const activeAnalysis: any = isPoints ? pointsAnalysis : recoveryAnalysis;
+  const displayTarget = isPoints
+    ? `${Number.isFinite(effectiveTargetPercent) ? effectiveTargetPercent : 0}%${targetRule ? ` (${targetRule.letter})` : ''}`
+    : (Number.isFinite(numTargetGPA) ? numTargetGPA.toFixed(2) : '--');
+  const displayCurrent = isPoints
+    ? (activeAnalysis?.status === 'ready' ? `${activeAnalysis.currentPercentage.toFixed(1)}%` : '--')
+    : (activeCurrentGPA > 0 ? activeCurrentGPA.toFixed(2) : '--');
+  const displayMaxAttainable = isPoints
+    ? (activeAnalysis?.maxAttainablePercentage != null ? `${activeAnalysis.maxAttainablePercentage.toFixed(1)}%` : '--')
+    : (activeAnalysis?.maxAttainableGPA != null ? activeAnalysis.maxAttainableGPA.toFixed(2) : '--');
+
   return (
     <div className="flex flex-col min-h-full gap-6 pb-12">
       {/* Page Header */}
@@ -275,10 +433,16 @@ export function AcademicRecovery() {
               <span className="p-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl">
                 <Target size={26} />
               </span>
-              {isAr ? 'خطة رفع واستعادة المعدل' : 'GPA Recovery Plan'}
+              {isPoints
+                ? (isAr ? 'خطة الوصول للتقدير المطلوب' : 'Grade Target Plan')
+                : (isAr ? 'خطة رفع واستعادة المعدل' : 'GPA Recovery Plan')}
             </h1>
             <p className="text-xs md:text-sm text-zinc-500 mt-1">
-              {isAr ? 'حدد المعدل المطلوب وسيحسب لك التطبيق الدرجات المتبقية بدقة وتوزيعها على كل تقييم' : 'Set your target GPA and get a precise breakdown of marks needed for each evaluation.'}
+              {isPoints
+                ? (isAr
+                    ? 'حدد التقدير اللي عايز توصله (اختر الرمز أو اكتب النسبة المئوية) والتطبيق هيحسب لك الدرجات الناقصة في كل مادة وتوزيعها على كل تقييم.'
+                    : 'Pick the grade you are aiming for (choose a symbol or type a percentage) and get the exact marks still needed per course.')
+                : (isAr ? 'حدد المعدل المطلوب وسيحسب لك التطبيق الدرجات المتبقية بدقة وتوزيعها على كل تقييم' : 'Set your target GPA and get a precise breakdown of marks needed for each evaluation.')}
             </p>
           </div>
         </div>
@@ -293,7 +457,9 @@ export function AcademicRecovery() {
                 : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
             }`}
           >
-            {isAr ? 'المعدل التراكمي الكلي' : 'Cumulative GPA'}
+            {isPoints
+              ? (isAr ? 'السجل الكلي' : 'Whole Record')
+              : (isAr ? 'المعدل التراكمي الكلي' : 'Cumulative GPA')}
           </button>
           <button
             onClick={() => setCalculationMode('semester')}
@@ -303,7 +469,9 @@ export function AcademicRecovery() {
                 : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
             }`}
           >
-            {isAr ? 'معدل الفصل الحالي' : 'Current Semester'}
+            {isPoints
+              ? (isAr ? 'الفصل الحالي' : 'Current Semester')
+              : (isAr ? 'معدل الفصل الحالي' : 'Current Semester')}
           </button>
         </div>
       </header>
@@ -313,10 +481,12 @@ export function AcademicRecovery() {
         <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
           <div>
             <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
-              {calculationMode === 'cumulative' ? (isAr ? 'المعدل التراكمي الحالي' : 'Current Cumulative GPA') : (isAr ? 'معدل الفصل الحالي' : 'Current Semester GPA')}
+              {isPoints
+                ? (calculationMode === 'cumulative' ? (isAr ? 'التقدير الحالي (كل السجل)' : 'Current Overall Grade') : (isAr ? 'تقدير الفصل الحالي' : 'Current Term Grade'))
+                : (calculationMode === 'cumulative' ? (isAr ? 'المعدل التراكمي الحالي' : 'Current Cumulative GPA') : (isAr ? 'معدل الفصل الحالي' : 'Current Semester GPA'))}
             </p>
             <div className="text-3xl font-black text-zinc-800 dark:text-zinc-100">
-              {activeCurrentGPA > 0 ? activeCurrentGPA.toFixed(2) : '--'}
+              {displayCurrent}
             </div>
           </div>
           <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-zinc-500">
@@ -325,23 +495,61 @@ export function AcademicRecovery() {
         </div>
 
         <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">
-              {isAr ? 'المعدل المستهدف' : 'Target GPA'}
+              {isPoints ? (isAr ? 'التقدير المستهدف' : 'Target Grade') : (isAr ? 'المعدل المستهدف' : 'Target GPA')}
             </p>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min="0"
-                max={settings.gradingScale[0]?.points || 4.0}
-                step="0.05"
-                value={targetGPA}
-                onChange={(e) => setTargetGPA(e.target.value)}
-                className="w-28 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400 rounded-xl px-3 py-1.5 text-2xl font-black outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
+            {isPoints ? (
+              <div className="space-y-2">
+                {/* اختيار الرمز بيملّي النسبة تلقائياً، والطالب يقدر يكتب النسبة بنفسه */}
+                <select
+                  value={targetLetter}
+                  onChange={(e) => {
+                    const letter = e.target.value;
+                    setTargetLetter(letter);
+                    const rule = gradeScale.find(g => g.letter === letter);
+                    if (rule) setTargetPercent(String(rule.minPercentage));
+                  }}
+                  className="w-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 rounded-xl px-3 py-1.5 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                >
+                  <option value="">{isAr ? '— اختر التقدير —' : '— Pick a grade —'}</option>
+                  {sortedScaleByPercent.map(rule => (
+                    <option key={rule.id} value={rule.letter}>
+                      {rule.letter} — {isAr ? rule.nameAr : rule.nameEn} ({rule.minPercentage}%)
+                    </option>
+                  ))}
+                </select>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={targetPercent}
+                    onChange={(e) => setTargetPercent(e.target.value)}
+                    className="w-24 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400 rounded-xl px-3 py-1.5 text-2xl font-black outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <span className="text-xs font-bold text-zinc-500">
+                    {isAr ? 'النسبة المطلوبة %' : 'target %'}
+                    {targetRule && <span className="block text-emerald-600 dark:text-emerald-400">{isAr ? targetRule.nameAr : targetRule.nameEn}</span>}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  max={settings.gradingScale[0]?.points || 4.0}
+                  step="0.05"
+                  value={targetGPA}
+                  onChange={(e) => setTargetGPA(e.target.value)}
+                  className="w-28 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400 rounded-xl px-3 py-1.5 text-2xl font-black outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            )}
           </div>
-          <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl text-emerald-600 dark:text-emerald-400">
+          <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl text-emerald-600 dark:text-emerald-400 shrink-0">
             <Award size={24} />
           </div>
         </div>
@@ -352,46 +560,53 @@ export function AcademicRecovery() {
               {isAr ? 'إجمالي الدرجات المطلوب جمعها' : 'Total Raw Marks Needed'}
             </p>
             <div className="text-3xl font-black text-indigo-600 dark:text-indigo-400">
-              {recoveryAnalysis?.status === 'ready' && !recoveryAnalysis.isTargetAlreadyAchieved && !recoveryAnalysis.isImpossible
-                ? `+${recoveryAnalysis.totalNeededMarksAcrossAllSubjects} ${isAr ? 'درجة' : 'marks'}`
-                : recoveryAnalysis?.isTargetAlreadyAchieved ? '0' : '--'}
+              {activeAnalysis?.status === 'ready' && !activeAnalysis.isTargetAlreadyAchieved && !activeAnalysis.isImpossible
+                ? `+${activeAnalysis.totalNeededMarksAcrossAllSubjects} ${isAr ? 'درجة' : 'marks'}`
+                : activeAnalysis?.isTargetAlreadyAchieved ? '0' : '--'}
             </div>
+            {isPoints && activeAnalysis?.status === 'ready' && !activeAnalysis.isImpossible && (
+              <p className="text-[11px] font-bold text-zinc-500 mt-1">
+                {isAr
+                  ? `التقدير المتوقع بعد الخطة: ${matchGradeRuleByPercentage(activeAnalysis.expectedPercentage, gradeScale)?.letter || '--'} (${activeAnalysis.expectedPercentage.toFixed(1)}%)`
+                  : `Expected grade after the plan: ${matchGradeRuleByPercentage(activeAnalysis.expectedPercentage, gradeScale)?.letter || '--'} (${activeAnalysis.expectedPercentage.toFixed(1)}%)`}
+              </p>
+            )}
           </div>
-          <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl text-indigo-600 dark:text-indigo-400">
+          <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl text-indigo-600 dark:text-indigo-400 shrink-0">
             <Sparkles size={24} />
           </div>
         </div>
       </div>
 
       {/* Analysis Results */}
-      {recoveryAnalysis && (
+      {activeAnalysis && (
         <div className="space-y-6">
           {/* Status Banners */}
-          {recoveryAnalysis.isTargetAlreadyAchieved ? (
+          {activeAnalysis.isTargetAlreadyAchieved ? (
             <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 p-6 rounded-3xl flex items-start gap-4">
               <CheckCircle2 className="text-emerald-600 dark:text-emerald-400 mt-1 flex-shrink-0" size={24} />
               <div>
                 <h3 className="font-bold text-lg text-emerald-900 dark:text-emerald-200">
-                  {isAr ? 'أنت بالفعل تحقق هذا المعدل أو تتجاوزه!' : 'You have already met or exceeded this target!'}
+                  {isAr ? 'أنت بالفعل تحقق هذا الهدف أو تتجاوزه!' : 'You have already met or exceeded this target!'}
                 </h3>
                 <p className="text-sm text-emerald-700 dark:text-emerald-400 mt-1">
-                  {isAr 
-                    ? `معدلك الحالي (${activeCurrentGPA.toFixed(2)}) أعلى من أو يساوي المعدل المطلوب (${numTargetGPA.toFixed(2)}). يمكنك تجربة وضع هدف أعلى لاكتشاف إمكاناتك.` 
-                    : `Your current GPA (${activeCurrentGPA.toFixed(2)}) meets or exceeds your goal (${numTargetGPA.toFixed(2)}).`}
+                  {isAr
+                    ? `${isPoints ? 'تقديرك الحالي' : 'معدلك الحالي'} (${displayCurrent}) ${isPoints ? 'أعلى من أو يساوي النسبة المطلوبة' : 'أعلى من أو يساوي المعدل المطلوب'} (${displayTarget}). يمكنك تجربة هدف أعلى لاكتشاف إمكاناتك.`
+                    : `Your current ${isPoints ? 'grade' : 'GPA'} (${displayCurrent}) meets or exceeds your goal (${displayTarget}).`}
                 </p>
               </div>
             </div>
-          ) : recoveryAnalysis.isImpossible ? (
+          ) : activeAnalysis.isImpossible ? (
             <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/50 p-6 rounded-3xl flex items-start gap-4">
               <AlertTriangle className="text-rose-600 dark:text-rose-400 mt-1 flex-shrink-0" size={24} />
               <div>
                 <h3 className="font-bold text-lg text-rose-900 dark:text-rose-200">
-                  {isAr ? 'المعدل المستهدف غير قابل للتحقيق في هذه المواد' : 'Target GPA is mathematically unreachable'}
+                  {isAr ? 'الهدف المستهدف غير قابل للتحقيق في هذه المواد' : 'Target is mathematically unreachable'}
                 </h3>
                 <p className="text-sm text-rose-700 dark:text-rose-400 mt-1 leading-relaxed">
                   {isAr 
-                    ? `حتى لو حصلت على الدرجة النهائية كاملة في جميع التقييمات المتبقية، فإن أقصى معدل يمكنك الوصول إليه هو (${recoveryAnalysis.maxAttainableGPA.toFixed(2)}). جرب ضبط الهدف على قيمة أقل من أو تساوي هذا الرقم.` 
-                    : `Even with maximum possible scores on all remaining assignments, the maximum attainable GPA is (${recoveryAnalysis.maxAttainableGPA.toFixed(2)}).`}
+                    ? `حتى لو حصلت على الدرجة النهائية كاملة في جميع التقييمات المتبقية، فإن أقصى ${isPoints ? 'تقدير' : 'معدل'} يمكنك الوصول إليه هو (${displayMaxAttainable}). جرب ضبط الهدف على قيمة أقل من أو تساوي هذا الرقم.` 
+                    : `Even with maximum possible scores on all remaining assignments, the maximum attainable ${isPoints ? 'grade' : 'GPA'} is (${displayMaxAttainable}).`}
                 </p>
               </div>
             </div>
@@ -404,22 +619,26 @@ export function AcademicRecovery() {
                 </h3>
                 <p className="text-xs md:text-sm text-emerald-50 mt-1 leading-relaxed">
                   {isAr 
-                    ? `للوصول إلى معدل ${numTargetGPA.toFixed(2)}، تم حساب الدرجات المستهدفة لكل مادة وتقسيمها على التقييمات القابلة للزيادة فقط (أعمال السنة، الفاينال، إلخ).` 
-                    : `To hit ${numTargetGPA.toFixed(2)}, focus on collecting the following points across your active subjects:`}
+                    ? (isPoints
+                        ? `للوصول إلى تقدير (${displayTarget})، تم حساب الدرجات الناقصة لكل مادة وتقسيمها على التقييمات القابلة للزيادة فقط (أعمال السنة، الفاينال، إلخ).`
+                        : `للوصول إلى معدل ${numTargetGPA.toFixed(2)}، تم حساب الدرجات المستهدفة لكل مادة وتقسيمها على التقييمات القابلة للزيادة فقط (أعمال السنة، الفاينال، إلخ).`) 
+                    : (isPoints
+                        ? `To reach a ${displayTarget} grade, the missing marks per course were calculated and split across the evaluations that can still be raised.`
+                        : `To hit ${numTargetGPA.toFixed(2)}, focus on collecting the following points across your active subjects:`)}
                 </p>
               </div>
             </div>
           )}
 
           {/* Subject Breakdown Cards */}
-          {recoveryAnalysis.status === 'ready' && !recoveryAnalysis.isTargetAlreadyAchieved && (
+          {activeAnalysis.status === 'ready' && !activeAnalysis.isTargetAlreadyAchieved && (
             <div className="space-y-4">
               <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
                 {isAr ? 'تفصيل المواد والتقييمات المطلوبة' : 'Subject & Evaluation Breakdown'}
               </h2>
 
               <div className="grid grid-cols-1 gap-6">
-                {recoveryAnalysis.subjectPlans.map((plan) => {
+                {activeAnalysis.subjectPlans.map((plan: any) => {
                   return (
                     <div 
                       key={plan.subject.id}
@@ -434,7 +653,7 @@ export function AcademicRecovery() {
                               {plan.subject.code}
                             </span>
                             <span className="text-xs bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-md font-bold">
-                              {plan.subject.creditHours} {isAr ? 'ساعات' : 'credits'}
+                              {plan.subject.totalMarks} {isAr ? 'درجة كلية' : 'total marks'}
                             </span>
                           </div>
 

@@ -54,7 +54,7 @@ import {
 } from 'lucide-react';
 import { db, broadcastUniversityDatabaseUpdate } from '../../lib/db';
 import { supabase } from '../../lib/supabase';
-import { UniversityDatabase, UniversityPendingUpdate, Subject, DriveFile, GradeDistributionItem, GradeRule } from '../../types';
+import { UniversityDatabase, UniversityPendingUpdate, Subject, DriveFile, GradeDistributionItem, GradeRule, GradingSystem } from '../../types';
 import { ConfirmModal } from '../ui/CustomModal';
 import { autoTranslateUniversity, autoTranslateCollege, normalizeSubjectName } from '../../lib/academicTranslation';
 import { collegeGroupKey, cohortLabel, autoCohortName, currentAcademicYearRange, foundationSubjectsCount, selectAcademicDriveFiles } from '../../lib/utils';
@@ -288,12 +288,19 @@ export function AdminUniversitiesTab({
     specializationStartYear: number;
     specializationStartSemester: number;
     availableYears: number[];
+    // نظام الحساب المعتمد للكلية/الدفعة (بيتطبَّق على الطالب وقت الاسترداد)
+    gradingSystem: GradingSystem;
+    marksPerPoint: number | null;
+    totalPoints: number | null;
   }>({ 
     totalYears: 4, 
     semestersPerYear: 2,
     specializationStartYear: 2,
     specializationStartSemester: 1,
-    availableYears: [1]
+    availableYears: [1],
+    gradingSystem: 'gpa',
+    marksPerPoint: null,
+    totalPoints: null
   });
 
   // Switch Source Student Modal State
@@ -432,7 +439,10 @@ export function AdminUniversitiesTab({
     specializationStartYear: number;
     specializationStartSemester: number;
     collegeDetails: string;
-  }>({ totalYears: 4, semestersPerYear: 2, specializationStartYear: 2, specializationStartSemester: 1, collegeDetails: '' });
+    gradingSystem: GradingSystem;
+    marksPerPoint: number | null;
+    totalPoints: number | null;
+  }>({ totalYears: 4, semestersPerYear: 2, specializationStartYear: 2, specializationStartSemester: 1, collegeDetails: '', gradingSystem: 'gpa', marksPerPoint: null, totalPoints: null });
   const [savingAnchorStructure, setSavingAnchorStructure] = useState(false);
 
   // Load Data
@@ -878,6 +888,24 @@ export function AdminUniversitiesTab({
     }
   };
 
+  /**
+   * نظام الحساب اللي بيتسحب من الطالب المصدر: بيقرا من صف الـ settings بتاعه
+   * (grading_system / marks_per_point / total_points) أو من الكائن الممرر مباشرة.
+   */
+  const pullGradingSystemFromStudent = (student: any): { gradingSystem?: GradingSystem; marksPerPoint: number | null; totalPoints: number | null } => {
+    const row = student?.raw?.settings || {};
+    const rawSystem = student?.gradingSystem ?? row.grading_system ?? row.gradingSystem;
+    const gradingSystem: GradingSystem | undefined =
+      rawSystem === 'points' ? 'points' : rawSystem === 'gpa' ? 'gpa' : undefined;
+    const rawPer = student?.marksPerPoint ?? row.marks_per_point ?? row.marksPerPoint;
+    const rawTotal = student?.totalPoints ?? row.total_points ?? row.totalPoints;
+    return {
+      gradingSystem,
+      marksPerPoint: Number(rawPer) > 0 ? Number(rawPer) : null,
+      totalPoints: Number(rawTotal) > 0 ? Number(rawTotal) : null
+    };
+  };
+
   // Handle Student Selection in Create College Modal (Pulls College name, study years & semesters)
   const handleSelectStudentForCollege = (st: any) => {
     const colAr = st.college && st.college !== 'غير محدد' && st.college !== 'Not specified' ? st.college : '';
@@ -938,6 +966,8 @@ export function AdminUniversitiesTab({
         subjects: [],
         driveFiles: [],
         gradingScale: (source?.gradingScale && source.gradingScale.length > 0) ? source.gradingScale : (source?.raw?.settings?.grading_scale || []),
+        // نظام الجامعة بيتسحب من الطالب المصدر زي لائحة التقديرات بالظبط.
+        ...pullGradingSystemFromStudent(source),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -972,7 +1002,10 @@ export function AdminUniversitiesTab({
       semestersPerYear: anchor.semestersPerYear || 2,
       specializationStartYear: anchor.specializationStartYear || 2,
       specializationStartSemester: anchor.specializationStartSemester || 1,
-      collegeDetails: anchor.cohortNotes || ''
+      collegeDetails: anchor.cohortNotes || '',
+      gradingSystem: anchor.gradingSystem || 'gpa',
+      marksPerPoint: anchor.marksPerPoint ?? null,
+      totalPoints: anchor.totalPoints ?? null
     });
     setIsAnchorStructureModalOpen(true);
   };
@@ -987,7 +1020,11 @@ export function AdminUniversitiesTab({
         semestersPerYear: Number(anchorStructureForm.semestersPerYear || 2),
         specializationStartYear: Number(anchorStructureForm.specializationStartYear || 2),
         specializationStartSemester: Number(anchorStructureForm.specializationStartSemester || 1),
-        cohortNotes: anchorStructureForm.collegeDetails.trim()
+        cohortNotes: anchorStructureForm.collegeDetails.trim(),
+        // نظام الحساب الافتراضي للكلية (الدفعات الجديدة بتورثه).
+        gradingSystem: anchorStructureForm.gradingSystem || 'gpa',
+        marksPerPoint: anchorStructureForm.gradingSystem === 'points' && Number(anchorStructureForm.marksPerPoint) > 0 ? Number(anchorStructureForm.marksPerPoint) : null,
+        totalPoints: anchorStructureForm.gradingSystem === 'points' && Number(anchorStructureForm.totalPoints) > 0 ? Number(anchorStructureForm.totalPoints) : null
       };
       await db.updateUniversityDatabase(anchor.id, updatedFields);
       setIsAnchorStructureModalOpen(false);
@@ -1137,6 +1174,10 @@ export function AdminUniversitiesTab({
         gradingScale: (selectedCohortSource.gradingScale && selectedCohortSource.gradingScale.length > 0)
           ? selectedCohortSource.gradingScale
           : (structureSource?.gradingScale ? [...structureSource.gradingScale] : []),
+        // نظام الدفعة من الطالب اللي بنسحب منه، وبعده نظام هيكل الكلية.
+        gradingSystem: pullGradingSystemFromStudent(selectedCohortSource).gradingSystem || structureSource?.gradingSystem,
+        marksPerPoint: pullGradingSystemFromStudent(selectedCohortSource).marksPerPoint ?? structureSource?.marksPerPoint ?? null,
+        totalPoints: pullGradingSystemFromStudent(selectedCohortSource).totalPoints ?? structureSource?.totalPoints ?? null,
         isVisible: true,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -1293,7 +1334,9 @@ export function AdminUniversitiesTab({
         sourceUserName: specForm.sourceUserName,
         sourceUserEmail: specForm.sourceUserEmail,
         subjects: studentSubjs,
-        driveFiles: studentFiles
+        driveFiles: studentFiles,
+        // نظام التخصص من الطالب المصدر، وبعده نظام الكلية الأم.
+        ...pullGradingSystemFromStudent(selectedStudentForSpec)
       });
       await loadUniData();
       await onRefreshAllData();
@@ -1331,7 +1374,11 @@ export function AdminUniversitiesTab({
         semestersPerYear: Number(structureForm.semestersPerYear || 2),
         specializationStartYear: Number(structureForm.specializationStartYear || 2),
         specializationStartSemester: Number(structureForm.specializationStartSemester || 1),
-        availableYears: structureForm.availableYears && structureForm.availableYears.length > 0 ? structureForm.availableYears : [1]
+        availableYears: structureForm.availableYears && structureForm.availableYears.length > 0 ? structureForm.availableYears : [1],
+        // نظام الحساب المعتمد للكلية/الدفعة
+        gradingSystem: structureForm.gradingSystem || 'gpa',
+        marksPerPoint: structureForm.gradingSystem === 'points' && Number(structureForm.marksPerPoint) > 0 ? Number(structureForm.marksPerPoint) : null,
+        totalPoints: structureForm.gradingSystem === 'points' && Number(structureForm.totalPoints) > 0 ? Number(structureForm.totalPoints) : null
       };
       await db.updateUniversityDatabase(selectedCollegeDb.id, updatedFields);
       setDatabases(prev => prev.map(d => d.id === selectedCollegeDb.id ? { ...d, ...updatedFields } : d));
@@ -1421,7 +1468,9 @@ export function AdminUniversitiesTab({
         semestersPerYear: newStudent.semestersPerYear || selectedCollegeDb.semestersPerYear || 2,
         subjects: clonedSubjects,
         driveFiles: clonedDrive,
-        gradingScale: studentGrading
+        gradingScale: studentGrading,
+        // نظام الحساب بيتحدّث مع تغيير الطالب المصدر (زي لائحة التقديرات).
+        ...pullGradingSystemFromStudent(newStudent)
       };
 
       // 1. Immediate local state update for instant UI feedback
@@ -3486,14 +3535,17 @@ export function AdminUniversitiesTab({
                         semestersPerYear: selectedCollegeDb.semestersPerYear || 2,
                         specializationStartYear: selectedCollegeDb.specializationStartYear || 2,
                         specializationStartSemester: selectedCollegeDb.specializationStartSemester || 1,
-                        availableYears: selectedCollegeDb.availableYears && selectedCollegeDb.availableYears.length > 0 ? selectedCollegeDb.availableYears : [1]
+                        availableYears: selectedCollegeDb.availableYears && selectedCollegeDb.availableYears.length > 0 ? selectedCollegeDb.availableYears : [1],
+                        gradingSystem: selectedCollegeDb.gradingSystem || 'gpa',
+                        marksPerPoint: selectedCollegeDb.marksPerPoint ?? null,
+                        totalPoints: selectedCollegeDb.totalPoints ?? null
                       });
                       setIsStructureModalOpen(true);
                     }}
                     className="flex items-center gap-1.5 px-3.5 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
                   >
                     <Sliders size={14} />
-                    <span>{selectedCollegeDb.totalYears || 4} {isAr ? 'سنوات' : 'Yrs'} • {selectedCollegeDb.semestersPerYear || 2} {isAr ? 'فصول/سنة' : 'Sem/Yr'}</span>
+                    <span>{selectedCollegeDb.totalYears || 4} {isAr ? 'سنوات' : 'Yrs'} • {selectedCollegeDb.semestersPerYear || 2} {isAr ? 'فصول/سنة' : 'Sem/Yr'} • {selectedCollegeDb.gradingSystem === 'points' ? (isAr ? 'نقط' : 'Points') : 'GPA'}</span>
                   </button>
 
                   <button
@@ -3504,7 +3556,10 @@ export function AdminUniversitiesTab({
                         semestersPerYear: selectedCollegeDb.semestersPerYear || 2,
                         specializationStartYear: selectedCollegeDb.specializationStartYear || 2,
                         specializationStartSemester: selectedCollegeDb.specializationStartSemester || 1,
-                        availableYears: selectedCollegeDb.availableYears && selectedCollegeDb.availableYears.length > 0 ? selectedCollegeDb.availableYears : [1]
+                        availableYears: selectedCollegeDb.availableYears && selectedCollegeDb.availableYears.length > 0 ? selectedCollegeDb.availableYears : [1],
+                        gradingSystem: selectedCollegeDb.gradingSystem || 'gpa',
+                        marksPerPoint: selectedCollegeDb.marksPerPoint ?? null,
+                        totalPoints: selectedCollegeDb.totalPoints ?? null
                       });
                       setIsStructureModalOpen(true);
                     }}
@@ -5157,6 +5212,72 @@ export function AdminUniversitiesTab({
                     );
                   })}
                 </div>
+              </div>
+
+              {/* نظام الحساب المعتمد للكلية/الدفعة — بيتطبَّق على الطالب وقت الاسترداد */}
+              <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                  {isAr ? 'نظام الحساب المعتمد (بينزل للطالب لما يسترد):' : 'Accounting system (applied on student restore):'}
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStructureForm({ ...structureForm, gradingSystem: 'gpa' })}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      structureForm.gradingSystem !== 'points'
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-indigo-400'
+                    }`}
+                  >
+                    {isAr ? 'حساب بالمعدل (GPA)' : 'GPA system'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStructureForm({ ...structureForm, gradingSystem: 'points' })}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      structureForm.gradingSystem === 'points'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-emerald-400'
+                    }`}
+                  >
+                    {isAr ? 'حساب بالنقط' : 'Points system'}
+                  </button>
+                </div>
+                {structureForm.gradingSystem === 'points' && (
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-600 dark:text-zinc-300 mb-1">
+                        {isAr ? 'كل نقطة بكام درجة؟' : 'Marks per point'}
+                      </label>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={structureForm.marksPerPoint ?? ''}
+                        onChange={(e) => setStructureForm({ ...structureForm, marksPerPoint: e.target.value === '' ? null : Number(e.target.value) })}
+                        className="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-600 dark:text-zinc-300 mb-1">
+                        {isAr ? 'التوتال كام نقطة؟' : 'Total points'}
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="0.5"
+                        value={structureForm.totalPoints ?? ''}
+                        onChange={(e) => setStructureForm({ ...structureForm, totalPoints: e.target.value === '' ? null : Number(e.target.value) })}
+                        className="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+                )}
+                <p className="text-[11px] text-zinc-400">
+                  {isAr
+                    ? 'النظام بيتسحب من الطالب المصدر وقت الإنشاء، وتقدر تعدّله هنا في أي وقت — والطالب يقدر يغيّره بعد الاسترداد بنفسه.'
+                    : 'Pulled from the source student on creation; editable here anytime — students can still change it after restoring.'}
+                </p>
               </div>
             </div>
 
@@ -6822,6 +6943,63 @@ export function AdminUniversitiesTab({
                   rows={3}
                   className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-medium text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-none"
                 />
+              </div>
+
+              {/* نظام الحساب الافتراضي للكلية — الدفعات الجديدة بتورثه */}
+              <div className="space-y-2 pt-1">
+                <label className="block text-[11px] font-bold text-zinc-500 mb-1">
+                  {isAr ? 'نظام الحساب الافتراضي للكلية (بينزل للطالب لما يسترد):' : 'Default accounting system for this college:'}
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAnchorStructureForm(prev => ({ ...prev, gradingSystem: 'gpa' }))}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      anchorStructureForm.gradingSystem !== 'points'
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-indigo-400'
+                    }`}
+                  >
+                    {isAr ? 'حساب بالمعدل (GPA)' : 'GPA system'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAnchorStructureForm(prev => ({ ...prev, gradingSystem: 'points' }))}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      anchorStructureForm.gradingSystem === 'points'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-emerald-400'
+                    }`}
+                  >
+                    {isAr ? 'حساب بالنقط' : 'Points system'}
+                  </button>
+                </div>
+                {anchorStructureForm.gradingSystem === 'points' && (
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-500 mb-1">{isAr ? 'كل نقطة بكام درجة؟' : 'Marks per point'}</label>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={anchorStructureForm.marksPerPoint ?? ''}
+                        onChange={(e) => setAnchorStructureForm(prev => ({ ...prev, marksPerPoint: e.target.value === '' ? null : Number(e.target.value) }))}
+                        className="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-zinc-500 mb-1">{isAr ? 'التوتال كام نقطة؟' : 'Total points'}</label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="0.5"
+                        value={anchorStructureForm.totalPoints ?? ''}
+                        onChange={(e) => setAnchorStructureForm(prev => ({ ...prev, totalPoints: e.target.value === '' ? null : Number(e.target.value) }))}
+                        className="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

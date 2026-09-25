@@ -25,7 +25,8 @@ import {
   ChevronRight,
   Compass,
   Lock,
-  AlertTriangle
+  AlertTriangle,
+  Calculator
 } from 'lucide-react';
 
 interface UniversityRestoreModalProps {
@@ -325,6 +326,9 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
         availableYears: selectedDb.availableYears || [1],
         semestersPerYear: selectedDb.semestersPerYear || 2,
         gradingScale: sanitizeScale(selectedDb.gradingScale || []),
+        gradingSystem: selectedDb.gradingSystem,
+        marksPerPoint: selectedDb.marksPerPoint ?? null,
+        totalPoints: selectedDb.totalPoints ?? null,
         isSpecialization: false,
         spec: null,
         foundationCount: foundation.length,
@@ -364,6 +368,10 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
       availableYears: selectedDb.availableYears || activeSpec.availableYears || [1],
       semestersPerYear: selectedDb.semestersPerYear || activeSpec.semestersPerYear || 2,
       gradingScale: sanitizeScale((activeSpec.gradingScale && activeSpec.gradingScale.length > 0) ? activeSpec.gradingScale : (selectedDb.gradingScale || [])),
+      // نظام التخصص أولاً، وبعده نظام الكلية العامة.
+      gradingSystem: activeSpec.gradingSystem || selectedDb.gradingSystem,
+      marksPerPoint: (activeSpec.marksPerPoint ?? selectedDb.marksPerPoint) ?? null,
+      totalPoints: (activeSpec.totalPoints ?? selectedDb.totalPoints) ?? null,
       isSpecialization: true,
       alreadyRestoredCollege,
       spec: activeSpec,
@@ -914,6 +922,25 @@ export function UniversityRestoreModal({ isOpen, onClose, onSuccess, mode = 'col
                       <span className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/70 dark:border-blue-800/60 text-[10px] font-black">
                         <Layers size={10} />
                         <span>{cohortLabel(selectedDb, isAr)}</span>
+                      </span>
+                    )}
+                    {/* نظام الحساب اللي هينزل على الحساب مع الاسترداد */}
+                    {previewData.gradingSystem && (
+                      <span
+                        className={`mt-1.5 ms-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black border ${
+                          previewData.gradingSystem === 'points'
+                            ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200/70 dark:border-emerald-800/60'
+                            : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200/70 dark:border-indigo-800/60'
+                        }`}
+                      >
+                        <Calculator size={10} />
+                        <span>
+                          {previewData.gradingSystem === 'points'
+                            ? (isAr
+                                ? `حساب بالنقط${previewData.marksPerPoint ? ` — النقطة ${previewData.marksPerPoint} درجة` : ''}${previewData.totalPoints ? ` • التوتال ${previewData.totalPoints}` : ''}`
+                                : `Points${previewData.marksPerPoint ? ` — 1 pt = ${previewData.marksPerPoint} marks` : ''}${previewData.totalPoints ? ` • total ${previewData.totalPoints}` : ''}`)
+                            : (isAr ? 'حساب بالمعدل (GPA)' : 'GPA system')}
+                        </span>
                       </span>
                     )}
                   </div>

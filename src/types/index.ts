@@ -133,6 +133,21 @@ export type UserSettings = {
   initialCumulativeGpa?: number | null;
   initialCompletedCreditHours?: number | null;
   setupMode?: 'initial_gpa' | 'manual_subjects';
+  /**
+   * How the student's record is accounted for:
+   *  - 'gpa'    → credit hours + grade points (the classic GPA).
+   *  - 'points' → كل نقطة = `marksPerPoint` درجة، والتوتال = `totalPoints` نقطة.
+   * Only the presentation/calculation changes; the marks in the distributions
+   * are the single source of truth for both systems.
+   */
+  gradingSystem?: GradingSystem;
+  /** Marks that make up one point in the points system (e.g. 12). */
+  marksPerPoint?: number | null;
+  /** The full points total the student is working towards. */
+  totalPoints?: number | null;
+  /** Marks already collected before using the app (points-system equivalent
+   *  of initialCumulativeGpa + initialCompletedCreditHours). */
+  initialAccumulatedMarks?: number | null;
   warningGradeLetter?: string;
   warningGpaPoints?: number;
   enableGraduationScale?: boolean;
@@ -145,6 +160,9 @@ export type UserSettings = {
   specializationDatabaseId?: string;
   alternatingLectures?: AlternatingLecture[];
 };
+
+/** Accounting system: GPA (ساعات معتمدة + نقاط) أو نظام النقط. */
+export type GradingSystem = 'gpa' | 'points';
 
 export type Appointment = {
   id: string;
@@ -272,6 +290,15 @@ export type UniversityDatabase = {
   totalYears: number;
   semestersPerYear: number;
   availableYears?: number[];
+  /**
+   * نظام الحساب المعتمد للجامعة/الكلية: بيتسحب من الطالب المصدر وقت الإنشاء،
+   * وبيتطبَّق على الطالب وقت الاسترداد، والأدمن يقدر يعدّله من قاعدة البيانات.
+   */
+  gradingSystem?: GradingSystem;
+  /** كل نقطة بكام درجة (نظام النقط) على مستوى قاعدة البيانات. */
+  marksPerPoint?: number | null;
+  /** التوتال كام نقطة (نظام النقط) على مستوى قاعدة البيانات. */
+  totalPoints?: number | null;
   subjects: Subject[];
   driveFiles: DriveFile[];
   gradingScale?: GradeRule[];

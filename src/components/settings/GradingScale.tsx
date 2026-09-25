@@ -9,9 +9,12 @@ import { useAppStore } from '../../store/useAppStore';
 interface Props {
   scale: GradeRule[];
   onChange: (newScale: GradeRule[]) => void;
+  /** false in نظام النقط: the table stays (symbol/name/percentage) without the
+   *  grade-points column, so no GPA is implied anywhere. */
+  showPoints?: boolean;
 }
 
-export function GradingScale({ scale, onChange }: Props) {
+export function GradingScale({ scale, onChange, showPoints = true }: Props) {
   const { t, i18n } = useTranslation();
   const { settings } = useAppStore();
   const isAr = i18n.language === 'ar' || settings.language === 'ar';
@@ -43,9 +46,13 @@ export function GradingScale({ scale, onChange }: Props) {
         <div>
           <h2 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-white">{t('grading_scale')}</h2>
           <p className="text-[11px] sm:text-xs text-zinc-500 mt-0.5">
-            {isAr 
-              ? 'يمكنك تحديد ما إذا كان الحد الأقصى شاملاً (إلى <=) أو غير شامل (إلى أقل من <) لكل تقدير' 
-              : 'Specify whether the upper bound is inclusive (<=) or exclusive (<) for each grade'}
+            {!showPoints
+              ? (isAr
+                  ? 'نظام النقط: التقدير بيتحدد بالرمز والاسم والنسبة المئوية فقط — مفيش نقاط GPA.'
+                  : 'Points system: grades are defined by symbol, name and percentage — no GPA points.')
+              : (isAr 
+                  ? 'يمكنك تحديد ما إذا كان الحد الأقصى شاملاً (إلى <=) أو غير شامل (إلى أقل من <) لكل تقدير' 
+                  : 'Specify whether the upper bound is inclusive (<=) or exclusive (<) for each grade')}
           </p>
         </div>
         <button 
@@ -69,7 +76,7 @@ export function GradingScale({ scale, onChange }: Props) {
               <th className="pb-3 px-2 font-medium">{t('grade_name_en')}</th>
               <th className="pb-3 px-2 font-medium">{t('min')} (%)</th>
               <th className="pb-3 px-2 font-medium">{isAr ? 'الحد الأقصى (النوع والقيمة)' : 'Upper Bound (Type & %)'}</th>
-              <th className="pb-3 px-2 font-medium">{t('points')}</th>
+              {showPoints && <th className="pb-3 px-2 font-medium">{t('points')}</th>}
               <th className="pb-3 px-2 font-medium text-center">{t('actions')}</th>
             </tr>
           </thead>
@@ -78,13 +85,14 @@ export function GradingScale({ scale, onChange }: Props) {
               <GradingScaleRow 
                 key={grade.id} 
                 grade={grade} 
+                showPoints={showPoints}
                 onUpdate={updateGrade} 
                 onDelete={removeGrade} 
               />
             ))}
             {scale.filter(g => g && !String(g.id || '').startsWith('__')).length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center py-6 text-zinc-400">
+                <td colSpan={showPoints ? 7 : 6} className="text-center py-6 text-zinc-400">
                   {isAr ? 'لا توجد تقديرات مضافة.' : 'No grading scale added.'}
                 </td>
               </tr>

@@ -16,6 +16,11 @@ interface Props {
   initialCompletedCreditHours?: number | null;
   setupMode?: 'initial_gpa' | 'manual_subjects';
   onInitialGpaChange?: (gpa: number | null, credits: number | null, mode: 'initial_gpa' | 'manual_subjects') => void;
+  /** نظام الحساب المختار — بيغيّر شكل إعداد السجل السابق. */
+  gradingSystem?: 'gpa' | 'points';
+  /** درجات مجمعة قبل استخدام التطبيق (نظام النقط). */
+  initialAccumulatedMarks?: number | null;
+  onInitialAccumulatedMarksChange?: (marks: number | null) => void;
 }
 
 export function SemestersManager({
@@ -26,7 +31,10 @@ export function SemestersManager({
   initialCumulativeGpa,
   initialCompletedCreditHours,
   setupMode = 'initial_gpa',
-  onInitialGpaChange
+  onInitialGpaChange,
+  gradingSystem = 'gpa',
+  initialAccumulatedMarks,
+  onInitialAccumulatedMarksChange
 }: Props) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -177,13 +185,52 @@ export function SemestersManager({
                 {isAr ? 'إعداد السجل الأكاديمي للفصول السابقة' : 'Past Academic Records Setup'}
               </h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed">
-                {isAr 
-                  ? `بما أنك في (السنة ${currentSemester.yearIndex} - الفصل ${currentSemester.semesterIndex})، يمكنك إما تسجيل معدلك التراكمي السابق مباشرة لحساب المعدل التراكمي الكلي، أو إضافة موادك السابقة يدوياً:`
-                  : `Since your active semester is (Year ${currentSemester.yearIndex} - Semester ${currentSemester.semesterIndex}), choose how you want to handle prior academic history:`}
+                {gradingSystem === 'points'
+                  ? (isAr
+                      ? `بما أنك في (السنة ${currentSemester.yearIndex} - الفصل ${currentSemester.semesterIndex})، اكتب الدرجات اللي جمعتها قبل استخدام التطبيق وهتتضاف للنقط التراكمية مع درجات موادك.`
+                      : `Since your active semester is (Year ${currentSemester.yearIndex} - Semester ${currentSemester.semesterIndex}), enter the marks you collected before using the app; they are added to your cumulative points.`)
+                  : (isAr 
+                      ? `بما أنك في (السنة ${currentSemester.yearIndex} - الفصل ${currentSemester.semesterIndex})، يمكنك إما تسجيل معدلك التراكمي السابق مباشرة لحساب المعدل التراكمي الكلي، أو إضافة موادك السابقة يدوياً:`
+                      : `Since your active semester is (Year ${currentSemester.yearIndex} - Semester ${currentSemester.semesterIndex}), choose how you want to handle prior academic history:`)}
               </p>
             </div>
           </div>
 
+          {gradingSystem === 'points' ? (
+            <div className="p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800/50 bg-white dark:bg-zinc-800 ring-2 ring-emerald-500/10 space-y-3">
+              <div className="flex items-center gap-2">
+                <Calculator size={16} className="text-emerald-600 dark:text-emerald-400" />
+                <span className="font-bold text-sm text-zinc-800 dark:text-zinc-200">
+                  {isAr ? 'الدرجات المجمعة سابقاً' : 'Previously collected marks'}
+                </span>
+              </div>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                placeholder={isAr ? 'مثال: 240' : 'e.g. 240'}
+                value={initialAccumulatedMarks ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value === '' ? null : Number(e.target.value);
+                  onInitialAccumulatedMarksChange && onInitialAccumulatedMarksChange(val);
+                }}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-emerald-500 outline-none font-bold"
+              />
+              <p className="text-xs text-zinc-500">
+                {isAr
+                  ? 'الرقم ده بيتقسم على «كل نقطة بكام درجة» ويتحوّل نقط تراكمية، وبيتضاف لدرجات موادك المسجلة.'
+                  : 'This is divided by "marks per point" and becomes cumulative points, on top of your recorded course marks.'}
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate('/academic/subjects')}
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors border border-emerald-200 dark:border-emerald-800"
+              >
+                <BookPlus size={14} />
+                {isAr ? 'الانتقال لصفحة المواد لإضافة المواد القديمة' : 'Go to Subjects Page to Add Past Courses'}
+              </button>
+            </div>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
             {/* Option A: Quick Initial GPA */}
             <div 
@@ -290,6 +337,7 @@ export function SemestersManager({
               </button>
             </div>
           </div>
+          )}
         </div>
       )}
     </div>

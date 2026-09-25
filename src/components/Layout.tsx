@@ -174,10 +174,14 @@ export function Layout() {
                   <Library className="w-4 h-4" /> {t('subjects')}
                 </NavLink>
                 <NavLink to="/academic/simulation" className={({ isActive }) => cn("flex items-center gap-2 p-2 rounded-lg text-sm transition-colors", isActive ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/20 font-bold" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200")}>
-                  <Calculator className="w-4 h-4" /> {settings.language === 'ar' ? 'محاكاة المعدل' : 'GPA Simulation'}
+                  <Calculator className="w-4 h-4" /> {settings.gradingSystem === 'points'
+                    ? (settings.language === 'ar' ? 'محاكاة التقدير' : 'Grade Simulation')
+                    : (settings.language === 'ar' ? 'محاكاة المعدل' : 'GPA Simulation')}
                 </NavLink>
                 <NavLink to="/academic/recovery" className={({ isActive }) => cn("flex items-center gap-2 p-2 rounded-lg text-sm transition-colors", isActive ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/20 font-bold" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200")}>
-                  <Target className="w-4 h-4" /> {settings.language === 'ar' ? 'خطة التحسين' : 'Recovery Plan'}
+                  <Target className="w-4 h-4" /> {settings.gradingSystem === 'points'
+                    ? (settings.language === 'ar' ? 'خطة الوصول للتقدير' : 'Grade Target Plan')
+                    : (settings.language === 'ar' ? 'خطة التحسين' : 'Recovery Plan')}
                 </NavLink>
                 <NavLink to="/academic/warnings" className={({ isActive }) => cn("flex items-center justify-between gap-2 p-2 rounded-lg text-sm transition-colors", isActive ? "text-rose-600 dark:text-rose-400 bg-rose-50/50 dark:bg-rose-950/20 font-bold" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200")}>
                   <div className="flex items-center gap-2">

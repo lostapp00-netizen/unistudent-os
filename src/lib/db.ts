@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { v4 as uuidv4 } from 'uuid';
-import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, FeedbackMessage, DatabaseBackup, EmailBackupConfig, UniversityDatabase, UniversityPendingUpdate, GradeRule, GradeDistributionItem } from '../types';
+import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, FeedbackMessage, DatabaseBackup, EmailBackupConfig, UniversityDatabase, UniversityPendingUpdate, GradeRule, GradeDistributionItem, GradingSystem } from '../types';
 import { normalizeSubjectName } from './academicTranslation';
 import { selectAcademicDriveFiles } from './utils';
 
@@ -419,6 +419,11 @@ const UNIVERSITY_SCALAR_COLUMNS: Record<string, string> = {
   parentDatabaseId: 'parent_database_id',
   specializationNameAr: 'specialization_name_ar',
   specializationNameEn: 'specialization_name_en',
+  // نظام الحساب المعتمد للجامعة/الكلية (migration 202609270001). لو الأعمدة لسه
+  // مش موجودة، قيمهم بتتحفظ في صف الميتا جوه grading_scale كنسخة احتياطية.
+  gradingSystem: 'grading_system',
+  marksPerPoint: 'marks_per_point',
+  totalPoints: 'total_points',
 };
 
 /** Build the snake_case scalar payload for the patch RPC from a partial DB. */
@@ -527,6 +532,12 @@ export const db = {
     if ('specializationDatabaseId' in settings) payload.specialization_database_id = settings.specializationDatabaseId || null;
     if ('alternatingLectures' in settings) payload.alternating_lectures = settings.alternatingLectures || [];
 
+    // نظام الحساب: GPA أو النقط (migration 202609260001)
+    if ('gradingSystem' in settings) payload.grading_system = settings.gradingSystem || 'gpa';
+    if ('marksPerPoint' in settings) payload.marks_per_point = (settings.marksPerPoint != null && Number(settings.marksPerPoint) > 0) ? Number(settings.marksPerPoint) : null;
+    if ('totalPoints' in settings) payload.total_points = (settings.totalPoints != null && Number(settings.totalPoints) > 0) ? Number(settings.totalPoints) : null;
+    if ('initialAccumulatedMarks' in settings) payload.initial_accumulated_marks = (settings.initialAccumulatedMarks != null && Number(settings.initialAccumulatedMarks) >= 0) ? Number(settings.initialAccumulatedMarks) : null;
+
     try {
       const existingRaw = localStorage.getItem(`unistudent_settings_${userId}`);
       const existingObj = existingRaw ? JSON.parse(existingRaw) : {};
@@ -541,7 +552,11 @@ export const db = {
         specializationStartYear: 'specializationStartYear' in settings ? settings.specializationStartYear : existingObj.specializationStartYear,
         specializationStartSemester: 'specializationStartSemester' in settings ? settings.specializationStartSemester : existingObj.specializationStartSemester,
         specializationDatabaseId: 'specializationDatabaseId' in settings ? settings.specializationDatabaseId : existingObj.specializationDatabaseId,
-        alternatingLectures: 'alternatingLectures' in settings ? (settings.alternatingLectures || []) : (existingObj.alternatingLectures || [])
+        alternatingLectures: 'alternatingLectures' in settings ? (settings.alternatingLectures || []) : (existingObj.alternatingLectures || []),
+        gradingSystem: 'gradingSystem' in settings ? settings.gradingSystem : (existingObj.gradingSystem || 'gpa'),
+        marksPerPoint: 'marksPerPoint' in settings ? settings.marksPerPoint : existingObj.marksPerPoint,
+        totalPoints: 'totalPoints' in settings ? settings.totalPoints : existingObj.totalPoints,
+        initialAccumulatedMarks: 'initialAccumulatedMarks' in settings ? settings.initialAccumulatedMarks : existingObj.initialAccumulatedMarks
       }));
 
       // Embed student specialization & database metadata inside grading_scale JSONB as a dual-layer backup
@@ -601,6 +616,11 @@ export const db = {
         // would reach Supabase until the migration is applied — the pairs stay
         // safe in localStorage meanwhile.
         delete payload.alternating_lectures;
+        // نظام الحساب (migration 202609260001) — same reasoning.
+        delete payload.grading_system;
+        delete payload.marks_per_point;
+        delete payload.total_points;
+        delete payload.initial_accumulated_marks;
         const retryRes = await supabase.from('settings').upsert(payload, { onConflict: 'user_id' });
         error = retryRes.error;
       }
@@ -1630,6 +1650,9 @@ export const db = {
           specializationStartYear: dbData.specializationStartYear,
           specializationStartSemester: dbData.specializationStartSemester,
           availableYears: dbData.availableYears,
+          gradingSystem: dbData.gradingSystem,
+          marksPerPoint: dbData.marksPerPoint ?? null,
+          totalPoints: dbData.totalPoints ?? null,
         } as any);
       } else {
         gradingScalePayload.push({
@@ -1638,6 +1661,9 @@ export const db = {
           availableYears: dbData.availableYears,
           specializationStartYear: dbData.specializationStartYear,
           specializationStartSemester: dbData.specializationStartSemester,
+          gradingSystem: dbData.gradingSystem,
+          marksPerPoint: dbData.marksPerPoint ?? null,
+          totalPoints: dbData.totalPoints ?? null,
         } as any);
       }
 
@@ -1667,6 +1693,11 @@ export const db = {
         updated_at: dbData.updatedAt
       };
 
+      // نظام الحساب: عمود لو موجود، ومعاه دايماً صف الميتا فوق كنسخة احتياطية.
+      if (dbData.gradingSystem) payload.grading_system = dbData.gradingSystem;
+      if (dbData.marksPerPoint != null && Number(dbData.marksPerPoint) > 0) payload.marks_per_point = Number(dbData.marksPerPoint);
+      if (dbData.totalPoints != null && Number(dbData.totalPoints) > 0) payload.total_points = Number(dbData.totalPoints);
+
       if (dbData.isSpecialization) {
         payload.is_specialization = true;
         payload.parent_database_id = dbData.parentDatabaseId || null;
@@ -1690,6 +1721,9 @@ export const db = {
           delete payload.academic_year_start;
           delete payload.academic_year_end;
           delete payload.cohort_notes;
+          delete payload.grading_system;
+          delete payload.marks_per_point;
+          delete payload.total_points;
           const { error: retryErr } = await supabase.from('university_databases').upsert(payload);
           if (retryErr) console.warn('Supabase createUniversityDatabase fallback error:', retryErr);
         } else {
@@ -1800,7 +1834,16 @@ export const db = {
       const scalarsPayload = buildUniversityScalarsPayload(patch.scalars || {});
 
       // Grading scale: merge rules by id and keep the metadata marker in sync.
-      let scaleUpsert = patch.gradingScale?.upsert ? [...patch.gradingScale.upsert] : undefined;
+      // A grading-system-only edit has no scale payload, but it still has to land
+      // in the meta row (the backup used while the dedicated columns are not
+      // deployed yet), so the existing rules are re-pushed in that case.
+      const gradingSystemTouched = ['gradingSystem', 'marksPerPoint', 'totalPoints']
+        .some(field => (patch.scalars as any)?.[field] !== undefined);
+      let scaleUpsert: any[] | undefined = patch.gradingScale?.upsert
+        ? [...patch.gradingScale.upsert]
+        : (gradingSystemTouched
+            ? (existing.gradingScale || []).filter((g: any) => g && !String(g.id || '').startsWith('__'))
+            : undefined);
       if (scaleUpsert) {
         scaleUpsert = scaleUpsert.filter((g: any) => g && !String(g.id || '').startsWith('__') && (typeof g.points === 'number' || !isNaN(Number(g.points))));
         const isSpec = merged.isSpecialization === true;
@@ -1814,14 +1857,20 @@ export const db = {
                 specializationNameEn: merged.specializationNameEn,
                 specializationStartYear: merged.specializationStartYear,
                 specializationStartSemester: merged.specializationStartSemester,
-                availableYears: merged.availableYears
+                availableYears: merged.availableYears,
+                gradingSystem: merged.gradingSystem,
+                marksPerPoint: merged.marksPerPoint ?? null,
+                totalPoints: merged.totalPoints ?? null
               } as any
             : {
                 id: '__college_meta__',
                 isSpecialization: false,
                 availableYears: merged.availableYears,
                 specializationStartYear: merged.specializationStartYear,
-                specializationStartSemester: merged.specializationStartSemester
+                specializationStartSemester: merged.specializationStartSemester,
+                gradingSystem: merged.gradingSystem,
+                marksPerPoint: merged.marksPerPoint ?? null,
+                totalPoints: merged.totalPoints ?? null
               } as any
         );
       }
@@ -2506,6 +2555,10 @@ export const db = {
     availableYears?: number[];
     subjects?: Subject[];
     driveFiles?: DriveFile[];
+    /** نظام الحساب المسحوب من الطالب المصدر (بيفضّل نظام الكلية الأم لو مش موجود). */
+    gradingSystem?: GradingSystem;
+    marksPerPoint?: number | null;
+    totalPoints?: number | null;
   }): Promise<UniversityDatabase> {
     const parentDb = await this.getUniversityDatabase(params.parentCollegeDbId);
     if (!parentDb) {
@@ -2595,6 +2648,10 @@ export const db = {
       subjects: clonedSubjects,
       driveFiles: filteredFiles,
       gradingScale: parentDb.gradingScale || [],
+      // نظام الحساب المسحوب من الطالب المصدر، وبعده نظام الكلية الأم.
+      gradingSystem: params.gradingSystem || parentDb.gradingSystem,
+      marksPerPoint: (params.marksPerPoint ?? parentDb.marksPerPoint) ?? null,
+      totalPoints: (params.totalPoints ?? parentDb.totalPoints) ?? null,
       isVisible: true,
       isSpecialization: true,
       parentDatabaseId: parentDb.id,
@@ -4300,7 +4357,21 @@ function mapSettingsFromDB(row: any): UserSettings {
     specializationDatabaseId: resolvedSpecDbId,
     alternatingLectures: Array.isArray(row.alternating_lectures)
       ? row.alternating_lectures
-      : (localExtra.alternatingLectures || [])
+      : (localExtra.alternatingLectures || []),
+    // نظام الحساب: the column wins once the migration ran; until then the local
+    // copy keeps the student's choice and their points configuration.
+    gradingSystem: (row.grading_system === 'points' || row.grading_system === 'gpa')
+      ? row.grading_system
+      : (localExtra.gradingSystem || 'gpa'),
+    marksPerPoint: (row.marks_per_point != null && Number(row.marks_per_point) > 0)
+      ? Number(row.marks_per_point)
+      : (localExtra.marksPerPoint != null && Number(localExtra.marksPerPoint) > 0 ? Number(localExtra.marksPerPoint) : null),
+    totalPoints: (row.total_points != null && Number(row.total_points) > 0)
+      ? Number(row.total_points)
+      : (localExtra.totalPoints != null && Number(localExtra.totalPoints) > 0 ? Number(localExtra.totalPoints) : null),
+    initialAccumulatedMarks: (row.initial_accumulated_marks != null && Number(row.initial_accumulated_marks) >= 0)
+      ? Number(row.initial_accumulated_marks)
+      : (localExtra.initialAccumulatedMarks != null && Number(localExtra.initialAccumulatedMarks) >= 0 ? Number(localExtra.initialAccumulatedMarks) : null)
   };
 }
 
@@ -4545,6 +4616,19 @@ function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
     ? rawAvailableYears
     : [1];
 
+  // نظام الحساب: العمود أولاً، وبعده صف الميتا (النسخة الاحتياطية)، وبعده
+  // الاسم camelCase لما تكون الصفوف جاية من الكاش المحلي.
+  const rawGradingSystem = row.grading_system ?? specMeta?.gradingSystem ?? collegeMeta?.gradingSystem ?? row.gradingSystem;
+  const gradingSystem = (rawGradingSystem === 'points' || rawGradingSystem === 'gpa') ? rawGradingSystem : undefined;
+  const rawMarksPerPoint = row.marks_per_point ?? specMeta?.marksPerPoint ?? collegeMeta?.marksPerPoint ?? row.marksPerPoint;
+  const marksPerPoint = (rawMarksPerPoint !== undefined && rawMarksPerPoint !== null && Number(rawMarksPerPoint) > 0)
+    ? Number(rawMarksPerPoint)
+    : null;
+  const rawTotalPoints = row.total_points ?? specMeta?.totalPoints ?? collegeMeta?.totalPoints ?? row.totalPoints;
+  const totalPoints = (rawTotalPoints !== undefined && rawTotalPoints !== null && Number(rawTotalPoints) > 0)
+    ? Number(rawTotalPoints)
+    : null;
+
   return {
     id: row.id,
     universityNameAr: row.university_name_ar || '',
@@ -4561,6 +4645,9 @@ function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
     totalYears: row.total_years || 4,
     semestersPerYear: row.semesters_per_year || 2,
     availableYears,
+    gradingSystem,
+    marksPerPoint,
+    totalPoints,
     isVisible: row.is_visible !== false && row.isVisible !== false,
     isSpecialization,
     parentDatabaseId,

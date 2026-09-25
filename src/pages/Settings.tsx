@@ -33,7 +33,9 @@ import {
   Layers,
   BookOpen,
   Info,
-  Compass
+  Compass,
+  Calculator,
+  Award
 } from 'lucide-react';
 
 type SettingsTab = 'profile' | 'databases' | 'security' | 'feedback';
@@ -67,6 +69,10 @@ export function Settings() {
     initialCumulativeGpa: number | null;
     initialCompletedCreditHours: number | null;
     setupMode: 'initial_gpa' | 'manual_subjects';
+    gradingSystem: 'gpa' | 'points';
+    marksPerPoint: number | null;
+    totalPoints: number | null;
+    initialAccumulatedMarks: number | null;
     warningGradeLetter?: string;
     warningGpaPoints?: number;
     enableGraduationScale?: boolean;
@@ -87,6 +93,10 @@ export function Settings() {
     initialCumulativeGpa: settings.initialCumulativeGpa,
     initialCompletedCreditHours: settings.initialCompletedCreditHours,
     setupMode: settings.setupMode || 'initial_gpa',
+    gradingSystem: settings.gradingSystem || 'gpa',
+    marksPerPoint: settings.marksPerPoint ?? null,
+    totalPoints: settings.totalPoints ?? null,
+    initialAccumulatedMarks: settings.initialAccumulatedMarks ?? null,
     warningGradeLetter: settings.warningGradeLetter,
     warningGpaPoints: settings.warningGpaPoints,
     enableGraduationScale: settings.enableGraduationScale ?? false,
@@ -351,6 +361,23 @@ export function Settings() {
           return;
         }
       }
+
+      // نظام النقط: قيمة النقطة والتوتال لازم يكونوا موجبين
+      if (formData.gradingSystem === 'points') {
+        const perPoint = Number(formData.marksPerPoint);
+        const total = Number(formData.totalPoints);
+        if (!Number.isFinite(perPoint) || perPoint <= 0 || !Number.isFinite(total) || total <= 0) {
+          setSaveStatus({
+            type: 'error',
+            message: isAr
+              ? 'في نظام النقط لازم تحدد «كل نقطة بكام درجة» و«التوتال كام نقطة» بقيم أكبر من صفر.'
+              : 'In the points system you must set "marks per point" and "total points" to values greater than zero.'
+          });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          setSaving(false);
+          return;
+        }
+      }
       
       const startYearNum = (formData.specializationStartYear !== '' && formData.specializationStartYear != null && Number(formData.specializationStartYear) > 0) 
         ? Number(formData.specializationStartYear) 
@@ -368,6 +395,10 @@ export function Settings() {
         semestersPerYear: Number(formData.semestersPerYear),
         initialCumulativeGpa: (formData.initialCumulativeGpa != null && formData.initialCumulativeGpa !== ('' as any)) ? Number(formData.initialCumulativeGpa) : null,
         initialCompletedCreditHours: (formData.initialCompletedCreditHours != null && formData.initialCompletedCreditHours !== ('' as any)) ? Number(formData.initialCompletedCreditHours) : null,
+        gradingSystem: formData.gradingSystem || 'gpa',
+        marksPerPoint: (formData.marksPerPoint != null && Number(formData.marksPerPoint) > 0) ? Number(formData.marksPerPoint) : null,
+        totalPoints: (formData.totalPoints != null && Number(formData.totalPoints) > 0) ? Number(formData.totalPoints) : null,
+        initialAccumulatedMarks: (formData.initialAccumulatedMarks != null && Number(formData.initialAccumulatedMarks) >= 0) ? Number(formData.initialAccumulatedMarks) : null,
         specialization: formData.specialization ? formData.specialization.trim() : '',
         specializationStartYear: startYearNum,
         specializationStartSemester: startSemNum,
@@ -844,6 +875,9 @@ export function Settings() {
                 initialCumulativeGpa={formData.initialCumulativeGpa}
                 initialCompletedCreditHours={formData.initialCompletedCreditHours}
                 setupMode={formData.setupMode}
+                gradingSystem={formData.gradingSystem}
+                initialAccumulatedMarks={formData.initialAccumulatedMarks}
+                onInitialAccumulatedMarksChange={(marks) => setFormData(prev => ({ ...prev, initialAccumulatedMarks: marks }))}
                 onInitialGpaChange={(gpa, credits, mode) => {
                   setFormData(prev => ({
                     ...prev,
@@ -857,10 +891,114 @@ export function Settings() {
             </div>
           </section>
 
+          {/* Card 3.5: Accounting system — GPA or Points */}
+          <section className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-3.5 sm:p-6 lg:p-7 space-y-4 sm:space-y-5">
+            <div className="border-b border-zinc-100 dark:border-zinc-800 pb-3 sm:pb-4">
+              <h2 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                <Calculator size={18} className="text-indigo-600 dark:text-indigo-400" />
+                {isAr ? 'نظام الحساب' : 'Accounting System'}
+              </h2>
+              <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5">
+                {isAr
+                  ? 'اختر طريقة حساب سجلك: بالمعدل التراكمي (GPA) أو بالنقط. درجاتك وتقييماتك لا تتأثر — التغيير في طريقة الحساب والعرض فقط.'
+                  : 'Choose how your record is accounted: GPA or points. Your marks never change — only how they are calculated and displayed.'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Option A: GPA */}
+              <div
+                onClick={() => setFormData(prev => ({ ...prev, gradingSystem: 'gpa' }))}
+                className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+                  formData.gradingSystem !== 'points'
+                    ? 'border-indigo-500 bg-white dark:bg-zinc-800 shadow-md ring-2 ring-indigo-500/20'
+                    : 'border-zinc-200 dark:border-zinc-700 bg-white/60 dark:bg-zinc-800/40 hover:border-zinc-300'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-sm text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                    <GraduationCap size={16} className="text-indigo-600 dark:text-indigo-400" />
+                    {isAr ? '1. الحساب بالمعدل (GPA)' : '1. GPA System'}
+                  </span>
+                  {formData.gradingSystem !== 'points' && <CheckCircle2 size={18} className="text-indigo-600 dark:text-indigo-400" />}
+                </div>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  {isAr
+                    ? 'النظام المعتاد: كل مادة لها ساعات معتمدة، وكل تقدير له نقاط، والمعدل = مجموع (النقاط × الساعات) ÷ الساعات.'
+                    : 'The usual system: every course has credit hours and every grade has points; GPA = (points × credits) ÷ credits.'}
+                </p>
+              </div>
+
+              {/* Option B: Points */}
+              <div
+                onClick={() => setFormData(prev => ({ ...prev, gradingSystem: 'points' }))}
+                className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+                  formData.gradingSystem === 'points'
+                    ? 'border-emerald-500 bg-white dark:bg-zinc-800 shadow-md ring-2 ring-emerald-500/20'
+                    : 'border-zinc-200 dark:border-zinc-700 bg-white/60 dark:bg-zinc-800/40 hover:border-zinc-300'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-sm text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                    <Award size={16} className="text-emerald-600 dark:text-emerald-400" />
+                    {isAr ? '2. الحساب بالنقط' : '2. Points System'}
+                  </span>
+                  {formData.gradingSystem === 'points' && <CheckCircle2 size={18} className="text-emerald-600 dark:text-emerald-400" />}
+                </div>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  {isAr
+                    ? 'كل نقطة بتساوي عدد من الدرجات، والتوتال عدد ثابت من النقط. التطبيق بيجمع درجاتك ويحوّلها نقط ويعرض الباقي للتوتال.'
+                    : 'Each point equals a number of marks and the total is a fixed number of points. The app converts collected marks into points.'}
+                </p>
+              </div>
+            </div>
+
+            {formData.gradingSystem === 'points' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-5 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                    {isAr ? 'كل نقطة بكام درجة؟' : 'Marks per point'}
+                  </label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={formData.marksPerPoint ?? ''}
+                    onChange={e => setFormData(prev => ({ ...prev, marksPerPoint: e.target.value === '' ? null : Number(e.target.value) }))}
+                    placeholder={isAr ? 'مثال: 12' : 'e.g. 12'}
+                    className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm font-bold"
+                  />
+                  <p className="text-[11px] text-zinc-400">
+                    {isAr ? 'مجموع درجاتك ÷ الرقم ده = عدد النقط.' : 'Collected marks ÷ this number = points.'}
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                    {isAr ? 'التوتال كام نقطة؟' : 'Total points'}
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.5"
+                    value={formData.totalPoints ?? ''}
+                    onChange={e => setFormData(prev => ({ ...prev, totalPoints: e.target.value === '' ? null : Number(e.target.value) }))}
+                    placeholder={isAr ? 'مثال: 100' : 'e.g. 100'}
+                    className="w-full min-w-0 px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm font-bold"
+                  />
+                  <p className="text-[11px] text-zinc-400">
+                    {isAr ? 'النقط المطلوبة لاستكمال التوتال.' : 'The points total you are heading towards.'}
+                  </p>
+                </div>
+              </div>
+            )}
+          </section>
+
           {/* Card 4: Grading Scales */}
           <section className="bg-white dark:bg-zinc-900 rounded-2xl sm:rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-3.5 sm:p-6 lg:p-7">
             <GradingScale 
               scale={formData.gradingScale}
+              showPoints={formData.gradingSystem !== 'points'}
               onChange={(newScale) => setFormData(prev => ({ ...prev, gradingScale: newScale }))}
             />
           </section>

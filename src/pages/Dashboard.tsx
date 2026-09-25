@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
-import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWarningRisk, calculateGraduationEstimate } from '../lib/academic';
+import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWarningRisk, calculateGraduationEstimate, calculateOverallGrade, getPointsSummary, getWarningThresholdPercentage, isSubjectAtPercentageRisk } from '../lib/academic';
 import { BookOpen, AlertTriangle, CheckCircle, Clock, Award } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../components/ui/UnifiedSemesterFilter';
@@ -46,12 +46,17 @@ export function Dashboard() {
   const totalFileSize = driveFilesOnly.reduce((acc, f) => acc + (Number(f.size) || 0), 0);
   const totalFileSizeMB = (totalFileSize / (1024 * 1024)).toFixed(1);
 
-  const threshold = getWarningThreshold(settings);
-  const warningSubjects = filteredSubjects.filter(s => 
-    isSubjectAtWarningRisk(s, settings.gradingScale, threshold.points)
-  );
-
   const isAr = settings.language === 'ar';
+  // نظام الحساب: GPA أو النقط. الحسابات المشتركة (الدرجات) واحدة في الحالتين.
+  const gradingSystem = settings.gradingSystem === 'points' ? 'points' : 'gpa';
+  const overallGrade = calculateOverallGrade(subjects, settings.gradingScale);
+  const pointsSummary = getPointsSummary(settings, subjects, { years: filterYears, semesters: filterSemesters });
+
+  const threshold = getWarningThreshold(settings);
+  const warningThresholdPercentage = getWarningThresholdPercentage(settings);
+  const warningSubjects = gradingSystem === 'points'
+    ? filteredSubjects.filter(s => isSubjectAtPercentageRisk(s, settings.gradingScale, warningThresholdPercentage))
+    : filteredSubjects.filter(s => isSubjectAtWarningRisk(s, settings.gradingScale, threshold.points));
 
   return (
     <div className="flex flex-col min-h-full gap-6 pb-8">
@@ -77,41 +82,109 @@ export function Dashboard() {
             setFilterSemesters={setFilterSemesters}
           />
 
-          {/* cGPA (المعدل التراكمي الكلي) */}
-          <div 
-            onClick={() => navigate('/academic')}
-            className="bg-indigo-600 dark:bg-indigo-900 text-white p-3 px-4 rounded-2xl shadow-sm cursor-pointer hover:opacity-95 transition-opacity text-center min-w-[95px]"
-            title={isAr ? 'المعدل التراكمي الكلي' : 'Cumulative GPA'}
-          >
-            <p className="text-[11px] text-indigo-200 uppercase font-bold tracking-wider">{isAr ? 'التراكمي cGPA' : 'cGPA'}</p>
-            <p className="text-xl font-black">{totalGPA > 0 ? totalGPA.toFixed(2) : '--'}</p>
-          </div>
-
-          {/* Graduation Estimate Badge if Enabled */}
-          {settings.enableGraduationScale && settings.graduationGradingScale && settings.graduationGradingScale.length > 0 && totalGPA > 0 && (() => {
-            const est = calculateGraduationEstimate(totalGPA, undefined, settings.graduationGradingScale);
-            if (!est) return null;
-            return (
+          {/* نظام الحساب: GPA أو النقط */}
+          {gradingSystem === 'points' ? (
+            <>
+              {/* النقط التراكمية */}
               <div
                 onClick={() => navigate('/academic')}
-                className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-3 px-4 rounded-2xl shadow-md shadow-blue-500/20 cursor-pointer hover:opacity-95 transition-opacity text-center min-w-[110px]"
-                title={isAr ? 'تقدير التخرج التراكمي' : 'Graduation Estimate'}
+                className="bg-emerald-600 dark:bg-emerald-900 text-white p-3 px-4 rounded-2xl shadow-sm cursor-pointer hover:opacity-95 transition-opacity text-center min-w-[130px]"
+                title={isAr ? 'النقط التراكمية المجمعة' : 'Cumulative points'}
               >
-                <p className="text-[10px] text-blue-200 uppercase font-bold tracking-wider">{isAr ? 'تقدير التخرج' : 'Graduation'}</p>
-                <p className="text-xs sm:text-sm font-black truncate">{isAr ? est.nameAr : (est.nameEn || est.nameAr)}</p>
+                <p className="text-[11px] text-emerald-100 uppercase font-bold tracking-wider">{isAr ? 'النقط التراكمية' : 'Points'}</p>
+                <p className="text-xl font-black">
+                  {pointsSummary ? pointsSummary.points.toFixed(1) : '--'}
+                  {pointsSummary && pointsSummary.totalPoints > 0 && (
+                    <span className="text-xs font-bold text-emerald-100"> / {pointsSummary.totalPoints}</span>
+                  )}
+                </p>
               </div>
-            );
-          })()}
 
-          {/* GPA (معدل الفصل المختار) */}
-          <div 
+              {/* النقط الفصلية */}
+              <div
+                onClick={() => navigate('/academic')}
+                className="bg-white dark:bg-zinc-900 p-3 px-4 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-center min-w-[110px]"
+                title={isAr ? 'نقط الفصل المحدد بالفلتر' : 'Selected term points'}
+              >
+                <p className="text-[11px] text-zinc-400 uppercase font-bold tracking-wider">{isAr ? 'نقط الفصل' : 'Term'}</p>
+                <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">
+                  {pointsSummary ? pointsSummary.termPoints.toFixed(1) : '--'}
+                </p>
+              </div>
+
+              {/* المتبقي للتوتال */}
+              {pointsSummary && pointsSummary.totalPoints > 0 && (
+                <div
+                  onClick={() => navigate('/academic')}
+                  className="bg-white dark:bg-zinc-900 p-3 px-4 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-center min-w-[110px]"
+                  title={isAr ? 'النقط المتبقية للتوتال' : 'Points left to the total'}
+                >
+                  <p className="text-[11px] text-zinc-400 uppercase font-bold tracking-wider">{isAr ? 'المتبقي' : 'Left'}</p>
+                  <p className="text-xl font-black text-zinc-700 dark:text-zinc-200">
+                    {pointsSummary.remainingPoints.toFixed(1)}
+                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {/* cGPA (المعدل التراكمي الكلي) */}
+              <div 
+                onClick={() => navigate('/academic')}
+                className="bg-indigo-600 dark:bg-indigo-900 text-white p-3 px-4 rounded-2xl shadow-sm cursor-pointer hover:opacity-95 transition-opacity text-center min-w-[95px]"
+                title={isAr ? 'المعدل التراكمي الكلي' : 'Cumulative GPA'}
+              >
+                <p className="text-[11px] text-indigo-200 uppercase font-bold tracking-wider">{isAr ? 'التراكمي cGPA' : 'cGPA'}</p>
+                <p className="text-xl font-black">{totalGPA > 0 ? totalGPA.toFixed(2) : '--'}</p>
+              </div>
+
+              {/* Graduation Estimate Badge if Enabled */}
+              {settings.enableGraduationScale && settings.graduationGradingScale && settings.graduationGradingScale.length > 0 && totalGPA > 0 && (() => {
+                const est = calculateGraduationEstimate(totalGPA, undefined, settings.graduationGradingScale);
+                if (!est) return null;
+                return (
+                  <div
+                    onClick={() => navigate('/academic')}
+                    className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-3 px-4 rounded-2xl shadow-md shadow-blue-500/20 cursor-pointer hover:opacity-95 transition-opacity text-center min-w-[110px]"
+                    title={isAr ? 'تقدير التخرج التراكمي' : 'Graduation Estimate'}
+                  >
+                    <p className="text-[10px] text-blue-200 uppercase font-bold tracking-wider">{isAr ? 'تقدير التخرج' : 'Graduation'}</p>
+                    <p className="text-xs sm:text-sm font-black truncate">{isAr ? est.nameAr : (est.nameEn || est.nameAr)}</p>
+                  </div>
+                );
+              })()}
+
+              {/* GPA (معدل الفصل المختار) */}
+              <div 
+                onClick={() => navigate('/academic')}
+                className="bg-white dark:bg-zinc-900 p-3 px-4 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-center min-w-[95px]"
+                title={isAr ? 'معدل الفصل المختار' : 'Semester GPA'}
+              >
+                <p className="text-[11px] text-zinc-400 uppercase font-bold tracking-wider">{isAr ? 'الفصل GPA' : 'GPA'}</p>
+                <p className="text-xl font-black text-indigo-600 dark:text-indigo-400">
+                  {hasFilteredGrades && semesterGPA > 0 ? semesterGPA.toFixed(2) : (hasFilteredGrades ? '0.00' : '--')}
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* التقدير الحالي العام: الرمز + الاسم + النسبة المئوية */}
+          <div
             onClick={() => navigate('/academic')}
-            className="bg-white dark:bg-zinc-900 p-3 px-4 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-center min-w-[95px]"
-            title={isAr ? 'معدل الفصل المختار' : 'Semester GPA'}
+            className="bg-gradient-to-r from-amber-500 to-orange-600 text-white p-3 px-4 rounded-2xl shadow-sm cursor-pointer hover:opacity-95 transition-opacity text-center min-w-[130px]"
+            title={isAr ? 'التقدير الحالي العام (كل السنوات)' : 'Current overall grade'}
           >
-            <p className="text-[11px] text-zinc-400 uppercase font-bold tracking-wider">{isAr ? 'الفصل GPA' : 'GPA'}</p>
-            <p className="text-xl font-black text-indigo-600 dark:text-indigo-400">
-              {hasFilteredGrades && semesterGPA > 0 ? semesterGPA.toFixed(2) : (hasFilteredGrades ? '0.00' : '--')}
+            <p className="text-[10px] text-amber-100 uppercase font-bold tracking-wider">{isAr ? 'التقدير العام' : 'Overall Grade'}</p>
+            <p className="text-lg font-black leading-tight flex items-center justify-center gap-1.5">
+              <span>{overallGrade ? overallGrade.letter : '--'}</span>
+              {overallGrade && (
+                <span className="text-[10px] font-bold text-amber-100">
+                  {overallGrade.percentage.toFixed(1)}%
+                </span>
+              )}
+            </p>
+            <p className="text-[10px] font-bold text-amber-100 truncate max-w-[120px]">
+              {overallGrade ? (isAr ? overallGrade.nameAr : (overallGrade.nameEn || overallGrade.nameAr)) : (isAr ? 'لا توجد درجات بعد' : 'No grades yet')}
             </p>
           </div>
 
@@ -147,7 +220,20 @@ export function Dashboard() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{sub.creditHours} {settings.language === 'ar' ? 'ساعات' : 'Hrs'}</p>
+                    {gradingSystem === 'points' ? (() => {
+                      const subGrade = calculateSubjectGrade(sub, settings.gradingScale);
+                      const perPoint = Number(pointsSummary?.marksPerPoint || 0);
+                      return (
+                        <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                          {subGrade && perPoint > 0 ? `${(subGrade.totalAchieved / perPoint).toFixed(1)} ${settings.language === 'ar' ? 'نقطة' : 'pts'}` : '--'}
+                          <span className="block text-[10px] font-bold text-zinc-400">
+                            {subGrade ? `${subGrade.totalAchieved} / ${sub.totalMarks}` : (settings.language === 'ar' ? 'لا درجات' : 'no marks')}
+                          </span>
+                        </p>
+                      );
+                    })() : (
+                      <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{sub.creditHours} {settings.language === 'ar' ? 'ساعات' : 'Hrs'}</p>
+                    )}
                   </div>
                 </div>
               ))
@@ -255,7 +341,11 @@ export function Dashboard() {
                     </div>
                     <div className="flex flex-col items-center justify-center px-2 py-1 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400">
                       <span className="font-black text-sm leading-tight">{gradeInfo?.letter || 'F'}</span>
-                      <span className="text-[9px] font-bold opacity-80">{(gradeInfo?.points || 0).toFixed(1)} GPA</span>
+                      <span className="text-[9px] font-bold opacity-80">
+                        {gradingSystem === 'points'
+                          ? `${(gradeInfo?.percentage || 0).toFixed(1)}%`
+                          : `${(gradeInfo?.points || 0).toFixed(1)} GPA`}
+                      </span>
                     </div>
                   </div>
                 );

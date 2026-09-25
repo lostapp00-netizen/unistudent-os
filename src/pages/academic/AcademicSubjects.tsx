@@ -79,7 +79,8 @@ export function AcademicSubjects() {
       setFormError(settings.language === 'ar' ? 'يرجى إدخال اسم المادة الدراسية.' : 'Please enter subject name.');
       return;
     }
-    if (formData.creditHours === '' || isNaN(Number(formData.creditHours)) || Number(formData.creditHours) <= 0) {
+    // نظام النقط: مفيش ساعات معتمدة، فمش بنطلبها ولا بنتحقق منها.
+    if (gradingSystem === 'gpa' && (formData.creditHours === '' || isNaN(Number(formData.creditHours)) || Number(formData.creditHours) <= 0)) {
       setFormError(settings.language === 'ar' ? 'يرجى إدخال عدد الساعات المعتمدة بشكل صحيح (أكبر من 0).' : 'Please enter valid credit hours (greater than 0).');
       return;
     }
@@ -92,7 +93,7 @@ export function AcademicSubjects() {
       updateSubject(editingSubject.id, {
         name: formData.name.trim(),
         code: formData.code.trim(),
-        creditHours: Number(formData.creditHours),
+        creditHours: gradingSystem === 'points' ? (Number(editingSubject.creditHours) || 1) : Number(formData.creditHours),
         totalMarks: Number(formData.totalMarks),
         yearIndex: Number(formData.yearIndex),
         semesterIndex: Number(formData.semesterIndex)
@@ -104,7 +105,9 @@ export function AcademicSubjects() {
         id: newSubId,
         name: formData.name.trim(),
         code: formData.code.trim(),
-        creditHours: Number(formData.creditHours),
+        // Um sistema de pontos não usa ساعات معتمدة: بنُخزّن 1 بس عشان لو
+        // الطالب رجع لنظام المعدل، المواد تفضل صالحة للحساب.
+        creditHours: gradingSystem === 'points' ? 1 : Number(formData.creditHours),
         totalMarks: Number(formData.totalMarks),
         yearIndex: Number(formData.yearIndex),
         semesterIndex: Number(formData.semesterIndex),
@@ -124,6 +127,8 @@ export function AcademicSubjects() {
   );
 
   const isAr = settings.language === 'ar';
+  const gradingSystem = settings.gradingSystem === 'points' ? 'points' : 'gpa';
+  const marksPerPoint = Number(settings.marksPerPoint || 0);
 
   return (
     <div className="flex flex-col min-h-full gap-6 pb-8">
@@ -165,8 +170,8 @@ export function AcademicSubjects() {
                 <th className="px-6 py-4 font-medium">{t('subject_code')}</th>
                 <th className="px-6 py-4 font-medium text-center">{t('year')}</th>
                 <th className="px-6 py-4 font-medium text-center">{t('semester')}</th>
-                <th className="px-6 py-4 font-medium text-center">{t('credit_hours')}</th>
-                <th className="px-6 py-4 font-medium text-center">{isAr ? 'النقاط' : 'Points'}</th>
+                {gradingSystem === 'gpa' && <th className="px-6 py-4 font-medium text-center">{t('credit_hours')}</th>}
+                <th className="px-6 py-4 font-medium text-center">{isAr ? 'النقط' : 'Points'}</th>
                 <th className="px-6 py-4 font-medium text-center">{isAr ? 'النسبة المئوية' : 'Percentage'}</th>
                 <th className="px-6 py-4 font-medium text-center">{isAr ? 'التقدير' : 'Letter Grade'}</th>
                 <th className="px-6 py-4 font-medium text-center">{isAr ? 'الدرجات (حاصل / كلي)' : 'Marks (Achieved / Total)'}</th>
@@ -182,16 +187,30 @@ export function AcademicSubjects() {
                     <td className="px-6 py-4 text-zinc-500">{subject.code}</td>
                     <td className="px-6 py-4 text-center">{subject.yearIndex}</td>
                     <td className="px-6 py-4 text-center">{subject.semesterIndex}</td>
-                    <td className="px-6 py-4 text-center">{subject.creditHours}</td>
+                    {gradingSystem === 'gpa' && <td className="px-6 py-4 text-center">{subject.creditHours}</td>}
                     <td className="px-6 py-4 text-center font-bold text-zinc-700 dark:text-zinc-300">
-                      {gradeInfo ? Number(gradeInfo.points || 0).toFixed(2) : '--'}
+                      {gradeInfo
+                        ? (gradingSystem === 'points'
+                            ? (marksPerPoint > 0 ? (gradeInfo.totalAchieved / marksPerPoint).toFixed(2) : '--')
+                            : Number(gradeInfo.points || 0).toFixed(2))
+                        : '--'}
                     </td>
                     <td className="px-6 py-4 text-center font-medium">
                       {gradeInfo ? `${Number(gradeInfo.percentage || 0).toFixed(1)}%` : '--'}
                     </td>
                     <td className="px-6 py-4 text-center font-black">
                       {gradeInfo ? (
-                        <span className={(gradeInfo.points || 0) >= 3.0 ? 'text-emerald-600' : (gradeInfo.points || 0) >= 2.0 ? 'text-amber-500' : 'text-rose-500'}>
+                        <span className={
+                          (gradingSystem === 'points'
+                            ? (gradeInfo.percentage || 0) >= 80
+                            : (gradeInfo.points || 0) >= 3.0)
+                            ? 'text-emerald-600'
+                            : (gradingSystem === 'points'
+                                ? (gradeInfo.percentage || 0) >= 65
+                                : (gradeInfo.points || 0) >= 2.0)
+                              ? 'text-amber-500'
+                              : 'text-rose-500'
+                        }>
                           {gradeInfo.letter}
                         </span>
                       ) : <span className="text-zinc-400">--</span>}
@@ -225,7 +244,7 @@ export function AcademicSubjects() {
                 );
               })}
               {filteredSubjects.length === 0 && (
-                <tr><td colSpan={10} className="px-6 py-8 text-center text-zinc-400">{isAr ? 'لا توجد مواد مضافة في هذا الفصل الدراسي.' : 'No subjects added for this semester.'}</td></tr>
+                <tr><td colSpan={gradingSystem === 'gpa' ? 10 : 9} className="px-6 py-8 text-center text-zinc-400">{isAr ? 'لا توجد مواد مضافة في هذا الفصل الدراسي.' : 'No subjects added for this semester.'}</td></tr>
               )}
             </tbody>
           </table>
@@ -301,21 +320,27 @@ export function AcademicSubjects() {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">{t('credit_hours')}</label>
-                  <input 
-                    type="number" 
-                    min="1" 
-                    value={formData.creditHours === '' ? '' : formData.creditHours} 
-                    onChange={e => {
-                      if (formError) setFormError(null);
-                      setFormData({...formData, creditHours: e.target.value === '' ? '' : Number(e.target.value)});
-                    }} 
-                    className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">{t('total_marks')}</label>
+                {gradingSystem === 'gpa' && (
+                  <div>
+                    <label className="block text-sm font-medium mb-1">{t('credit_hours')}</label>
+                    <input 
+                      type="number" 
+                      min="1" 
+                      value={formData.creditHours === '' ? '' : formData.creditHours} 
+                      onChange={e => {
+                        if (formError) setFormError(null);
+                        setFormData({...formData, creditHours: e.target.value === '' ? '' : Number(e.target.value)});
+                      }} 
+                      className="w-full border border-zinc-300 dark:border-zinc-700 rounded-xl px-4 py-2 bg-transparent outline-none focus:ring-2 focus:ring-indigo-500" 
+                    />
+                  </div>
+                )}
+                <div className={gradingSystem === 'gpa' ? '' : 'col-span-2'}>
+                  <label className="block text-sm font-medium mb-1">
+                    {gradingSystem === 'points'
+                      ? (isAr ? 'الدرجة الكلية في الكلية' : 'Total marks in college')
+                      : t('total_marks')}
+                  </label>
                   <input 
                     type="number" 
                     min="1" 
@@ -328,6 +353,13 @@ export function AcademicSubjects() {
                   />
                 </div>
               </div>
+              {gradingSystem === 'points' && (
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  {isAr
+                    ? 'نظام النقط مش بيستخدم الساعات المعتمدة — الدرجة اللي بتجمعها في المادة هي اللي بتتحوّل نقط.'
+                    : 'The points system does not use credit hours — the marks you collect are what turns into points.'}
+                </p>
+              )}
             </div>
             <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800 flex gap-3">
               <button 

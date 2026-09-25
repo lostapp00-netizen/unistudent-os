@@ -139,11 +139,16 @@ export function Schedule() {
   }, [anchorDate]);
 
   /**
-   * Alternating lectures: of the two paired lectures only one is visible at a
-   * time. The decision depends on the date, so every view filters per date.
+   * Items that belong to a concrete date: the weekday has to match the item's
+   * dayOfWeek, and an alternating lecture that is standing down on that date is
+   * left out. Every view (day / week / month) goes through here, so a lecture
+   * can never leak onto a day it was not scheduled for.
    */
   const itemsVisibleOnDate = (date: Date) =>
-    filteredScheduleItems.filter(item => !isItemHiddenOnDate(item.id, date, alternatingPairs));
+    filteredScheduleItems.filter(item =>
+      Number(item.dayOfWeek) === date.getDay() &&
+      !isItemHiddenOnDate(item.id, date, alternatingPairs)
+    );
 
   // The day view shows the anchor date itself. Picking another weekday moves the
   // anchor to that weekday inside the week on screen, so the date being viewed
@@ -241,8 +246,10 @@ export function Schedule() {
 
   // Header counter: per-type counts only (lectures / sections / labs) — the
   // generic "حصة ومحاضرة" total was confusing ("0 حصة ومحاضرة").
+  // في عرض اليوم/الأسبوع الأرقام بتخص اليوم المعروض، وفي عرض الشهر بتخص كل
+  // المواد المفلترة (الشهر كله معروض على الشاشة).
   const headerCountParts: string[] = (() => {
-    const headerItems = itemsVisibleOnDate(anchorDate);
+    const headerItems = viewMode === 'month' ? filteredScheduleItems : itemsVisibleOnDate(anchorDate);
     const lectures = headerItems.filter(s => s.type === 'lecture').length;
     const tutorials = headerItems.filter(s => s.type === 'tutorial').length;
     const labs = headerItems.filter(s => s.type === 'lab').length;
