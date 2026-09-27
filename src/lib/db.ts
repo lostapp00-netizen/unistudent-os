@@ -5138,6 +5138,38 @@ export function subjectPlacementChanged(data: any): boolean {
  * Resolve an incoming parent reference (template id, student id, or name) to a
  * folder that actually exists in the university database.
  */
+/**
+ * The subject a drive item belongs to, resolved to an id that exists in THIS
+ * database. The student sends either the template id or just the subject name
+ * (their own local subject id means nothing here), so the name is matched too —
+ * without it, a parent named "Lectures" cannot be told apart from the "Lectures"
+ * of every other subject.
+ */
+function resolveSubjectRefForPlacement(subjects: Subject[], primary: any, fallback?: any): string | null {
+  const candidates = [primary, fallback].filter(Boolean);
+  for (const data of candidates) {
+    const templateId = data?.subjectTemplateId || data?.subject_template_id;
+    if (templateId) {
+      const byId = subjects.find(s => s.id === templateId);
+      if (byId) return byId.id;
+    }
+  }
+  for (const data of candidates) {
+    const localId = data?.subjectId || data?.subject_id;
+    if (localId) {
+      const byId = subjects.find(s => s.id === localId);
+      if (byId) return byId.id;
+    }
+  }
+  for (const data of candidates) {
+    const normName = normalizeSubjectName((data?.subjectName || '').trim());
+    if (!normName) continue;
+    const byName = subjects.filter(s => normalizeSubjectName(s.name || '') === normName);
+    if (byName.length === 1) return byName[0].id;
+  }
+  return null;
+}
+
 export function resolveTemplateParentIdDetailed(
   driveFiles: DriveFile[],
   opts: {
@@ -5183,13 +5215,26 @@ export function resolveTemplateParentIdDetailed(
 
     if (byName.length > 1) {
       // كل مادة فيها فولدر اسمه "Lectures" — المطابقة بالاسم لوحدها كانت بتختار
-      // واحد عشوائي فالعنصر ينزل جوه مادة تانية. لو الاسم مش وحيد، نجرّب نحدده
-      // بالمادة، ولو لسه مش واضح بنرفض التخمين وبنرجّع "مش موجود" عشان ينبّه
-      // الأدمن بدل ما يحط العنصر في المكان الغلط.
+      // واحد عشوائي فالعنصر ينزل جوه مادة تانية. بنحدد بالمادة: الفولدر نفسه لو
+      // مربوط بالمادة، أو أقرب فولدر أب مربوط بيها (مادة → Lectures → …).
       const subjectRef = opts.subjectId || null;
       if (subjectRef) {
-        const bySubject = byName.filter(f => !f.subjectId || f.subjectId === subjectRef);
-        if (bySubject.length === 1) return { id: bySubject[0].id, found: true };
+        const directlyLinked = byName.filter(f => f.subjectId === subjectRef);
+        if (directlyLinked.length === 1) return { id: directlyLinked[0].id, found: true };
+
+        const ancestorLinked = byName.filter(f => {
+          let cursor: DriveFile | undefined = f;
+          const seen = new Set<string>([f.id]);
+          for (let depth = 0; depth < 6 && cursor?.parentId && !seen.has(cursor.parentId); depth++) {
+            seen.add(cursor.parentId);
+            const parent = list.find(p => p.id === cursor!.parentId);
+            if (!parent) break;
+            if (parent.subjectId === subjectRef) return true;
+            cursor = parent;
+          }
+          return false;
+        });
+        if (ancestorLinked.length === 1) return { id: ancestorLinked[0].id, found: true };
       }
       return { id: null, found: false };
     }
@@ -5509,14 +5554,27 @@ export function applyPendingUpdateToDatabase(
     const fileName = (file.name || '').trim();
     if (!fileName) return targetDb;
 
-    // Resolve parent folder in template
+    // Resolve linked subject in template FIRST: it is what tells two same-named
+    // parent folders apart ("Lectures" of Math 1 vs of Mechanics 1).
+    let resolvedSubjectId: string | undefined = undefined;
+    if (file.subjectId || file.subject_id || file.subjectName || file.subjectTemplateId || file.subject_template_id) {
+      const rawSubjId = file.subjectTemplateId || file.subject_template_id || file.subjectId || file.subject_id;
+      const subNameNorm = file.subjectName ? normalizeSubjectName(file.subjectName) : '';
+      const matchedSubj = subjects.find(s =>
+        (rawSubjId && s.id === rawSubjId) ||
+        (subNameNorm && normalizeSubjectName(s.name) === subNameNorm)
+      ) || subjects.find(s => subNameNorm && normalizeSubjectName(s.name) === subNameNorm);
+      resolvedSubjectId = matchedSubj ? matchedSubj.id : undefined;
+    }
+
+    // Resolve parent folder in template (scoped by the resolved subject).
     const parentResolution = resolveTemplateParentIdDetailed(driveFiles, {
       parentId: file.parentId,
       parentTemplateId: file.parentTemplateId || file.parent_template_id,
       parentName: file.parentName,
       yearIndex: file.yearIndex,
       semesterIndex: file.semesterIndex,
-      subjectId: file.subjectTemplateId || file.subject_template_id || file.subjectId || null
+      subjectId: resolvedSubjectId || file.subjectTemplateId || file.subject_template_id || null
     });
     const resolvedParentId = parentResolution.id;
     const parentFolder = resolvedParentId ? driveFiles.find(f => f.id === resolvedParentId) : undefined;
@@ -5533,18 +5591,6 @@ export function applyPendingUpdateToDatabase(
         `⚠️ "${fileName}": الفولدر الأب (${String(file.parentName || file.parentId || '').trim()}) مش موجود في قاعدة البيانات، فالعنصر اتضاف في الجذر. ` +
         `اتأكد إن تحديث الفولدر الأب اتعمل عليه موافقة، وبعدين انقله مكانه الصحيح.`
       );
-    }
-
-    // Resolve linked subject in template
-    let resolvedSubjectId: string | undefined = undefined;
-    if (file.subjectId || file.subject_id || file.subjectName || file.subjectTemplateId || file.subject_template_id) {
-      const rawSubjId = file.subjectTemplateId || file.subject_template_id || file.subjectId || file.subject_id;
-      const subNameNorm = file.subjectName ? normalizeSubjectName(file.subjectName) : '';
-      const matchedSubj = subjects.find(s =>
-        (rawSubjId && s.id === rawSubjId) ||
-        (subNameNorm && normalizeSubjectName(s.name) === subNameNorm)
-      );
-      resolvedSubjectId = matchedSubj ? matchedSubj.id : undefined;
     }
 
     const newFile: DriveFile = {
@@ -5613,7 +5659,7 @@ export function applyPendingUpdateToDatabase(
       parentName: targetParentName,
       yearIndex: itemYear,
       semesterIndex: itemSem,
-      subjectId: upd.subjectTemplateId || upd.subject_template_id || upd.subjectId || prev.subjectId || null
+      subjectId: resolveSubjectRefForPlacement(subjects, upd, prev)
     });
     const resolvedParentId = resolvedParent.id;
     const parentFound = resolvedParent.found;
@@ -5784,7 +5830,8 @@ export function applyPendingUpdateToDatabase(
       parentTemplateId: delData.parentTemplateId || delData.parent_template_id,
       parentName: delData.parentName,
       yearIndex: targetYear,
-      semesterIndex: targetSem
+      semesterIndex: targetSem,
+      subjectId: resolveSubjectRefForPlacement(subjects, delData, delData)
     });
     const parentKnown = parentMatch.found || delData.parentId === null || delData.parentId === '';
     const parentScopeId = parentMatch.id;
