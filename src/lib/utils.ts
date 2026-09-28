@@ -490,6 +490,33 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Items on a student's drive that no longer exist in the linked database.
+ *
+ * When the admin deletes an item from a template — and the file object with it —
+ * the student's own copy stays on screen as a working tile: it looks fine, and
+ * clicking it downloads nothing. These are the rows that must go.
+ *
+ * Only template-derived items can be judged this way: anything the student added
+ * themselves has no template link and is never touched. The caller must only act
+ * on this with a template snapshot it trusts (a fresh read of the database) — a
+ * stale or partial snapshot would delete live items instead.
+ */
+export function staleTemplateItemIds(
+  localFiles: DriveFile[],
+  liveTemplateIds: Iterable<string>
+): string[] {
+  const live = liveTemplateIds instanceof Set ? liveTemplateIds : new Set(liveTemplateIds);
+  const doomed: string[] = [];
+  for (const file of (localFiles || []).filter(Boolean)) {
+    const templateId = file.universityTemplateId || (file as any).originId;
+    if (!templateId) continue;                 // personal item — never removed
+    if (live.has(templateId)) continue;        // still part of the database
+    doomed.push(file.id);
+  }
+  return doomed;
+}
+
 // ---------------------------------------------------------------------------
 // Time formatting (نظام ١٢ ساعة)
 // ---------------------------------------------------------------------------

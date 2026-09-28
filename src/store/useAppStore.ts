@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, GraduationGradeRule, UniversityDatabase, AlternatingLecture } from '../types';
 import { db, flushPendingWrites, matchDriveItemInDatabase, matchSubjectInDatabase } from '../lib/db';
 import { normalizeSubjectName } from '../lib/academicTranslation';
-import { matchesDriveItem, reconcileTemplateDriveFiles, reattachOrphans } from '../lib/utils';
+import { matchesDriveItem, reconcileTemplateDriveFiles, reattachOrphans, staleTemplateItemIds } from '../lib/utils';
 import {
   addDeletedTemplateFileId,
   forgetDeletedTemplateFileIds,
@@ -1547,13 +1547,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       // fallback — an unlink must stay unlinked on every subsequent boot.
       let targetDbId = settings.universityDatabaseId;
 
-      // 1. Try finding by ID directly first (fastest, avoids full scan)
+      // 1. Try finding by ID directly first (fastest, avoids full scan).
+      //    The fresh read is what tells us the snapshot may be trusted for
+      //    REMOVALS: a cached/stale copy must never be read as "the admin deleted
+      //    this item" (that is how a working drive got wiped before).
       let matchedDb: UniversityDatabase | null = null;
+      let collegeFromRemote = false;
       if (targetDbId) {
-        matchedDb = await db.getUniversityDatabase(targetDbId);
+        const fresh = await db.getUniversityDatabaseFresh(targetDbId);
+        matchedDb = fresh.database;
+        collegeFromRemote = fresh.fromRemote;
       }
 
-      if (!matchedDb) {
+      if (!matchedDb && !collegeFromRemote) {
         const allDbs = await db.getUniversityDatabases();
         if (targetDbId) {
           matchedDb = allDbs.find(d => d.id === targetDbId) || null;
@@ -1566,7 +1572,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       // item from this student's drive. A lookup miss must never destroy data.
       if (!matchedDb && targetDbId) {
         await new Promise(resolve => setTimeout(resolve, 800));
-        matchedDb = await db.getUniversityDatabase(targetDbId);
+        const retry = await db.getUniversityDatabaseFresh(targetDbId);
+        matchedDb = retry.database || matchedDb;
+        collegeFromRemote = collegeFromRemote || retry.fromRemote;
       }
 
       if (!matchedDb) {
@@ -1582,9 +1590,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Self-Healing: If matchedDb is a specialization database, resolve its parent general college.
       if (matchedDb && matchedDb.isSpecialization) {
         let parentCollege: UniversityDatabase | null = null;
+        let parentFromRemote = false;
         if (matchedDb.parentDatabaseId) {
-          parentCollege = await db.getUniversityDatabase(matchedDb.parentDatabaseId);
-          if (!parentCollege) {
+          const freshParent = await db.getUniversityDatabaseFresh(matchedDb.parentDatabaseId);
+          parentCollege = freshParent.database;
+          parentFromRemote = freshParent.fromRemote;
+          if (!parentCollege && !parentFromRemote) {
             const allDbs = await db.getUniversityDatabases();
             parentCollege = allDbs.find(d => !d.isSpecialization && d.id === matchedDb!.parentDatabaseId) || null;
           }
@@ -1593,6 +1604,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           const detectedSpec = matchedDb;
           matchedDb = parentCollege;
           targetDbId = parentCollege.id;
+          collegeFromRemote = parentFromRemote;
           let cleanCollege = parentCollege.collegeNameAr || '';
           if (cleanCollege.includes(' - ')) {
             cleanCollege = cleanCollege.split(' - ')[0].trim();
@@ -1618,14 +1630,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Check for Specialization Database
       let specDb: UniversityDatabase | null = null;
       const targetSpecId = settings.specializationDatabaseId;
+      let specFromRemote = true;
       if (targetSpecId) {
-        specDb = await db.getUniversityDatabase(targetSpecId);
+        const freshSpec = await db.getUniversityDatabaseFresh(targetSpecId);
+        specDb = freshSpec.database;
+        specFromRemote = freshSpec.fromRemote;
+        if (!specDb && !freshSpec.fromRemote) specDb = await db.getUniversityDatabase(targetSpecId);
       }
 
       if (targetSpecId && !specDb) {
         // Specialization was deleted by Admin: unlink specialization database and clean up its template data!
         await get().unlinkSpecializationDatabase();
       }
+
+      // An item may only be judged "gone from the database" against a snapshot
+      // read straight from Supabase. A cached copy can be stale (e.g. in the
+      // seconds after an approval) and would look like a mass deletion.
+      const templateSnapshotTrusted = collegeFromRemote && specFromRemote;
 
       const userEmailLower = (userEmail || settings.email || '').trim().toLowerCase();
       const isCollegeSource = Boolean(
@@ -2118,14 +2139,43 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
         if (staleTombstoneIds.length > 0) forgetDeletedTemplateFileIds(userId, staleTombstoneIds);
 
+        // Items the ADMIN deleted from the database. The stored file object is
+        // gone with them, so a copy here is a tile that looks perfect and
+        // downloads nothing — it has to go. Only template-derived rows can be
+        // judged this way, and only against a fresh snapshot of the database
+        // (templateSnapshotTrusted): a cache that is merely behind would read as
+        // a mass deletion, which is what wiped whole drives before.
+        let remainingAfterTemplateSweep = deletedAnyRow ? remainingFiles : currentFiles;
+        if (templateSnapshotTrusted) {
+          const liveTemplateIds = new Set(combinedDriveFiles.map(f => f.id));
+          const doomedIds = staleTemplateItemIds(remainingAfterTemplateSweep, liveTemplateIds);
+
+          // A handful of items missing is the admin deleting them. A drive whose
+          // copies are ALMOST ALL missing means the database itself was rebuilt
+          // (every template id changed at once) — that is not a deletion, and
+          // removing them would leave the student with nothing. Skip and let the
+          // import above re-link what it can.
+          const copiedItems = remainingAfterTemplateSweep.filter(f => f.universityTemplateId || (f as any).originId).length;
+          const massStale = copiedItems > 5 && doomedIds.length > Math.max(5, copiedItems * 0.25);
+
+          if (massStale) {
+            console.warn(`[sync] skipped removing ${doomedIds.length}/${copiedItems} drive items: the database looks rebuilt, not trimmed.`);
+          } else if (doomedIds.length > 0) {
+            const doomedSet = new Set(doomedIds);
+            for (const id of doomedIds) {
+              await db.deleteDriveFile(userId, id).catch(() => {});
+            }
+            remainingAfterTemplateSweep = remainingAfterTemplateSweep.filter(f => !doomedSet.has(f.id));
+            hasFileChanges = true;
+            console.info(`[sync] removed ${doomedIds.length} drive item(s) that no longer exist in the database.`);
+          }
+        }
+
         // Deleting a folder takes its row away but leaves its children pointing
         // at it. Those children are unreachable in the UI (a drive renders items
         // under their parent), so the folder — and sometimes the whole drive —
         // looked wiped. Re-attach them instead of leaving them orphaned.
-        const orphanHeal = reattachOrphans(
-          deletedAnyRow ? remainingFiles : currentFiles,
-          currentFiles
-        );
+        const orphanHeal = reattachOrphans(remainingAfterTemplateSweep, currentFiles);
         if (orphanHeal.moved.length > 0) {
           for (const move of orphanHeal.moved) {
             await db.updateDriveFile(userId, move.id, { parentId: move.parentId }).catch(() => {});

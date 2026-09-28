@@ -1830,6 +1830,100 @@ export const db = {
     return list.find(u => u.id === id) || null;
   },
 
+  /**
+   * Read a database straight from Supabase, with no local-cache fallback, and
+   * report whether the answer can be trusted.
+   *
+   * The sync may only remove items that are missing from a template when this
+   * says `fromRemote` — a stale or partial local snapshot must never be taken as
+   * "deleted by the admin", or a working drive would be wiped.
+   */
+  async getUniversityDatabaseFresh(id: string): Promise<{ database: UniversityDatabase | null; fromRemote: boolean }> {
+    try {
+      const { data, error } = await supabase
+        .from('university_databases')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (error) return { database: null, fromRemote: false };
+      if (!data) return { database: null, fromRemote: true }; // really gone
+
+      const mapped = mapUniversityDatabaseFromDB(data);
+      try {
+        // Keep the local cache in step with what was just read.
+        const raw = localStorage.getItem('unistudent_university_databases');
+        const cached = raw ? JSON.parse(raw) : [];
+        const merged = [mapped, ...(Array.isArray(cached) ? cached.filter((u: any) => u?.id !== id) : [])];
+        localStorage.setItem('unistudent_university_databases', JSON.stringify(merged));
+      } catch {}
+
+      return { database: mapped, fromRemote: true };
+    } catch (e) {
+      console.warn('Fresh university database read failed:', e);
+      return { database: null, fromRemote: false };
+    }
+  },
+
+  /**
+   * The admin deleted drive items from a database template. Every student who
+   * restored that database keeps their own row pointing at the same file object —
+   * and that object is deleted from storage too, so the student is left with a
+   * tile that looks fine and downloads nothing. Remove those copies as well.
+   */
+  async deleteTemplateDriveItemsFromStudents(databaseIds: string[], templateIds: string[]): Promise<number> {
+    const ids = Array.from(new Set((templateIds || []).filter(Boolean)));
+    const dbIds = Array.from(new Set((databaseIds || []).filter(Boolean)));
+    if (ids.length === 0 || dbIds.length === 0) return 0;
+
+    let removed = 0;
+    try {
+      const userIds = new Set<string>();
+
+      // students linked through settings
+      const { data: linked } = await supabase
+        .from('settings')
+        .select('user_id')
+        .or(`university_database_id.in.(${dbIds.join(',')}),specialization_database_id.in.(${dbIds.join(',')})`);
+      (linked || []).forEach((row: any) => { if (row?.user_id) userIds.add(row.user_id); });
+
+      // students linked to the source student of one of those databases
+      try {
+        const { data: sources } = await supabase
+          .from('university_databases')
+          .select('source_user_id')
+          .in('id', dbIds);
+        const sourceIds = (sources || []).map((s: any) => s?.source_user_id).filter(Boolean);
+        if (sourceIds.length > 0) {
+          const { data: links } = await supabase
+            .from('database_restore_links')
+            .select('subscriber_id, source_owner_id');
+          (links || []).forEach((l: any) => {
+            if (l?.subscriber_id && sourceIds.includes(l?.source_owner_id)) userIds.add(l.subscriber_id);
+          });
+        }
+      } catch {}
+
+      for (const userId of userIds) {
+        const { data: rows } = await supabase
+          .from('drive_files')
+          .select('id, university_template_id')
+          .eq('user_id', userId);
+        const doomed = (rows || [])
+          .filter((r: any) => r?.university_template_id && ids.includes(r.university_template_id))
+          .map((r: any) => r.id);
+        if (doomed.length === 0) continue;
+
+        const { error } = await supabase.from('drive_files').delete().in('id', doomed);
+        if (!error) removed += doomed.length;
+      }
+    } catch (e) {
+      console.warn('Could not remove deleted template items from students:', e);
+    }
+
+    return removed;
+  },
+
   async createUniversityDatabase(dbData: UniversityDatabase): Promise<void> {
     // 1. Local storage cache
     try {

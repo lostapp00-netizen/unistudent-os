@@ -2018,6 +2018,17 @@ export function AdminUniversitiesTab({
         { removedDriveFileIds: [...doomedIds] }
       );
 
+      // Every student who restored this database keeps their own copy of these
+      // items, and the stored file object is gone with them — a copy left behind
+      // shows up as a tile that looks fine and downloads nothing. Delete the
+      // students' copies as well, so the item disappears from their drive too.
+      const studentsCleaned = await db
+        .deleteTemplateDriveItemsFromStudents([selectedCollegeDb.id], [...doomedIds])
+        .catch(() => 0);
+      if (studentsCleaned > 0) {
+        console.info(`[admin] removed ${studentsCleaned} copied drive item(s) from restored students.`);
+      }
+
       // Server-side (Edge Function) hard delete with client-side fallback.
       import('../../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
         const b2Keys = doomed

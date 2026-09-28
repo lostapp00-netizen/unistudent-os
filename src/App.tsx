@@ -28,6 +28,34 @@ import { Schedule } from './pages/productivity/Schedule';
 import { Appointments } from './pages/productivity/Appointments';
 
 import { useAppStore } from './store/useAppStore';
+import { clearSessionMirror, localStorageUsage, pruneRebuildableCaches, readSessionMirror, saveSessionMirror } from './lib/sessionPersistence';
+
+/**
+ * Put the student back into the mirrored session when this device has no stored
+ * one anymore (localStorage full or evicted). The SDK only ever hands out a
+ * session it can validate, so a revoked mirror simply resolves to `null` and the
+ * student signs in normally — nothing is lost either way.
+ */
+async function restoreSessionFromMirror() {
+  try {
+    const mirrored = await readSessionMirror();
+    if (!mirrored?.refresh_token) return null;
+
+    const { data, error } = await supabase.auth.setSession({
+      access_token: mirrored.access_token,
+      refresh_token: mirrored.refresh_token
+    });
+    if (error || !data?.session) {
+      await clearSessionMirror();
+      return null;
+    }
+    console.info('[auth] restored the saved session on this device.');
+    return data.session;
+  } catch (error) {
+    console.warn('[auth] session restore failed:', error);
+    return null;
+  }
+}
 
 // Persistent red banner whenever a database write fails (db.ts dispatches
 // `unistudent-save-error`). It stays on screen until the user dismisses it —
@@ -125,22 +153,44 @@ export function App() {
 
   useEffect(() => {
     document.title = "UniStudent OS";
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session?.user?.id) {
-        initialize(session.user.id, session.user.email).catch(console.error).finally(() => setLoading(false));
-      } else {
+
+    // Boot: take the stored session, and when the device no longer has it (full
+    // or evicted localStorage) restore the mirrored copy so the student is not
+    // asked to sign in again. `initialize` runs in both cases, so the app data is
+    // loaded exactly once.
+    (async () => {
+      try {
+        // Leave room for the session before the app's own caches fill the bucket
+        // up — dropping them costs nothing, they are fetched from the server.
+        if (localStorageUsage() > 3.5 * 1024 * 1024) pruneRebuildableCaches();
+
+        const { data } = await supabase.auth.getSession();
+        let activeSession: any = data?.session ?? null;
+
+        if (activeSession) {
+          void saveSessionMirror(activeSession);
+        } else {
+          activeSession = await restoreSessionFromMirror();
+        }
+
+        setSession(activeSession);
+        if (activeSession?.user?.id) {
+          initialize(activeSession.user.id, activeSession.user.email).catch(console.error).finally(() => setLoading(false));
+        } else {
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('Session get error:', err);
         setLoading(false);
       }
-    }).catch(err => {
-      console.error('Session get error:', err);
-      setLoading(false);
-    });
+    })();
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      if (session?.access_token) void saveSessionMirror(session);
+      if (event === 'SIGNED_OUT') void clearSessionMirror();
       // Only re-initialize when the authenticated user actually CHANGES.
       // Supabase emits TOKEN_REFRESHED / duplicate SIGNED_IN events when the
       // window regains focus (e.g. after closing the OS file picker or

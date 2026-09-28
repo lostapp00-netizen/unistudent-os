@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { GraduationCap, LogIn, UserPlus, AlertCircle, Mail, ArrowRight, ArrowLeft, Sun, Moon, Sparkles, CheckCircle2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store/useAppStore';
+import { canPersistLocally } from '../lib/sessionPersistence';
 
 export function Auth() {
   const { t, i18n } = useTranslation();
@@ -18,6 +19,14 @@ export function Auth() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signUpSuccessEmail, setSignUpSuccessEmail] = useState<string | null>(null);
+  // Private windows and the in-app browsers of WhatsApp/Telegram/Facebook throw
+  // away everything when they close, so the login cannot survive there. Say it
+  // out loud instead of letting the student sign in again and again in silence.
+  const [storageBlocked, setStorageBlocked] = useState(false);
+
+  useEffect(() => {
+    setStorageBlocked(!canPersistLocally());
+  }, []);
 
   useEffect(() => {
     // Check URL params for mode=signup or mode=login
@@ -179,6 +188,17 @@ export function Auth() {
             </div>
           ) : (
             <>
+              {storageBlocked && (
+                <div className="mb-5 bg-amber-50 dark:bg-amber-950/30 p-4 rounded-2xl flex items-start gap-3 border border-amber-200 dark:border-amber-900/50">
+                  <AlertCircle className="text-amber-600 dark:text-amber-400 w-5 h-5 mt-0.5 shrink-0" />
+                  <p className="text-xs sm:text-sm text-amber-900 dark:text-amber-200 font-semibold leading-relaxed">
+                    {isAr
+                      ? 'المتصفح ده مش بيحفظ تسجيل الدخول، فهتلاقي نفسك خارج الحساب كل مرة تفتحه (وضع التصفح المتخفي، أو متصفح جوه تطبيق زي واتساب/تليجرام). افتح الموقع من Chrome أو Safari عادي عشان تفضل مسجّل دخول.'
+                      : 'This browser does not keep you signed in — you will have to log in every time (private mode, or an in-app browser such as WhatsApp/Telegram). Open the site in Chrome or Safari to stay signed in.'}
+                  </p>
+                </div>
+              )}
+
               {error && (
                 <div className="mb-5 bg-rose-50 dark:bg-rose-950/30 p-4 rounded-2xl flex items-start gap-3 border border-rose-200 dark:border-rose-900/50">
                   <AlertCircle className="text-rose-600 dark:text-rose-400 w-5 h-5 mt-0.5 shrink-0" />
