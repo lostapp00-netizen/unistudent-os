@@ -3,7 +3,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, GraduationGradeRule, UniversityDatabase, AlternatingLecture } from '../types';
 import { db, flushPendingWrites, matchDriveItemInDatabase, matchSubjectInDatabase } from '../lib/db';
 import { normalizeSubjectName } from '../lib/academicTranslation';
-import { matchesDriveItem, reconcileTemplateDriveFiles } from '../lib/utils';
+import { matchesDriveItem, reconcileTemplateDriveFiles, reattachOrphans } from '../lib/utils';
+import {
+  addDeletedTemplateFileId,
+  forgetDeletedTemplateFileIds,
+  getDeletedTemplateFileIds,
+  readDeletedTemplateFileRecords,
+  wasStoredBeforeDeletion
+} from '../lib/driveTombstones';
 
 let activeSyncPromise: Promise<void> | null = null;
 let isImportInProgress = false;
@@ -148,27 +155,8 @@ export interface AppState {
 // --- Deleted template-file tombstones ---
 // Records template ids of drive items the user deleted on purpose, so the
 // university-database sync never resurrects them (the "deleted folder comes
-// back" bug). Per-device by design; survives sign-out.
-function getDeletedTemplateFileIds(userId: string): Set<string> {
-  try {
-    const raw = localStorage.getItem(`unistudent_deleted_template_files_${userId}`);
-    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function addDeletedTemplateFileId(userId: string, templateId: string): void {
-  try {
-    const key = `unistudent_deleted_template_files_${userId}`;
-    const raw = localStorage.getItem(key);
-    const list: string[] = raw ? JSON.parse(raw) : [];
-    if (!list.includes(templateId)) {
-      list.push(templateId);
-      localStorage.setItem(key, JSON.stringify(list.slice(-5000)));
-    }
-  } catch {}
-}
+// back" bug) — while still letting an explicit restore (استرداد) download them
+// again for good. See src/lib/driveTombstones.ts for the full rule.
 
 export const useAppStore = create<AppState>((set, get) => ({
   userId: null,
@@ -1173,6 +1161,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           ? [...(mainCollegeDb?.driveFiles || []), ...(specDb.driveFiles || [])]
           : (mainCollegeDb?.driveFiles || []);
 
+        // The student asked for this database to be downloaded, so every item of
+        // it is re-imported for good: drop the "deleted on purpose" markers of
+        // these template ids. Keeping them is what made a restore look complete
+        // and then lose the whole drive on the next refresh — the sync honoured
+        // the old markers and deleted the freshly restored rows one by one.
+        forgetDeletedTemplateFileIds(userId, incomingDriveFiles.map(f => f.id));
+
         if (incomingDriveFiles.length > 0) {
           const clonedFiles: DriveFile[] = [];
           const clonedTemplateIds = new Set<string>();
@@ -1333,10 +1328,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       return true;
     });
 
-    const remainingFiles = files.filter(f => {
+    const survivingFiles = files.filter(f => {
       const isTemplate = Boolean(f.universityTemplateId) || templateFileIds.has(f.id);
       if (isTemplate) {
         // Tombstone so a future re-link never re-imports what the student removed.
+        // (An explicit restore clears these markers again — see
+        // forgetDeletedTemplateFileIds in importFromUniversityDatabase.)
         if (f.universityTemplateId) addDeletedTemplateFileId(userId, f.universityTemplateId);
         // Never delete the B2 object — it belongs to the shared template.
         db.deleteDriveFile(userId, f.id).catch(() => {});
@@ -1344,6 +1341,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       return true;
     });
+
+    // The student's OWN items that lived inside the removed template folders used
+    // to be left pointing at a row that no longer exists — invisible forever,
+    // which made the whole drive look empty. Re-attach them to the nearest
+    // surviving folder (or the root) and persist that.
+    const { files: remainingFiles, moved: orphanMoves } = reattachOrphans(survivingFiles, files);
+    for (const move of orphanMoves) {
+      db.updateDriveFile(userId, move.id, { parentId: move.parentId }).catch(() => {});
+    }
 
     // Names typed by the student stay untouched — only the database link is
     // cleared. The academic frame written at import time (grading scale,
@@ -1460,7 +1466,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
 
     // Filter out files that belong to specialization
-    const remainingFiles = files.filter(f => {
+    const survivingFiles = files.filter(f => {
       const isSpecPhase = Number(f.yearIndex) > specStartYr || (Number(f.yearIndex) === specStartYr && Number(f.semesterIndex) >= specStartSem);
       const isSpecFile = (f.universityTemplateId && specTemplateFileIds.has(f.universityTemplateId)) || specTemplateFileIds.has(f.id) || (!specDb && f.universityTemplateId && isSpecPhase);
       if (isSpecFile) {
@@ -1469,6 +1475,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       return true;
     });
+
+    // The student's own items inside the removed specialization folders are
+    // re-attached instead of being orphaned (an orphan is never rendered).
+    const { files: remainingFiles, moved: orphanMoves } = reattachOrphans(survivingFiles, files);
+    for (const move of orphanMoves) {
+      db.updateDriveFile(userId, move.id, { parentId: move.parentId }).catch(() => {});
+    }
 
     // Repair universityDatabaseId if it was pointing to specDbId
     let repairedUniDbId = settings.universityDatabaseId;
@@ -1547,12 +1560,22 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
 
+      // One more attempt before giving up: a single failed read (cold cache on a
+      // new device, transient network/RLS hiccup) used to look exactly like "the
+      // admin deleted the database", and acting on it removed every restored
+      // item from this student's drive. A lookup miss must never destroy data.
+      if (!matchedDb && targetDbId) {
+        await new Promise(resolve => setTimeout(resolve, 800));
+        matchedDb = await db.getUniversityDatabase(targetDbId);
+      }
+
       if (!matchedDb) {
-        // If student had a universityDatabaseId, but no matching admin database exists anymore (deleted by admin),
-        // unlink the university database completely and remove the template data!
-        if (settings.universityDatabaseId || targetDbId) {
-          await get().unlinkUniversityDatabase();
-        }
+        // The linked database could not be read. This path runs on every boot,
+        // and unlinking DELETES the student's restored subjects and drive items,
+        // so a read miss is never acted upon: skip the sync and keep the data.
+        // When the admin really deletes a database, the delete cascades to every
+        // linked student from the admin side anyway.
+        console.warn('[sync] linked university database not readable — keeping student data untouched.', targetDbId);
         return;
       }
 
@@ -1911,6 +1934,21 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...(!isSpecSource && specDb ? (specDb.driveFiles || []) : [])
       ];
 
+      // Self-heal for drives emptied by the old wipe: markers that cover the
+      // ENTIRE linked database are not a manual cleanup — nobody deletes every
+      // single item of a college by hand, they unlink it instead. That pattern
+      // is a restore whose rows were dropped on the next refresh, so the markers
+      // are released and the drive is rebuilt from the database again.
+      if (
+        combinedDriveFiles.length > 0 &&
+        deletedTemplateFileIds.size > 0 &&
+        combinedDriveFiles.every(f => deletedTemplateFileIds.has(f.id))
+      ) {
+        console.warn('[sync] every item of the linked database is marked as deleted — rebuilding the drive.');
+        forgetDeletedTemplateFileIds(userId, combinedDriveFiles.map(f => f.id));
+        combinedDriveFiles.forEach(f => deletedTemplateFileIds.delete(f.id));
+      }
+
       if (combinedDriveFiles.length > 0) {
         const templateFileMap = new Map(combinedDriveFiles.map((f: DriveFile) => [f.id, f]));
         const templateNames = new Set(combinedDriveFiles.map((f: DriveFile) => (f.name || '').trim().toLowerCase()));
@@ -2051,18 +2089,50 @@ export const useAppStore = create<AppState>((set, get) => ({
         // (e.g. during the race between accepting an update and Supabase propagating
         // the change). Tombstones (deletedTemplateFileIds) are set in deleteFile()
         // for template-derived items, so intentional deletions are still honoured.
+        //
+        // A tombstone only ever kills rows that were stored BEFORE the deletion.
+        // A row that reached the server AFTER it (which is exactly what a restore
+        // does) was imported on purpose and is kept — and its tombstone is
+        // dropped, so the drive can never be emptied again by an old cleanup.
+        const tombstoneTimes = readDeletedTemplateFileRecords(userId);
+        const staleTombstoneIds: string[] = [];
         const remainingFiles: DriveFile[] = [];
+        let deletedAnyRow = false;
         for (const f of currentFiles) {
-          if (f.universityTemplateId && deletedTemplateFileIds.has(f.universityTemplateId)) {
+          const deletedAt = f.universityTemplateId ? tombstoneTimes[f.universityTemplateId] : undefined;
+          if (deletedAt === undefined) {
+            remainingFiles.push(f);
+            continue;
+          }
+
+          const wasStoredBefore = wasStoredBeforeDeletion(f.insertedAt, deletedAt);
+
+          if (wasStoredBefore) {
             await db.deleteDriveFile(userId, f.id);
             hasFileChanges = true;
+            deletedAnyRow = true;
           } else {
+            if (f.universityTemplateId) staleTombstoneIds.push(f.universityTemplateId);
             remainingFiles.push(f);
           }
         }
-        if (hasFileChanges) {
-          currentFiles = remainingFiles;
+        if (staleTombstoneIds.length > 0) forgetDeletedTemplateFileIds(userId, staleTombstoneIds);
+
+        // Deleting a folder takes its row away but leaves its children pointing
+        // at it. Those children are unreachable in the UI (a drive renders items
+        // under their parent), so the folder — and sometimes the whole drive —
+        // looked wiped. Re-attach them instead of leaving them orphaned.
+        const orphanHeal = reattachOrphans(
+          deletedAnyRow ? remainingFiles : currentFiles,
+          currentFiles
+        );
+        if (orphanHeal.moved.length > 0) {
+          for (const move of orphanHeal.moved) {
+            await db.updateDriveFile(userId, move.id, { parentId: move.parentId }).catch(() => {});
+            hasFileChanges = true;
+          }
         }
+        currentFiles = orphanHeal.files;
       }
 
       if (hasSubjectChanges) {

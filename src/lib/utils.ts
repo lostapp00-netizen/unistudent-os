@@ -440,6 +440,52 @@ export function reconcileTemplateDriveFiles(
   return { files: files.filter(f => !removedSet.has(f.id)), moved, removedIds };
 }
 
+/**
+ * Re-attach items whose parent row no longer exists.
+ *
+ * Deleting a folder (an unlink, a removed template item) takes the folder row
+ * away but can leave its children pointing at it. A missing parent is NOT the
+ * same as sitting at the root: the drive renders a child under its parent, so
+ * an orphan is unreachable — the folder looks empty and the drive looks wiped
+ * even though every file is still stored on the server.
+ *
+ * When the deleted parent is still known (pass it through `known`), the item is
+ * moved to the nearest surviving ancestor; otherwise it is lifted to the root
+ * so it stays visible instead of disappearing.
+ */
+export function reattachOrphans(
+  localFiles: DriveFile[],
+  known?: DriveFile[]
+): DriveReconcileResult {
+  const files = (localFiles || []).filter(Boolean) as DriveFile[];
+  const byId = new Map(files.map(f => [f.id, f]));
+
+  const knownList = (known && known.length > 0 ? known : files).filter(Boolean) as DriveFile[];
+  const knownById = new Map(knownList.map(f => [f.id, f]));
+
+  const moved: Array<{ id: string; parentId: string | null }> = [];
+
+  const healed = files.map(file => {
+    const parentId = file.parentId || null;
+    if (!parentId || byId.has(parentId)) return file;
+
+    // The parent is gone. Follow the chain that was recorded before the parent
+    // was removed, and stop at the first ancestor that still exists.
+    let next: string | null = parentId;
+    const seen = new Set<string>([file.id]);
+    while (next && !byId.has(next) && !seen.has(next)) {
+      seen.add(next);
+      next = (knownById.get(next)?.parentId || null) as string | null;
+    }
+    const resolved = next && byId.has(next) ? next : null;
+
+    moved.push({ id: file.id, parentId: resolved });
+    return { ...file, parentId: resolved };
+  });
+
+  return { files: healed, moved, removedIds: [] };
+}
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }

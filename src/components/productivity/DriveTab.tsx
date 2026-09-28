@@ -149,7 +149,13 @@ export function DriveTab() {
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
 
   const currentFolder = currentFolderId ? files.find(f => f.id === currentFolderId) : null;
-  const currentFiles = files.filter(f => f.parentId === currentFolderId);
+  // Items are listed under their parent, so a file whose folder row is gone
+  // (a deleted folder, an unlinked database) was unreachable and made the drive
+  // look wiped. At the root those items are listed as they are.
+  const existingFolderIds = new Set(files.filter(f => f.type === 'folder').map(f => f.id));
+  const currentFiles = currentFolderId
+    ? files.filter(f => f.parentId === currentFolderId)
+    : files.filter(f => !f.parentId || !existingFolderIds.has(f.parentId));
 
   // Breadcrumbs
   const getBreadcrumbs = (id: string | null): DriveFile[] => {

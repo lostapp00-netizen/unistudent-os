@@ -1330,21 +1330,30 @@ export const db = {
     return dbFiles;
   },
   async addDriveFile(userId: string, file: DriveFile & { b2FileId?: string }) {
+    const storedAt = new Date().toISOString();
     try {
       const key = `unistudent_drive_files_${userId}`;
       const list: DriveFile[] = JSON.parse(localStorage.getItem(key) || '[]');
-      localStorage.setItem(key, JSON.stringify([...list.filter(f => f.id !== file.id), file]));
+      // Stamp the local copy with the moment it reached the server, so a
+      // "deleted on purpose" marker recorded earlier can never remove it again.
+      localStorage.setItem(key, JSON.stringify([
+        ...list.filter(f => f.id !== file.id),
+        { ...file, insertedAt: file.insertedAt || storedAt }
+      ]));
     } catch {}
 
     const baseRow: any = {
       id: file.id,
       university_template_id: file.universityTemplateId ?? null,
       user_id: userId,
-      name: file.name,
-      size: file.size,
-      type: file.type,
+      name: file.name || '',
+      size: Number(file.size || 0),
+      type: file.type || 'file',
       url: file.url || '',
-      upload_date: file.createdAt,
+      // These columns are NOT NULL in the schema: a template folder carries no
+      // date of its own, and sending nothing made the whole insert fail — the
+      // file showed up until the next refresh and then vanished for good.
+      upload_date: file.createdAt || storedAt,
       b2_file_id: file.b2FileId,
       parent_id: file.parentId || null
     };
@@ -4977,6 +4986,7 @@ function mapDriveFileFromDB(row: any): DriveFile {
     type: row.type || 'file',
     url: row.url || '',
     createdAt: row.upload_date || row.createdAt || row.created_at || new Date().toISOString(),
+    insertedAt: row.created_at || row.insertedAt || undefined,
     parentId: row.parent_id !== undefined ? (row.parent_id || null) : (row.parentId !== undefined ? (row.parentId || null) : null),
     b2FileId: row.b2_file_id ?? row.b2FileId,
     yearIndex: parseNum(row.year_index !== undefined ? row.year_index : row.yearIndex),

@@ -65,6 +65,10 @@ export type DriveFile = {
   type: 'folder' | 'file';
   parentId: string | null;
   createdAt: string;
+  // When the server actually stored this row (drive_files.created_at). It tells
+  // a fresh import apart from a leftover of an earlier one — e.g. a restore that
+  // happened after the student deleted an item on purpose.
+  insertedAt?: string;
   url?: string;
   b2FileId?: string;
   // Academic phase this file belongs to (drives general-vs-spec routing)
