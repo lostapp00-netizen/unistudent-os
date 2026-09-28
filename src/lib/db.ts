@@ -2041,6 +2041,8 @@ export const db = {
       removedSubjectIds?: string[];
       removedGradingScaleIds?: string[];
       replaceArrays?: boolean;
+      /** Called with the database's own message when the write is refused. */
+      onWriteError?: (message: string) => void;
     }
   ): Promise<void> {
     // Arrays are item-addressed: whatever is passed is UPSERTED by id, and an
@@ -2060,10 +2062,17 @@ export const db = {
         ? { upsert: gradingScale as any[], removeIds: options?.removedGradingScaleIds }
         : undefined,
       replaceArrays: options?.replaceArrays
-    });
+    }, { onWriteError: options?.onWriteError });
   },
 
-  async patchUniversityDatabase(id: string, patch: UniversityDatabasePatch): Promise<void> {
+  async patchUniversityDatabase(
+    id: string,
+    patch: UniversityDatabasePatch,
+    options?: {
+      /** Called with the database's own message when the write is refused. */
+      onWriteError?: (message: string) => void;
+    }
+  ): Promise<void> {
     const updatedAt = new Date().toISOString();
     let cachedDatabases: UniversityDatabase[] = [];
 
@@ -2200,14 +2209,18 @@ export const db = {
       }
 
       if (error) {
+        const failureMessage = (error as any)?.message || String(error);
         if (isMissingPatchRpcError(error) || isMissingRowError(error)) {
           // Migration 202609240001 is not applied yet (or the row does not
           // exist): fall back to a merge against a FRESH read, so a stale
           // snapshot still cannot drop items that are missing from it.
           console.warn('[patchUniversityDatabase] patch RPC unavailable — using safe merge fallback. Apply migration 202609240001_university_database_item_patch.sql');
-          await this.legacyMergeUniversityDatabase(id, patch, scaleUpsert, scalarsPayload, updatedAt);
+          await this.legacyMergeUniversityDatabase(id, patch, scaleUpsert, scalarsPayload, updatedAt, options);
         } else {
           console.warn('Supabase patchUniversityDatabase failed:', error);
+          // The admin has to know: an approval that silently changes nothing is
+          // exactly what made an approved file never appear in the database.
+          options?.onWriteError?.(failureMessage);
         }
       }
     } catch (e) {
@@ -2227,7 +2240,8 @@ export const db = {
     patch: UniversityDatabasePatch,
     scaleUpsert: any[] | undefined,
     scalarsPayload: Record<string, any>,
-    updatedAt: string
+    updatedAt: string,
+    options?: { onWriteError?: (message: string) => void }
   ): Promise<void> {
     let currentDriveFiles: any[] | null = null;
     let currentSubjects: any[] | null = null;
@@ -2276,6 +2290,7 @@ export const db = {
       const upsertRes = await supabase.from('university_databases').upsert(payload, { onConflict: 'id' });
       if (upsertRes.error) {
         console.warn('Supabase legacyMergeUniversityDatabase error:', upsertRes.error);
+        options?.onWriteError?.((upsertRes.error as any)?.message || String(upsertRes.error));
       }
     }
   },
@@ -3276,109 +3291,146 @@ export const db = {
     // 2. If approved, apply database updates FIRST (before updating Supabase status)
     //    This prevents the realtime listener from fetching stale/old database state
     //    when the pending_updates status change triggers a reload.
+    //
+    //    An approval that could not be stored stays PENDING: marking it approved
+    //    without the change being in the database is what left the admin with a
+    //    green tick and a file that never appeared (the student, the database and
+    //    everyone's drives all stayed as they were).
+    const unappliedUpdateIds = new Set<string>();
     if (status === 'approved') {
       const byDb: Record<string, UniversityPendingUpdate[]> = {};
       updates.forEach(u => {
         if (u.universityDatabaseId) {
           if (!byDb[u.universityDatabaseId]) byDb[u.universityDatabaseId] = [];
           byDb[u.universityDatabaseId].push(u);
+        } else {
+          unappliedUpdateIds.add(u.id);
+          collectedWarnings.push(
+            '⚠️ تحديث من غير قاعدة بيانات مرتبطة (university_database_id) — ما اتحفظش، سيبته معلّق.'
+          );
         }
       });
 
       const dbIds = Object.keys(byDb);
       for (const dbId of dbIds) {
         try {
-          let udb = await this.getUniversityDatabase(dbId);
-          console.log(`[batchRespond] Step 1: getUniversityDatabase(${dbId}) → driveFiles=${udb?.driveFiles?.length ?? 'null'}, subjects=${udb?.subjects?.length ?? 'null'}`);
+          // Read the row the write is built on — straight from Supabase, with
+          // retries. A read miss used to skip the whole approval in silence while
+          // the update was still marked "approved": the admin saw a green tick
+          // and nothing ever reached the database.
+          let udb: UniversityDatabase | null = null;
+          let fromRemote = false;
+          for (let attempt = 0; attempt < 3 && !udb; attempt++) {
+            const fresh = await this.getUniversityDatabaseFresh(dbId);
+            if (fresh.database) {
+              udb = fresh.database;
+              fromRemote = fresh.fromRemote;
+              break;
+            }
+            if (attempt < 2) await new Promise(r => setTimeout(r, 400));
+          }
+          if (!udb) udb = await this.getUniversityDatabase(dbId);
+          if (!udb) udb = (await this.getUniversityDatabases()).find(d => d.id === dbId) || null;
+          console.log(`[batchRespond] Step 1: row → driveFiles=${udb?.driveFiles?.length ?? 'null'}, subjects=${udb?.subjects?.length ?? 'null'}, fresh=${fromRemote}`);
+
           if (!udb) {
-            const all = await this.getUniversityDatabases();
-            udb = all.find(d => d.id === dbId) || null;
-            console.log(`[batchRespond] Step 1b: fallback → driveFiles=${udb?.driveFiles?.length ?? 'null'}`);
+            console.warn(`[batchRespond] database ${dbId} could not be read — approval stays pending`);
+            collectedWarnings.push(
+              '⚠️ تعذّر قراءة قاعدة البيانات من السيرفر، فالتحديث ما اتحفظش — سيبته لسه معلّق، جرّب الموافقة تاني.'
+            );
+            byDb[dbId].forEach(u => unappliedUpdateIds.add(u.id));
+            continue;
           }
-          if (udb) {
-            let dbDriveFiles = udb.driveFiles || [];
-            let dbSubjects = udb.subjects || [];
-            
-            // ALWAYS do a fresh direct read to ensure we have the latest data
-            try {
-              const { data: freshRow } = await supabase
-                .from('university_databases')
-                .select('drive_files, subjects')
-                .eq('id', dbId)
-                .maybeSingle();
-              console.log(`[batchRespond] Step 2: Fresh Supabase → drive_files=${freshRow?.drive_files?.length ?? 'null'}, subjects=${freshRow?.subjects?.length ?? 'null'}`);
-              if (freshRow) {
-                if (Array.isArray(freshRow.drive_files) && freshRow.drive_files.length > dbDriveFiles.length) {
-                  dbDriveFiles = freshRow.drive_files.map((f: any) => ({
-                    id: f.id, name: f.name || '', size: Number(f.size || 0),
-                    type: f.type || 'file', parentId: f.parentId || f.parent_id || null,
-                    createdAt: f.createdAt || f.upload_date || new Date().toISOString(),
-                    url: f.url || '', b2FileId: f.b2FileId || f.b2_file_id,
-                    yearIndex: f.yearIndex ?? f.year_index ?? undefined,
-                    semesterIndex: f.semesterIndex ?? f.semester_index ?? undefined,
-                    subjectId: f.subjectId ?? f.subject_id ?? undefined
-                  }));
-                  console.log(`[batchRespond] Using Supabase drive_files (${dbDriveFiles.length}) over cached (${udb.driveFiles?.length ?? 0})`);
-                }
-                if (Array.isArray(freshRow.subjects) && freshRow.subjects.length > dbSubjects.length) {
-                  dbSubjects = freshRow.subjects.map((s: any) => ({
-                    id: s.id, code: s.code || '', name: s.name || '',
-                    creditHours: Number(s.creditHours || s.credit_hours || 3),
-                    totalMarks: Number(s.totalMarks || s.total_marks || 100),
-                    yearIndex: Number(s.yearIndex || s.year_index || 1),
-                    semesterIndex: Number(s.semesterIndex || s.semester_index || 1),
-                    distributions: s.distributions || [], status: s.status || 'current',
-                    includeInGpa: s.includeInGpa !== false
-                  }));
-                }
-              }
-            } catch {}
 
-            let currentDb: UniversityDatabase = {
-              ...udb,
-              subjects: dbSubjects,
-              driveFiles: dbDriveFiles,
-              gradingScale: udb.gradingScale || []
-            };
-            console.log(`[batchRespond] Step 3: currentDb → driveFiles=${currentDb.driveFiles.length}, subjects=${currentDb.subjects.length}`);
-            
-            const dbUpdates = sortUpdatesByParentOrder(byDb[dbId]);
+          let currentDb: UniversityDatabase = {
+            ...udb,
+            subjects: udb.subjects || [],
+            driveFiles: udb.driveFiles || [],
+            gradingScale: udb.gradingScale || []
+          };
+          console.log(`[batchRespond] Step 3: currentDb → driveFiles=${currentDb.driveFiles.length}, subjects=${currentDb.subjects.length}`);
 
-            const removedDriveFileIds = new Set<string>();
-            const removedSubjectIds = new Set<string>();
-            const removedGradingScaleIds = new Set<string>();
-            const applyWarnings: string[] = [];
+          const dbUpdates = sortUpdatesByParentOrder(byDb[dbId]);
 
-            for (const upd of dbUpdates) {
-              const beforeCount = currentDb.driveFiles.length;
-              const applied = applyPendingUpdateToDatabaseDetailed(currentDb, upd);
-              currentDb = applied.db;
-              applied.removedDriveFileIds.forEach(id => removedDriveFileIds.add(id));
-              applied.removedSubjectIds.forEach(id => removedSubjectIds.add(id));
-              applied.removedGradingScaleIds.forEach(id => removedGradingScaleIds.add(id));
-              applied.warnings.forEach(w => applyWarnings.push(w));
-              console.log(`[batchRespond] Step 4: applyPendingUpdate type=${upd.type} → driveFiles: ${beforeCount} → ${currentDb.driveFiles.length}`);
-            }
+          const removedDriveFileIds = new Set<string>();
+          const removedSubjectIds = new Set<string>();
+          const removedGradingScaleIds = new Set<string>();
+          const applyWarnings: string[] = [];
+          // What the write has to leave behind, so it can be checked afterwards.
+          const beforeDrive = new Map((currentDb.driveFiles || []).map(f => [f.id, f.name]));
+          const expectedDrive = new Map<string, string>();
 
-            if (applyWarnings.length > 0) {
-              console.warn(`[batchRespond] ${applyWarnings.length} warning(s) while applying approved updates:\n` + applyWarnings.join('\n'));
-              applyWarnings.forEach(w => collectedWarnings.push(w));
-            }
-
-            console.log(`[batchRespond] Step 5: patchUniversityDatabase with driveFiles=${currentDb.driveFiles.length}, removed=${removedDriveFileIds.size}`);
-            await this.updateUniversityDatabase(currentDb.id, currentDb, {
-              removedDriveFileIds: [...removedDriveFileIds],
-              removedSubjectIds: [...removedSubjectIds],
-              removedGradingScaleIds: [...removedGradingScaleIds]
-            });
-            await this.syncUniversityDatabaseChangesToStudents(currentDb.id, {
-              type: 'full_sync',
-              updatedDb: currentDb,
-              warnings: applyWarnings
-            }).catch(() => {});
+          for (const upd of dbUpdates) {
+            const beforeCount = currentDb.driveFiles.length;
+            const applied = applyPendingUpdateToDatabaseDetailed(currentDb, upd);
+            currentDb = applied.db;
+            applied.removedDriveFileIds.forEach(id => removedDriveFileIds.add(id));
+            applied.removedSubjectIds.forEach(id => removedSubjectIds.add(id));
+            applied.removedGradingScaleIds.forEach(id => removedGradingScaleIds.add(id));
+            applied.warnings.forEach(w => applyWarnings.push(w));
+            console.log(`[batchRespond] Step 4: applyPendingUpdate type=${upd.type} → driveFiles: ${beforeCount} → ${currentDb.driveFiles.length}`);
           }
+
+          for (const file of currentDb.driveFiles || []) {
+            const previousName = beforeDrive.get(file.id);
+            if (previousName === undefined || previousName !== file.name) {
+              expectedDrive.set(file.id, file.name);
+            }
+          }
+
+          if (applyWarnings.length > 0) {
+            console.warn(`[batchRespond] ${applyWarnings.length} warning(s) while applying approved updates:\n` + applyWarnings.join('\n'));
+            applyWarnings.forEach(w => collectedWarnings.push(w));
+          }
+
+          let writeError: string | null = null;
+          console.log(`[batchRespond] Step 5: patchUniversityDatabase with driveFiles=${currentDb.driveFiles.length}, removed=${removedDriveFileIds.size}`);
+          await this.updateUniversityDatabase(currentDb.id, currentDb, {
+            removedDriveFileIds: [...removedDriveFileIds],
+            removedSubjectIds: [...removedSubjectIds],
+            removedGradingScaleIds: [...removedGradingScaleIds],
+            onWriteError: (message) => { writeError = message; }
+          });
+
+          if (writeError) {
+            collectedWarnings.push(
+              `⚠️ قاعدة البيانات رفضت الحفظ: ${writeError} — التحديث لسه معلّق، جرّب الموافقة تاني.`
+            );
+            byDb[dbId].forEach(u => unappliedUpdateIds.add(u.id));
+            continue;
+          }
+
+          // Confirm the approved change really is in the database now. Trusting
+          // "no error was thrown" is what let an approved file never appear
+          // without anybody noticing.
+          if (fromRemote && expectedDrive.size > 0) {
+            const stored = await this.getUniversityDatabaseFresh(dbId);
+            const storedNames = new Map((stored.database?.driveFiles || []).map(f => [f.id, f.name]));
+            const missing = [...expectedDrive.keys()].filter(id => !storedNames.has(id));
+            const staleNames = [...expectedDrive.entries()]
+              .filter(([id, name]) => storedNames.has(id) && storedNames.get(id) !== name)
+              .map(([id]) => id);
+            if (missing.length > 0 || staleNames.length > 0) {
+              console.warn('[batchRespond] write verification failed', { missing, staleNames });
+              collectedWarnings.push(
+                `⚠️ الموافقة مااتحفظتش في قاعدة البيانات (${missing.length} عنصر ناقص، ${staleNames.length} لسه بالاسم القديم) — التحديث لسه معلّق، جرّب الموافقة تاني.`
+              );
+              byDb[dbId].forEach(u => unappliedUpdateIds.add(u.id));
+              continue;
+            }
+          }
+
+          await this.syncUniversityDatabaseChangesToStudents(currentDb.id, {
+            type: 'full_sync',
+            updatedDb: currentDb,
+            warnings: applyWarnings
+          }).catch(() => {});
         } catch (dbErr) {
           console.warn(`Error applying batch pending updates to database ${dbId}:`, dbErr);
+          collectedWarnings.push(
+            `⚠️ حصل خطأ أثناء حفظ التحديث في قاعدة البيانات: ${(dbErr as any)?.message || String(dbErr)} — التحديث لسه معلّق، جرّب الموافقة تاني.`
+          );
+          (byDb[dbId] || []).forEach(u => unappliedUpdateIds.add(u.id));
         }
       }
 
@@ -3390,9 +3442,13 @@ export const db = {
 
     // 3. Persist status updates to Supabase AFTER database changes are applied
     //    so the realtime listener sees the already-updated database state.
+    //    Updates that could not be stored keep status "pending" on purpose, so
+    //    the admin still sees them and can approve again.
     try {
-      const ids = Array.from(updateIdsSet);
-      if (status === 'pending') {
+      const ids = Array.from(updateIdsSet).filter(id => !unappliedUpdateIds.has(id));
+      if (ids.length === 0) {
+        console.warn('[batchRespond] no update could be applied — all of them stay pending.');
+      } else if (status === 'pending') {
         await supabase
           .from('university_pending_updates')
           .update({ status: 'pending', resolved_at: null })
@@ -3415,6 +3471,21 @@ export const db = {
       }
     } catch (e) {
       console.warn('Supabase batch update pending update exception:', e);
+    }
+
+    // Keep the local cache honest too: an update that never reached the database
+    // is still pending, whatever the optimistic write above said.
+    if (unappliedUpdateIds.size > 0) {
+      try {
+        const raw = localStorage.getItem('unistudent_pending_updates');
+        const cached = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(cached)) {
+          const fixed = cached.map((item: any) =>
+            unappliedUpdateIds.has(item?.id) ? { ...item, status: 'pending', resolvedAt: undefined } : item
+          );
+          localStorage.setItem('unistudent_pending_updates', JSON.stringify(fixed));
+        }
+      } catch {}
     }
 
     return { warnings: collectedWarnings };
