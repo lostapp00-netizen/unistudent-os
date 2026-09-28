@@ -5,7 +5,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { ScheduleItem } from '../../types';
 import { Clock, Plus, Trash2, Edit2, LayoutGrid, Calendar as CalendarIcon, User, ChevronLeft, ChevronRight, Paperclip, FileText, CheckSquare, StickyNote, BookOpen, MapPin, ArrowLeftRight } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, addDays, startOfWeek } from 'date-fns';
-import { formatTimeRange12, parseTimeToParts, to24HourTime, type Meridiem } from '../../lib/utils';
+import { formatTime12, formatTimeRange12 } from '../../lib/utils';
 import { AlternatingLecturesModal } from '../../components/productivity/AlternatingLecturesModal';
 import { isItemHiddenOnDate } from '../../lib/alternatingLectures';
 import { EntityLinker } from '../../components/ui/EntityLinker';
@@ -16,54 +16,39 @@ import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../../components/ui/U
 import { EntityPreviewModal, PreviewEntity } from '../../components/ui/EntityPreviewModal';
 
 /**
- * 12-hour time picker. The value is always stored back as a 24-hour "HH:mm"
- * string, so sorting, comparisons and the database stay untouched.
+ * 12-hour time picker as ONE dropdown (زي ما كان زمان): قايمة أوقات بنظام ١٢ ساعة
+ * كل نص ساعة، والقيمة بتتخزن زي ما هي "HH:mm" بنظام ٢٤ ساعة عشان الفرز والقاعدة
+ * ما يتأثروش. قايمة واحدة بتخلي الحقول مرتاحة على الموبايل في الوضع الرأسي
+ * (التلات قوايم اللي كانت قبل كده كانت بتدخل في بعضها).
  */
 function Time12Input({ value, onChange, isAr }: { value?: string; onChange: (next: string) => void; isAr: boolean }) {
-  const parts = parseTimeToParts(value) || { hour12: 8, minute: 0, meridiem: 'am' as Meridiem };
-  const hours = Array.from({ length: 12 }, (_, i) => i + 1);
-  const minutes = Array.from({ length: 12 }, (_, i) => i * 5);
-  if (!minutes.includes(parts.minute)) {
-    minutes.push(parts.minute);
-    minutes.sort((a, b) => a - b);
-  }
-
-  const update = (next: Partial<{ hour12: number; minute: number; meridiem: Meridiem }>) => {
-    const merged = { ...parts, ...next };
-    onChange(to24HourTime(merged.hour12, merged.minute, merged.meridiem));
-  };
-
-  const selectClass = "bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 text-sm font-bold cursor-pointer";
+  const options = useMemo(() => {
+    const list: { value: string; label: string }[] = [];
+    for (let hour24 = 0; hour24 < 24; hour24++) {
+      for (const minute of [0, 30]) {
+        const stored = `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+        list.push({ value: stored, label: formatTime12(stored, isAr ? 'ar' : 'en') });
+      }
+    }
+    // A value that is not on a half-hour boundary (e.g. 08:15) must stay selectable.
+    if (value && !list.some(o => o.value === value)) {
+      list.push({ value, label: formatTime12(value, isAr ? 'ar' : 'en') });
+      list.sort((a, b) => a.value.localeCompare(b.value));
+    }
+    return list;
+  }, [value, isAr]);
 
   return (
-    <div className="flex items-center gap-2">
-      <select
-        value={parts.hour12}
-        onChange={e => update({ hour12: Number(e.target.value) })}
-        className={`${selectClass} flex-1`}
-        aria-label={isAr ? 'الساعة' : 'Hour'}
-      >
-        {hours.map(h => <option key={h} value={h}>{h}</option>)}
-      </select>
-      <span className="font-black text-zinc-400">:</span>
-      <select
-        value={parts.minute}
-        onChange={e => update({ minute: Number(e.target.value) })}
-        className={`${selectClass} flex-1`}
-        aria-label={isAr ? 'الدقيقة' : 'Minute'}
-      >
-        {minutes.map(m => <option key={m} value={m}>{String(m).padStart(2, '0')}</option>)}
-      </select>
-      <select
-        value={parts.meridiem}
-        onChange={e => update({ meridiem: e.target.value as Meridiem })}
-        className={`${selectClass} w-[76px]`}
-        aria-label={isAr ? 'صباحًا أو مساءً' : 'AM or PM'}
-      >
-        <option value="am">{isAr ? 'ص' : 'AM'}</option>
-        <option value="pm">{isAr ? 'م' : 'PM'}</option>
-      </select>
-    </div>
+    <select
+      value={value || ''}
+      onChange={e => onChange(e.target.value)}
+      aria-label={isAr ? 'الوقت' : 'Time'}
+      className="w-full min-w-0 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 text-sm font-bold cursor-pointer"
+    >
+      {options.map(option => (
+        <option key={option.value} value={option.value}>{option.label}</option>
+      ))}
+    </select>
   );
 }
 
@@ -970,8 +955,10 @@ export function Schedule() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
+              {/* على الموبايل (الوضع الرأسي) الحقلين بيتكدسوا فوق بعض عشان مايدخلوش
+                  في بعض — وعلى الشاشات الأوسع يفضلوا جنب بعض. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="min-w-0">
                   <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">{isAr ? 'وقت البدء' : 'Start Time'}</label>
                   <Time12Input
                     value={newItem.startTime}
@@ -979,7 +966,7 @@ export function Schedule() {
                     isAr={isAr}
                   />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">{isAr ? 'وقت الانتهاء' : 'End Time'}</label>
                   <Time12Input
                     value={newItem.endTime}
@@ -989,7 +976,7 @@ export function Schedule() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">{isAr ? 'اسم الدكتور / المعيد' : 'Doctor / Instructor'}</label>
                   <input 
