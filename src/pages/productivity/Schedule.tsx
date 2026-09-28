@@ -16,39 +16,28 @@ import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../../components/ui/U
 import { EntityPreviewModal, PreviewEntity } from '../../components/ui/EntityPreviewModal';
 
 /**
- * 12-hour time picker as ONE dropdown (زي ما كان زمان): قايمة أوقات بنظام ١٢ ساعة
- * كل نص ساعة، والقيمة بتتخزن زي ما هي "HH:mm" بنظام ٢٤ ساعة عشان الفرز والقاعدة
- * ما يتأثروش. قايمة واحدة بتخلي الحقول مرتاحة على الموبايل في الوضع الرأسي
- * (التلات قوايم اللي كانت قبل كده كانت بتدخل في بعضها).
+ * منتقي الوقت الأصلي بتاع المتصفح: تدوس على الحقل فيفتح ساعة المتصفح نفسه، تختار
+ * الساعة وبعدين الدقيقة. القيمة بتتخزن زي ما هي "HH:mm" بنظام ٢٤ ساعة عشان الفرز
+ * والقاعدة ما يتأثروش، وتحتها سطر صغير بالوقت بنظام ١٢ ساعة (٨:٠٠ ص) للقراءة.
  */
 function Time12Input({ value, onChange, isAr }: { value?: string; onChange: (next: string) => void; isAr: boolean }) {
-  const options = useMemo(() => {
-    const list: { value: string; label: string }[] = [];
-    for (let hour24 = 0; hour24 < 24; hour24++) {
-      for (const minute of [0, 30]) {
-        const stored = `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-        list.push({ value: stored, label: formatTime12(stored, isAr ? 'ar' : 'en') });
-      }
-    }
-    // A value that is not on a half-hour boundary (e.g. 08:15) must stay selectable.
-    if (value && !list.some(o => o.value === value)) {
-      list.push({ value, label: formatTime12(value, isAr ? 'ar' : 'en') });
-      list.sort((a, b) => a.value.localeCompare(b.value));
-    }
-    return list;
-  }, [value, isAr]);
-
   return (
-    <select
-      value={value || ''}
-      onChange={e => onChange(e.target.value)}
-      aria-label={isAr ? 'الوقت' : 'Time'}
-      className="w-full min-w-0 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 text-sm font-bold cursor-pointer"
-    >
-      {options.map(option => (
-        <option key={option.value} value={option.value}>{option.label}</option>
-      ))}
-    </select>
+    <div className="space-y-1">
+      <input
+        type="time"
+        value={value || ''}
+        onChange={e => onChange(e.target.value)}
+        step="60"
+        lang={isAr ? 'ar-EG' : 'en-US'}
+        aria-label={isAr ? 'الوقت' : 'Time'}
+        className="w-full min-w-0 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 text-sm font-bold"
+      />
+      {value ? (
+        <p className="text-[11px] font-bold text-blue-600 dark:text-blue-400">
+          {formatTime12(value, isAr ? 'ar' : 'en')}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
