@@ -446,6 +446,12 @@ export type StudentNotification = {
   updatedAt: string;
   /** Read state of the current student. */
   isRead: boolean;
+  /**
+   * Whether the admin let this notification go out. Update notices are created
+   * as 'pending' and reach no student until the admin approves them — or are
+   * dropped for good when he rejects them.
+   */
+  reviewState?: 'pending' | 'approved' | 'rejected';
   /** How many students read it — shown in the admin's log. */
   readers?: number;
   /** For update notices: the database (college / cohort) they belong to. */

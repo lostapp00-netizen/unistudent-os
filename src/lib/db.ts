@@ -3465,9 +3465,18 @@ export const db = {
 
           // Tell the students linked to this database exactly what was approved:
           // a new file, a rename, a move, a deletion… (one notification per change).
+          // The notice lands in the admin's review queue first — nothing reaches a
+          // student until he approves it there. A notice that fails to be written
+          // must not pass silently: he gets a warning instead.
           for (const upd of byDb[dbId]) {
             const change = describePendingUpdateForStudents(upd);
-            if (change) await this.notifyDatabaseChange(currentDb.id, change).catch(() => {});
+            if (!change) continue;
+            const queued = await this.notifyDatabaseChange(currentDb.id, change).catch(() => ({ ok: false, error: 'network' }));
+            if (!queued.ok) {
+              collectedWarnings.push(
+                `⚠️ رسالة التحديث مش اتسجلت في سجل الإشعارات (${queued.error || 'خطأ غير معروف'}) — افتح «المنشورات والرسائل العامة» وتأكد إن migration 202609300001 متشغّل.`
+              );
+            }
           }
         } catch (dbErr) {
           console.warn(`Error applying batch pending updates to database ${dbId}:`, dbErr);
@@ -3978,6 +3987,10 @@ export const db = {
   // Two kinds share one list: changes to the university database this student
   // restored, and posts/messages from the admin. Read state is per student on
   // the server, so the badge and the unread marks survive a change of device.
+  //
+  // Only notices the admin let through are returned: an update notice waits in
+  // his review queue first (review_state = 'pending') and never reaches a student
+  // before he approves it.
 
   async getNotificationsForStudent(
     userId: string,
@@ -3987,18 +4000,21 @@ export const db = {
     const dbIds = Array.from(new Set((linkedDatabaseIds || []).filter(Boolean)));
 
     try {
+      const forStudent = (query: any) =>
+        query.is('deleted_at', null).eq('review_state', 'approved');
+
       const queries = [
-        supabase.from('student_notifications').select('*')
-          .is('deleted_at', null).eq('audience', 'all')
+        forStudent(supabase.from('student_notifications').select('*')
+          .eq('audience', 'all'))
           .order('updated_at', { ascending: false }).limit(200),
-        supabase.from('student_notifications').select('*')
-          .is('deleted_at', null).eq('audience', 'user').eq('user_id', userId)
+        forStudent(supabase.from('student_notifications').select('*')
+          .eq('audience', 'user').eq('user_id', userId))
           .order('updated_at', { ascending: false }).limit(200)
       ];
       if (dbIds.length > 0) {
         queries.push(
-          supabase.from('student_notifications').select('*')
-            .is('deleted_at', null).eq('audience', 'database').in('university_database_id', dbIds)
+          forStudent(supabase.from('student_notifications').select('*')
+            .eq('audience', 'database').in('university_database_id', dbIds))
             .order('updated_at', { ascending: false }).limit(200)
         );
       }
@@ -4088,7 +4104,9 @@ export const db = {
       message: (input.message || '').trim(),
       created_by: input.createdBy || null,
       created_at: now,
-      updated_at: now
+      updated_at: now,
+      // The admin wrote it himself — it goes out immediately.
+      review_state: 'approved'
     }]);
 
     if (error) {
@@ -4141,7 +4159,9 @@ export const db = {
   /**
    * The admin's log. Two separate logs share this call:
    *   'general'  → the posts / messages the admin published (everyone or one student)
-   *   'database' → the update notices sent automatically when the database changed
+   *   'database' → the update notices written when the database changed; these wait
+   *                in the review queue until the admin approves them (a rejected
+   *                one is never sent, and only approved ones reach students)
    * Both are editable and deletable, and deleting one removes it for every student.
    */
   async getPostNotifications(scope: 'general' | 'database' = 'general'): Promise<StudentNotification[]> {
@@ -4196,15 +4216,18 @@ export const db = {
   },
 
   /**
-   * Tell every student linked to a database that something changed in it — the
-   * admin edited the database himself, or approved a change coming from the
-   * student the database was pulled from end.
+   * A change happened in the database (the admin edited it himself, or he
+   * approved a change coming from the student the database was pulled from).
+   *
+   * The message students would receive is written and parked in the admin's
+   * review queue — nothing reaches a student until the admin approves it there
+   * (or is dropped for good when he rejects it).
    */
   async notifyDatabaseChange(
     universityDatabaseId: string,
     change: DatabaseChangeNotification
-  ): Promise<void> {
-    if (!universityDatabaseId) return;
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!universityDatabaseId) return { ok: false, error: 'missing database id' };
     const { title, message, type } = buildDatabaseChangeNotification(change);
     const now = new Date().toISOString();
 
@@ -4220,11 +4243,62 @@ export const db = {
         message,
         created_by: change.createdBy || null,
         created_at: now,
-        updated_at: now
+        updated_at: now,
+        review_state: 'pending'
       }]);
-      if (error) console.warn('Could not notify students about the database change:', error.message);
-    } catch (e) {
-      console.warn('Could not notify students about the database change:', e);
+      if (error) {
+        console.warn('Could not queue the database change notice:', error.message);
+        return { ok: false, error: error.message };
+      }
+      return { ok: true };
+    } catch (e: any) {
+      console.warn('Could not queue the database change notice:', e);
+      return { ok: false, error: e?.message || String(e) };
+    }
+  },
+
+  /**
+   * The admin's decision on queued update notices: approve → they go out to the
+   * linked students, reject → they are never sent.
+   */
+  async setNotificationsReviewState(
+    ids: string[],
+    state: 'pending' | 'approved' | 'rejected'
+  ): Promise<{ ok: boolean; error?: string; count: number }> {
+    const list = Array.from(new Set((ids || []).filter(Boolean)));
+    if (list.length === 0) return { ok: true, count: 0 };
+
+    const { error } = await supabase
+      .from('student_notifications')
+      .update({ review_state: state, updated_at: new Date().toISOString() })
+      .in('id', list);
+
+    if (error) {
+      console.warn('Could not update the review state:', error.message);
+      return { ok: false, error: error.message, count: 0 };
+    }
+
+    // Sending it again (or after an edit) must reach students as unread.
+    try {
+      await supabase.from('student_notification_reads').delete().in('notification_id', list);
+    } catch {}
+
+    return { ok: true, count: list.length };
+  },
+
+  /** عدد رسائل التحديث المستنية موافقة الأدمن — بتستخدم في شارة القائمة الجانبية. */
+  async countPendingDatabaseNotices(): Promise<number> {
+    try {
+      const { count, error } = await supabase
+        .from('student_notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('scope', 'database')
+        .eq('review_state', 'pending')
+        .is('deleted_at', null);
+      if (error) return 0;
+      return count ?? 0;
+    } catch {
+      return 0;
     }
   },
 
@@ -5701,6 +5775,8 @@ function mapNotificationFromDB(row: any, isRead: boolean): StudentNotification {
     createdBy: row.created_by ?? null,
     createdAt: row.created_at || new Date().toISOString(),
     updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
+    // Rows written before the review step existed count as already sent.
+    reviewState: (row.review_state || 'approved') as StudentNotification['reviewState'],
     isRead
   };
 }

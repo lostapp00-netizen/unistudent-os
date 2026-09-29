@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Megaphone, Send, Pencil, Trash2, Users, User, Clock, Eye, RefreshCw, Loader2, AlertCircle,
-  CheckCircle2, BellRing, Database, Folder
+  CheckCircle2, BellRing, Database, Folder, X
 } from 'lucide-react';
 import { db } from '../../lib/db';
 import { ConfirmModal } from '../ui/CustomModal';
@@ -16,21 +16,32 @@ type StudentOption = { id: string; name?: string; email?: string };
  *
  *  1) «سجل الرسائل والمنشورات العامة»: what the admin publishes himself (to
  *     everyone or to one student).
- *  2) «سجل رسائل التحديثات»: the notices that go out automatically whenever the
+ *  2) «سجل رسائل التحديثات»: the notices written automatically whenever the
  *     database changes — an admin edit, or an approved change from the student
- *     the database was pulled from. They can be edited or deleted here too, and
- *     deleting one removes it from every linked student.
+ *     the database was pulled from. They are NOT sent on their own: each one
+ *     lands here as «مستنية موافقتك» and only goes out to the linked students
+ *     when the admin approves it (rejecting it drops it for good). They can be
+ *     edited or deleted here too, and deleting one removes it from every linked
+ *     student.
  *
  * Editing either kind keeps the SAME notification (no duplicate): the row is
  * updated and its read marks are cleared, so it comes back to students as a fresh
  * unread message.
  */
-export function AdminPostsTab({ studentsList = [] }: { studentsList?: StudentOption[] }) {
+export function AdminPostsTab({
+  studentsList = [],
+  onPendingCountChange
+}: {
+  studentsList?: StudentOption[];
+  onPendingCountChange?: (count: number) => void;
+}) {
   const { i18n } = useTranslation();
   const { settings } = useAppStore();
   const isAr = settings?.language === 'ar' || i18n.language === 'ar';
 
   const [activeLog, setActiveLog] = useState<'general' | 'database'>('general');
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [isDeciding, setIsDeciding] = useState(false);
   const [posts, setPosts] = useState<StudentNotification[]>([]);
   const [updateNotices, setUpdateNotices] = useState<StudentNotification[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -45,6 +56,11 @@ export function AdminPostsTab({ studentsList = [] }: { studentsList?: StudentOpt
   const [editingPost, setEditingPost] = useState<StudentNotification | null>(null);
   const [postToDelete, setPostToDelete] = useState<StudentNotification | null>(null);
 
+  const stateOf = (n: StudentNotification): 'pending' | 'approved' | 'rejected' =>
+    (n.reviewState || 'approved') as 'pending' | 'approved' | 'rejected';
+
+  const pendingNotices = updateNotices.filter(n => stateOf(n) === 'pending');
+
   const load = async () => {
     setIsLoading(true);
     try {
@@ -54,6 +70,7 @@ export function AdminPostsTab({ studentsList = [] }: { studentsList?: StudentOpt
       ]);
       setPosts(general);
       setUpdateNotices(database);
+      onPendingCountChange?.(database.filter(n => (n.reviewState || 'approved') === 'pending').length);
     } finally {
       setIsLoading(false);
     }
@@ -69,7 +86,32 @@ export function AdminPostsTab({ studentsList = [] }: { studentsList?: StudentOpt
     return () => clearTimeout(timer);
   }, [success]);
 
-  const visibleLog = activeLog === 'general' ? posts : updateNotices;
+  const visibleLog = activeLog === 'general'
+    ? posts
+    : updateNotices.filter(n => stateOf(n) === statusFilter);
+
+  /** موافقة (تتبعت) أو رفض (متتبعتش) على رسائل التحديث المستنية. */
+  const decideNotices = async (ids: string[], state: 'approved' | 'rejected') => {
+    if (ids.length === 0) return;
+    setIsDeciding(true);
+    setError(null);
+    try {
+      const result = await db.setNotificationsReviewState(ids, state);
+      if (!result.ok) throw new Error(result.error || 'failed');
+      setSuccess(state === 'approved'
+        ? (isAr
+            ? `تم إرسال ${result.count} رسالة تحديث للطلاب المربوطين بقاعدة البيانات.`
+            : `${result.count} notice(s) sent to the linked students.`)
+        : (isAr
+            ? `تم رفض ${result.count} رسالة — مش هتتبعت للطلاب.`
+            : `${result.count} notice(s) rejected — they will not be sent.`));
+      await load();
+    } catch (err: any) {
+      setError(err?.message || (isAr ? 'تعذّر تحديث الرسائل.' : 'Could not update the notices.'));
+    } finally {
+      setIsDeciding(false);
+    }
+  };
 
   const resetForm = () => {
     setTitle('');
@@ -134,10 +176,13 @@ export function AdminPostsTab({ studentsList = [] }: { studentsList?: StudentOpt
   const handleDelete = async () => {
     if (!postToDelete) return;
     const wasUpdateNotice = postToDelete.scope === 'database';
+    const wasPending = stateOf(postToDelete) === 'pending';
     const result = await db.deletePostNotification(postToDelete.id);
     if (!result.ok) setError(result.error || 'failed');
     else setSuccess(wasUpdateNotice
-      ? (isAr ? 'تم حذف رسالة التحديث — اختفت من عند كل الطلاب المربوطين.' : 'Update notice deleted for every student.')
+      ? (wasPending
+          ? (isAr ? 'تم حذف رسالة التحديث — لسه ماكانتش اتبعتت، فمش هتوصل للطلاب خالص.' : 'Update notice deleted — it had not been sent yet.')
+          : (isAr ? 'تم حذف رسالة التحديث — اختفت من عند كل الطلاب المربوطين.' : 'Update notice deleted for every student.'))
       : (isAr ? 'تم حذف الرسالة — اختفت من عند الطلاب.' : 'Post deleted.'));
     setPostToDelete(null);
     await load();
@@ -174,6 +219,7 @@ export function AdminPostsTab({ studentsList = [] }: { studentsList?: StudentOpt
 
   const logItem = (entry: StudentNotification) => {
     const isUpdateNotice = entry.scope === 'database';
+    const entryState = stateOf(entry);
     const audienceLabel = entry.audience === 'user'
       ? (studentsList.find(s => s.id === entry.userId)?.name || entry.userId || '')
       : (isAr ? 'كل الطلاب' : 'All students');
@@ -216,21 +262,62 @@ export function AdminPostsTab({ studentsList = [] }: { studentsList?: StudentOpt
                   {isAr ? `آخر تعديل: ${formatDate(entry.updatedAt)}` : `edited ${formatDate(entry.updatedAt)}`}
                 </span>
               )}
-              {entry.audience !== 'user' && (
+              {isUpdateNotice && entryState !== 'pending' && entry.audience !== 'user' && (
                 <span className="flex items-center gap-1">
                   <Eye size={11} />{isAr ? `قرأها ${readers} طالب` : `${readers} read`}
                 </span>
               )}
               {isUpdateNotice && (
-                <span className="flex items-center gap-1">
-                  <Folder size={11} />
-                  {isAr ? 'اتبعتها تلقائيًا قاعدة البيانات' : 'automatic'}
+                <span className={`flex items-center gap-1 ${entryState === 'pending' ? 'text-amber-600 dark:text-amber-400' : ''}`}>
+                  {entryState === 'pending' ? <Clock size={11} /> : entryState === 'rejected' ? <X size={11} /> : <CheckCircle2 size={11} />}
+                  {entryState === 'pending'
+                    ? (isAr ? 'مستنية موافقتك — لسه متبعتتش' : 'waiting for your approval')
+                    : entryState === 'rejected'
+                    ? (isAr ? 'مرفوضة — متبعتتش' : 'rejected — not sent')
+                    : (isAr ? 'اتبعتت للطلاب' : 'sent to students')}
                 </span>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+            {isUpdateNotice && entryState === 'pending' && (
+              <>
+                <button
+                  type="button"
+                  disabled={isDeciding}
+                  onClick={() => decideNotices([entry.id], 'approved')}
+                  title={isAr ? 'موافقة وإرسال للطلاب' : 'Approve & send'}
+                  className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white transition-colors"
+                >
+                  <Send size={13} />
+                  <span>{isAr ? 'إرسال' : 'Send'}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeciding}
+                  onClick={() => decideNotices([entry.id], 'rejected')}
+                  title={isAr ? 'رفض — متتبعتش' : 'Reject — do not send'}
+                  className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-[11px] font-bold border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-60 transition-colors"
+                >
+                  <X size={13} />
+                  <span>{isAr ? 'رفض' : 'Reject'}</span>
+                </button>
+              </>
+            )}
+
+            {isUpdateNotice && entryState === 'rejected' && (
+              <button
+                type="button"
+                disabled={isDeciding}
+                onClick={() => decideNotices([entry.id], 'approved')}
+                className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-[11px] font-bold border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 disabled:opacity-60 transition-colors"
+              >
+                <Send size={13} />
+                <span>{isAr ? 'إرسال بعد كل ده' : 'Send anyway'}</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => startEdit(entry)}
@@ -283,11 +370,55 @@ export function AdminPostsTab({ studentsList = [] }: { studentsList?: StudentOpt
         >
           <BellRing size={15} />
           <span>{isAr ? 'سجل رسائل التحديثات' : 'Database update notices'}</span>
+          {pendingNotices.length > 0 && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-amber-950">
+              {isAr ? `${pendingNotices.length} مستنية موافقتك` : `${pendingNotices.length} waiting`}
+            </span>
+          )}
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
             activeLog === 'database' ? 'bg-white/20 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'
           }`}>{updateNotices.length}</span>
         </button>
       </div>
+
+      {/* فلاتر الحالة + موافقة على الكل — لسجل التحديثات */}
+      {activeLog === 'database' && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {([
+            { id: 'pending' as const, label: isAr ? 'في انتظار موافقتك' : 'Waiting for you' },
+            { id: 'approved' as const, label: isAr ? 'اتبعتت' : 'Sent' },
+            { id: 'rejected' as const, label: isAr ? 'مرفوضة' : 'Rejected' }
+          ]).map(f => {
+            const count = updateNotices.filter(n => stateOf(n) === f.id).length;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setStatusFilter(f.id)}
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-colors ${
+                  statusFilter === f.id
+                    ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 border-zinc-900 dark:border-white'
+                    : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:border-indigo-300'
+                }`}
+              >
+                {f.label} ({count})
+              </button>
+            );
+          })}
+
+          {pendingNotices.length > 0 && (
+            <button
+              type="button"
+              disabled={isDeciding}
+              onClick={() => decideNotices(pendingNotices.map(n => n.id), 'approved')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white transition-colors"
+            >
+              {isDeciding ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+              <span>{isAr ? `موافقة وإرسال الكل (${pendingNotices.length})` : `Approve & send all (${pendingNotices.length})`}</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* نموذج النشر — للسجل العام فقط */}
       {activeLog === 'general' && (
@@ -426,9 +557,13 @@ export function AdminPostsTab({ studentsList = [] }: { studentsList?: StudentOpt
                 {isAr ? 'تعديل رسالة تحديث' : 'Edit an update notice'}
               </h3>
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
-                {isAr
-                  ? `الرسالة دي اتبعتت تلقائي لطلاب (${editingPost.databaseLabel || 'قاعدة بيانات'}). بعد الحفظ هتظهر لهم تاني كرسالة جديدة unread.`
-                  : 'Students of this database see it again as a new unread message after saving.'}
+                {stateOf(editingPost) === 'pending'
+                  ? (isAr
+                      ? `الرسالة دي لسه مستنية موافقتك — متبعتتش لطلاب (${editingPost.databaseLabel || 'قاعدة بيانات'}). عدّلها وبعدين وافق عليها.`
+                      : 'This notice is still waiting for your approval — it has not been sent yet.')
+                  : (isAr
+                      ? `الرسالة دي اتبعتت لطلاب (${editingPost.databaseLabel || 'قاعدة بيانات'}). بعد الحفظ هتظهر لهم تاني كرسالة جديدة unread.`
+                      : 'Students of this database see it again as a new unread message after saving.')}
               </p>
             </div>
           </div>
@@ -490,8 +625,8 @@ export function AdminPostsTab({ studentsList = [] }: { studentsList?: StudentOpt
               {activeLog === 'general'
                 ? (isAr ? `${posts.length} رسالة منشورة` : `${posts.length} posts`)
                 : (isAr
-                    ? `${updateNotices.length} رسالة اتبعتت تلقائيًا لما حصل تغيير في قاعدة البيانات — تقدر تعدّلها أو تمسحها وهتختفي فورًا من عند كل الطلاب المربوطين.`
-                    : `${updateNotices.length} notices sent automatically on database changes.`)}
+                    ? `${updateNotices.length} رسالة تحديث. كل رسالة بتتكتب لوحدها لما يحصل تغيير في قاعدة البيانات وبتستنى موافقتك قبل ما تتبعت — تقدر تعدّلها، توافق عليها (تتبعت)، ترفضها (متتبعتش)، أو تمسحها (تختفي خالص).`
+                    : `${updateNotices.length} update notices. Each one waits for your approval before it goes out.`)}
             </p>
           </div>
           <button
@@ -520,8 +655,8 @@ export function AdminPostsTab({ studentsList = [] }: { studentsList?: StudentOpt
               {activeLog === 'general'
                 ? (isAr ? 'أول رسالة تنشرها هتظهر هنا وفي جرس الطلاب.' : "Your first post will show here and in the students' bell.")
                 : (isAr
-                    ? 'لما توافق على تحديث من الطالب المصدر، أو تعدّل/تحذف/تنقل حاجة في قاعدة البيانات بنفسك، الرسالة اللي بتوصل الطلاب بتتسجل هنا.'
-                    : 'Approving a change — or editing the database yourself — logs the notice students received right here.')}
+                    ? 'لما يحصل تغيير في قاعدة البيانات (منك أو من الطالب المصدر بعد موافقتك)، الرسالة بتتكتب هنا وتستنى موافقتك: توافق → تتبعت للطلاب، ترفض → متتبعتش، وتمسح → تختفي خالص.'
+                    : 'Whenever the database changes, the notice is written here and waits for your approval before students receive it.')}
             </p>
           </div>
         ) : (
@@ -536,7 +671,9 @@ export function AdminPostsTab({ studentsList = [] }: { studentsList?: StudentOpt
           : (isAr ? 'حذف الرسالة' : 'Delete post')}
         message={postToDelete?.scope === 'database'
           ? (isAr
-              ? `هل أنت متأكد من حذف «${postToDelete?.title || ''}»؟ الرسالة دي وصلت لكل الطلاب المربوطين بالقاعدة (${postToDelete?.databaseLabel || ''}) وهتختفي فورًا من عندهم.`
+              ? (stateOf(postToDelete) === 'pending'
+                  ? `هل أنت متأكد من حذف «${postToDelete?.title || ''}»؟ الرسالة دي لسه متبعتتش للطلاب — لو مسحتها مش هتوصل لهم خالص.`
+                  : `هل أنت متأكد من حذف «${postToDelete?.title || ''}»؟ الرسالة دي وصلت لكل الطلاب المربوطين بالقاعدة (${postToDelete?.databaseLabel || ''}) وهتختفي فورًا من عندهم.`)
               : 'This notice went to every student of that database and will disappear from their bell.')
           : (isAr
               ? `هل أنت متأكد من حذف «${postToDelete?.title || ''}»؟ هتختفي فورًا من جرس إشعارات الطلاب.`

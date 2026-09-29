@@ -119,6 +119,7 @@ export function Admin() {
 
   const [universitiesExpanded, setUniversitiesExpanded] = useState<boolean>(true);
   const [pendingUniUpdatesCount, setPendingUniUpdatesCount] = useState<number>(0);
+  const [pendingPostNoticesCount, setPendingPostNoticesCount] = useState<number>(0);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -126,6 +127,16 @@ export function Admin() {
       sessionStorage.setItem('unistudent_admin_active_tab', activeTab);
     } catch {}
   }, [activeTab]);
+
+  // شارة تبويب "المنشورات والرسائل": عدد رسائل التحديث المستنية موافقة الأدمن،
+  // فالأدمن بيشوفها من غير ما يفتح التبويب.
+  useEffect(() => {
+    let alive = true;
+    db.countPendingDatabaseNotices()
+      .then(count => { if (alive) setPendingPostNoticesCount(count); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [activeTab, pendingUniUpdatesCount]);
 
   useEffect(() => {
     try {
@@ -1085,6 +1096,11 @@ export function Admin() {
               <Megaphone className={`w-4 h-4 ${activeTab === 'posts' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'}`} />
               <span>{isAr ? 'المنشورات والرسائل العامة' : 'Posts & Messages'}</span>
             </div>
+            {pendingPostNoticesCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white">
+                {pendingPostNoticesCount}
+              </span>
+            )}
           </button>
 
           {/* 6. Backup & Email */}
@@ -1815,7 +1831,10 @@ export function Admin() {
 
           {/* TAB: PUBLIC POSTS & MESSAGES */}
           {activeTab === 'posts' && (
-            <AdminPostsTab studentsList={studentsList} />
+            <AdminPostsTab
+              studentsList={studentsList}
+              onPendingCountChange={(count) => setPendingPostNoticesCount(count)}
+            />
           )}
 
           {/* TAB 4: BACKUP & EMAIL SCHEDULER */}

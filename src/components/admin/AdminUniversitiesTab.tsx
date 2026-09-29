@@ -473,7 +473,14 @@ export function AdminUniversitiesTab({
   const notifyStudentsOfDbChange = (change: Parameters<typeof db.notifyDatabaseChange>[1]) => {
     const dbId = selectedCollegeDb?.id;
     if (!dbId) return;
-    db.notifyDatabaseChange(dbId, change).catch(() => {});
+    db.notifyDatabaseChange(dbId, change)
+      .then(result => {
+        if (result.ok) return;
+        alert(isAr
+          ? `اتعمل التعديل، بس رسالة التحديث مش اتسجلت في سجل الإشعارات (${result.error || 'خطأ غير معروف'}) — يعني مش هتلاقيها في «المنشورات والرسائل العامة» توافق عليها. جرّب تنشر رسالة للطلاب من هناك.`
+          : `The change was saved, but its update notice could not be queued (${result.error || 'unknown error'}).`);
+      })
+      .catch(() => {});
   };
 
   /**
