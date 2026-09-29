@@ -448,5 +448,7 @@ export type StudentNotification = {
   isRead: boolean;
   /** How many students read it — shown in the admin's log. */
   readers?: number;
+  /** For update notices: the database (college / cohort) they belong to. */
+  databaseLabel?: string;
 };
 

@@ -4138,17 +4138,23 @@ export const db = {
     return { ok: true };
   },
 
-  async getPostNotifications(): Promise<StudentNotification[]> {
+  /**
+   * The admin's log. Two separate logs share this call:
+   *   'general'  → the posts / messages the admin published (everyone or one student)
+   *   'database' → the update notices sent automatically when the database changed
+   * Both are editable and deletable, and deleting one removes it for every student.
+   */
+  async getPostNotifications(scope: 'general' | 'database' = 'general'): Promise<StudentNotification[]> {
     try {
       const { data, error } = await supabase
         .from('student_notifications')
         .select('*')
-        .eq('scope', 'general')
+        .eq('scope', scope)
         .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-        .limit(200);
+        .order('updated_at', { ascending: false })
+        .limit(300);
       if (error) {
-        console.warn('Could not read posts (apply migration 202609300001_student_notifications.sql):', error.message);
+        console.warn('Could not read the notification log (apply migration 202609300001_student_notifications.sql):', error.message);
         return [];
       }
 
@@ -4162,12 +4168,29 @@ export const db = {
         (reads || []).forEach((r: any) => readers.set(r.notification_id, (readers.get(r.notification_id) || 0) + 1));
       }
 
+      // Which database each update notice belongs to, so the log is readable.
+      const databaseLabels = new Map<string, string>();
+      const dbIds = Array.from(new Set((data || []).map((row: any) => row.university_database_id).filter(Boolean)));
+      if (scope === 'database' && dbIds.length > 0) {
+        try {
+          const { data: dbs } = await supabase
+            .from('university_databases')
+            .select('id, college_name_ar, college_name_en, cohort_name')
+            .in('id', dbIds);
+          (dbs || []).forEach((d: any) => {
+            const label = [d.college_name_ar || d.college_name_en, d.cohort_name].filter(Boolean).join(' — ');
+            databaseLabels.set(d.id, label || d.id);
+          });
+        } catch {}
+      }
+
       return (data || []).map((row: any) => ({
         ...mapNotificationFromDB(row, false),
-        readers: row.audience === 'user' ? undefined : (readers.get(row.id) || 0)
+        readers: row.audience === 'user' ? undefined : (readers.get(row.id) || 0),
+        databaseLabel: row.university_database_id ? (databaseLabels.get(row.university_database_id) || row.university_database_id) : undefined
       }));
     } catch (e) {
-      console.warn('Post list failed:', e);
+      console.warn('Notification log failed:', e);
       return [];
     }
   },
@@ -5563,14 +5586,24 @@ export interface DatabaseChangeNotification {
   name?: string;
   /** Previous name — only for a rename. */
   previousName?: string;
+  /** The folder the item lives in (inside the database drive). */
+  parentName?: string;
+  /** Where it moved to, for a move. */
+  newParentName?: string;
+  /** The subject the item belongs to. */
+  subjectName?: string;
+  /** Year / semester of the item, shown for subjects and loose files. */
+  yearIndex?: number;
+  semesterIndex?: number;
   /** Extra sentence (used for grading-scale and free-form messages). */
   detail?: string;
   createdBy?: string;
 }
 
 /**
- * The sentence a student reads in the bell for a database change:
- * "تم إضافة ملف ..." / "تم تغيير اسم ..." / "تم حذف ..." and so on.
+ * The sentence a student reads in the bell for a database change, with the place
+ * it happened so the message is never a bare file name:
+ *   «Lecture 2.pdf» اتضاف جوه «Lecture 2» في مادة «Physics of Materials».
  */
 export function buildDatabaseChangeNotification(change: DatabaseChangeNotification): {
   title: string;
@@ -5579,43 +5612,79 @@ export function buildDatabaseChangeNotification(change: DatabaseChangeNotificati
 } {
   const kind = change.itemKind || 'file';
   const kindAr = kind === 'folder' ? 'مجلد' : kind === 'subject' ? 'مادة' : kind === 'grading' ? 'لائحة التقديرات' : kind === 'database' ? 'قاعدة البيانات' : 'ملف';
+  // "مجلد جديد" / "مادة جديدة" — the adjective has to agree with the noun.
+  const kindArNew = kind === 'subject' ? 'مادة جديدة' : `${kindAr} جديد`;
   const name = (change.name || '').trim();
   const previousName = (change.previousName || '').trim();
   const quoted = name ? `«${name}»` : '';
+  const parentName = (change.parentName || '').trim();
+  const newParentName = (change.newParentName || '').trim();
+  const subjectName = (change.subjectName || '').trim();
+  const yearIndex = Number(change.yearIndex || 0);
+  const semesterIndex = Number(change.semesterIndex || 0);
+  const hasTerm = yearIndex > 0 && semesterIndex > 0;
+  const termText = hasTerm ? `سنة ${yearIndex} - ترم ${semesterIndex}` : '';
+
+  /** "جوه «Lecture 2» في مادة «Physics of Materials»" — only what is known. */
+  const where = (folder?: string, subject?: string) => {
+    const parts: string[] = [];
+    if (folder) parts.push(`جوه «${folder}»`);
+    if (subject) parts.push(`في مادة «${subject}»`);
+    if (parts.length === 0 && termText) parts.push(`في ${termText}`);
+    return parts.join(' ');
+  };
 
   switch (change.action) {
-    case 'add':
+    case 'add': {
+      const place = where(parentName, subjectName);
       return {
-        title: `تم إضافة ${kindAr} جديد في قاعدة بيانات كليتك`,
-        message: `${quoted} اتضاف${kind === 'subject' ? 'ت' : ''} بعد موافقة الإدارة و بقى متاح في الدرايف المعتمد.`,
+        title: `تم إضافة ${kindArNew} في قاعدة بيانات كليتك`,
+        message: kind === 'subject'
+          ? `${quoted} اتضافت${hasTerm ? ` في ${termText}` : ''} بعد موافقة الإدارة وبقت متاحة في الخطة المعتمدة.`
+          : `${quoted} اتضاف${place ? ` ${place}` : ''} وبقى متاح في الدرايف المعتمد.`,
         type: 'add'
       };
-    case 'rename':
+    }
+    case 'rename': {
+      const place = where(parentName, subjectName);
       return {
         title: `تم تغيير اسم ${kindAr} في قاعدة بيانات كليتك`,
         message: previousName && name
-          ? `الاسم اتغيّر من «${previousName}» إلى «${name}».`
-          : `الاسم اتغيّر إلى ${quoted}.`,
+          ? `الاسم اتغيّر من «${previousName}» إلى «${name}»${place ? ` ${place}` : ''}.`
+          : `الاسم اتغيّر إلى ${quoted}${place ? ` ${place}` : ''}.`,
         type: 'rename'
       };
-    case 'delete':
+    }
+    case 'delete': {
+      const placeParts = [
+        parentName ? `«${parentName}»` : '',
+        subjectName ? `مادة «${subjectName}»` : ''
+      ].filter(Boolean);
       return {
         title: `تم حذف ${kindAr} من قاعدة بيانات كليتك`,
-        message: `${quoted} اتشال من الدرايف المعتمد.`,
+        message: change.detail || (kind === 'subject'
+          ? `${quoted} اتشالت من الخطة المعتمدة${hasTerm ? ` (${termText})` : ''}.`
+          : `${quoted} اتشال${placeParts.length > 0 ? ` من ${placeParts.join(' في ')}` : ''} من الدرايف المعتمد.`),
         type: 'delete'
       };
-    case 'move':
+    }
+    case 'move': {
+      const from = where(parentName, subjectName);
+      const to = newParentName ? `إلى «${newParentName}»` : 'لمكان تاني';
       return {
         title: `تم نقل ${kindAr} في قاعدة بيانات كليتك`,
-        message: `${quoted} اتنقل لمكان تاني جوه الدرايف المعتمد.`,
+        message: `${quoted} اتنقل ${to}${from ? ` (كان ${from})` : ''}.`,
         type: 'update'
       };
-    default:
+    }
+    default: {
+      const place = where(parentName, subjectName);
       return {
         title: `تم تعديل ${kindAr} في قاعدة بيانات كليتك`,
-        message: change.detail || `${quoted} اتعدّل بعد موافقة الإدارة.`,
+        message: change.detail || `${quoted} اتعدّل بعد موافقة الإدارة${place ? ` ${place}` : ''}.`,
         type: 'update'
       };
+    }
   }
 }
 
@@ -5666,30 +5735,60 @@ function mapPendingUpdateFromDB(row: any): UniversityPendingUpdate {
  */
 export function describePendingUpdateForStudents(update: UniversityPendingUpdate): DatabaseChangeNotification | null {
   const data: any = update?.data || {};
+  const previous: any = data.previous || {};
   const changed = changedFieldsOf(data);
   const itemKind: DatabaseChangeNotification['itemKind'] = data.type === 'folder' ? 'folder' : 'file';
   const name = (data.name || '').trim();
-  const previousName = (data.previous?.name || '').trim();
+  const previousName = (previous.name || '').trim();
   const isRename = changed.includes('name') && Boolean(previousName) && previousName !== name;
   const isMove = changed.some((f: string) => ['parentId', 'yearIndex', 'semesterIndex', 'subjectId'].includes(f));
+  // Where it happens, so the student's message says the place and the course.
+  const subjectName = (data.subjectName || previous.subjectName || '').trim();
+  const yearIndex = data.yearIndex !== undefined ? Number(data.yearIndex) : (previous.yearIndex !== undefined ? Number(previous.yearIndex) : undefined);
+  const semesterIndex = data.semesterIndex !== undefined ? Number(data.semesterIndex) : (previous.semesterIndex !== undefined ? Number(previous.semesterIndex) : undefined);
 
   switch (update?.type) {
     case 'add_file':
-      return { action: 'add', itemKind, name };
+      return {
+        action: 'add', itemKind, name,
+        parentName: (data.parentName || '').trim(),
+        subjectName, yearIndex, semesterIndex
+      };
     case 'update_file':
-      if (isRename) return { action: 'rename', itemKind, name, previousName };
-      if (isMove) return { action: 'move', itemKind, name };
-      return { action: 'update', itemKind, name };
+      if (isRename) {
+        return {
+          action: 'rename', itemKind, name, previousName,
+          parentName: (data.parentName || previous.parentName || '').trim(),
+          subjectName, yearIndex, semesterIndex
+        };
+      }
+      if (isMove) {
+        return {
+          action: 'move', itemKind, name,
+          parentName: (previous.parentName || '').trim(),
+          newParentName: (data.parentName || '').trim(),
+          subjectName, yearIndex, semesterIndex
+        };
+      }
+      return {
+        action: 'update', itemKind, name,
+        parentName: (data.parentName || previous.parentName || '').trim(),
+        subjectName, yearIndex, semesterIndex
+      };
     case 'delete_file':
-      return { action: 'delete', itemKind, name };
+      return {
+        action: 'delete', itemKind, name,
+        parentName: (data.parentName || previous.parentName || '').trim(),
+        subjectName, yearIndex, semesterIndex
+      };
     case 'add_subject':
-      return { action: 'add', itemKind: 'subject', name };
+      return { action: 'add', itemKind: 'subject', name, yearIndex, semesterIndex };
     case 'update_subject':
       return isRename
-        ? { action: 'rename', itemKind: 'subject', name, previousName }
-        : { action: 'update', itemKind: 'subject', name };
+        ? { action: 'rename', itemKind: 'subject', name, previousName, yearIndex, semesterIndex }
+        : { action: 'update', itemKind: 'subject', name, yearIndex, semesterIndex };
     case 'delete_subject':
-      return { action: 'delete', itemKind: 'subject', name };
+      return { action: 'delete', itemKind: 'subject', name, yearIndex, semesterIndex };
     case 'update_grading_scale':
       return { action: 'update', itemKind: 'grading', detail: 'لائحة التقديرات المعتمدة اتحدّثت بعد موافقة الإدارة.' };
     default:
@@ -5698,7 +5797,8 @@ export function describePendingUpdateForStudents(update: UniversityPendingUpdate
 }
 
 /** Did the student explicitly move/relocate this item (vs. just rename it)? */
-function changedFieldsOf(data: any): string[] {  const raw = data?.changedFields || data?.changed_fields;
+function changedFieldsOf(data: any): string[] {
+  const raw = data?.changedFields || data?.changed_fields;
   // Callers pass the changed fields either as a list of names or as an object
   // of field -> new value (the shape the store uses). Support both.
   if (Array.isArray(raw)) return raw.map((f: any) => String(f));
