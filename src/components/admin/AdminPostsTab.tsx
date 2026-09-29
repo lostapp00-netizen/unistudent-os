@@ -55,6 +55,7 @@ export function AdminPostsTab({
   const [studentQuery, setStudentQuery] = useState('');
   const [editingPost, setEditingPost] = useState<StudentNotification | null>(null);
   const [postToDelete, setPostToDelete] = useState<StudentNotification | null>(null);
+  const [isConfirmingRejectAll, setIsConfirmingRejectAll] = useState(false);
 
   const stateOf = (n: StudentNotification): 'pending' | 'approved' | 'rejected' =>
     (n.reviewState || 'approved') as 'pending' | 'approved' | 'rejected';
@@ -417,6 +418,18 @@ export function AdminPostsTab({
               <span>{isAr ? `موافقة وإرسال الكل (${pendingNotices.length})` : `Approve & send all (${pendingNotices.length})`}</span>
             </button>
           )}
+
+          {pendingNotices.length > 0 && (
+            <button
+              type="button"
+              disabled={isDeciding}
+              onClick={() => setIsConfirmingRejectAll(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border border-rose-300 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-60 transition-colors"
+            >
+              <X size={13} />
+              <span>{isAr ? `رفض الكل (${pendingNotices.length})` : `Reject all (${pendingNotices.length})`}</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -663,6 +676,23 @@ export function AdminPostsTab({
           <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/70">{visibleLog.map(logItem)}</ul>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={isConfirmingRejectAll}
+        title={isAr ? 'رفض كل رسايل التحديثات المستنية' : 'Reject every waiting update notice'}
+        message={isAr
+          ? `هل أنت متأكد؟ ${pendingNotices.length} رسالة تحديث هتتعلّم كمرفوضة ومش هتتبعت للطلاب خالص. تقدر ترجّع أي واحدة تبعت بعد كده لو غيّرت رأيك.`
+          : `All ${pendingNotices.length} notices will be marked rejected and none of them will reach students.`}
+        confirmText={isAr ? 'نعم، ارفض الكل' : 'Yes, reject all'}
+        cancelText={isAr ? 'تراجع' : 'Cancel'}
+        variant="danger"
+        onConfirm={async () => {
+          const ids = pendingNotices.map(n => n.id);
+          setIsConfirmingRejectAll(false);
+          await decideNotices(ids, 'rejected');
+        }}
+        onCancel={() => setIsConfirmingRejectAll(false)}
+      />
 
       <ConfirmModal
         isOpen={!!postToDelete}
