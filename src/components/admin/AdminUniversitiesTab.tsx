@@ -464,6 +464,18 @@ export function AdminUniversitiesTab({
     }
   };
 
+  /**
+   * Tell every student linked to this database that it changed. They see it in
+   * the notification bell on their dashboard — with what was added, renamed,
+   * moved or deleted, and by whom (the admin himself, or an approved change from
+   * the student the database was pulled from).
+   */
+  const notifyStudentsOfDbChange = (change: Parameters<typeof db.notifyDatabaseChange>[1]) => {
+    const dbId = selectedCollegeDb?.id;
+    if (!dbId) return;
+    db.notifyDatabaseChange(dbId, change).catch(() => {});
+  };
+
   // Debounced version for realtime listeners to avoid rapid re-fetches
   // during approval flow (which updates both pending_updates and university_databases)
   const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1626,6 +1638,11 @@ export function AdminUniversitiesTab({
         .map(g => g.id)
         .filter(Boolean);
       await db.updateUniversityDatabase(selectedCollegeDb.id, { gradingScale: newScale }, { removedGradingScaleIds: removedScaleIds });
+      notifyStudentsOfDbChange({
+        action: 'update',
+        itemKind: 'grading',
+        detail: `لائحة التقديرات المعتمدة اتحدّثت (${newScale.length} تقدير).`
+      });
       // Sync grading scale to all students who restored this database
       await db.syncUniversityDatabaseChangesToStudents(selectedCollegeDb.id, {
         type: 'update_grading_scale',
@@ -1765,6 +1782,14 @@ export function AdminUniversitiesTab({
       }
 
       await db.updateUniversityDatabase(selectedCollegeDb.id, { subjects: updatedSubjects });
+      notifyStudentsOfDbChange({
+        action: editingSubject
+          ? (editingSubject.name.trim() !== subjectPayload.name.trim() ? 'rename' : 'update')
+          : 'add',
+        itemKind: 'subject',
+        name: subjectPayload.name,
+        previousName: editingSubject?.name
+      });
       
       // Real-time synchronization to all enrolled/restored students
       await db.syncUniversityDatabaseChangesToStudents(selectedCollegeDb.id, {
@@ -1856,6 +1881,12 @@ export function AdminUniversitiesTab({
           : f
       );
       await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
+      notifyStudentsOfDbChange({
+        action: editingDriveItem.name.trim() !== driveForm.name.trim() ? 'rename' : 'update',
+        itemKind: editingDriveItem.type === 'folder' ? 'folder' : 'file',
+        name: driveForm.name.trim(),
+        previousName: editingDriveItem.name
+      });
       setIsDriveModalOpen(false);
       setEditingDriveItem(null);
       setDriveForm({ name: '', type: 'folder', url: '', parentId: null, yearIndex: '1', semesterIndex: '1', subjectId: '' });
@@ -1889,6 +1920,7 @@ export function AdminUniversitiesTab({
         };
         const updatedFiles = [...(selectedCollegeDb.driveFiles || []), newFolder];
         await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
+        notifyStudentsOfDbChange({ action: 'add', itemKind: 'folder', name: newFolder.name });
         setIsDriveModalOpen(false);
         setDriveForm({ name: '', type: 'folder', url: '', parentId: null, yearIndex: '1', semesterIndex: '1', subjectId: '' });
         setDriveFileToUpload(null);
@@ -1949,6 +1981,7 @@ export function AdminUniversitiesTab({
 
       const updatedFiles = [...(selectedCollegeDb.driveFiles || []), newFile];
       await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
+      notifyStudentsOfDbChange({ action: 'add', itemKind: 'file', name: newFile.name });
       setIsDriveModalOpen(false);
       setDriveForm({ name: '', type: 'folder', url: '', parentId: null, yearIndex: '1', semesterIndex: '1', subjectId: '' });
       setDriveFileToUpload(null);
@@ -1983,6 +2016,12 @@ export function AdminUniversitiesTab({
           : f
       );
       await db.updateUniversityDatabase(selectedCollegeDb.id, { driveFiles: updatedFiles });
+      notifyStudentsOfDbChange({
+        action: 'move',
+        itemKind: movingFile.type === 'folder' ? 'folder' : 'file',
+        name: movingFile.name,
+        detail: `«${movingFile.name}» اتنقل إلى «${destination?.name || 'الجذر'}».`
+      });
       setMovingFile(null);
       setTargetMoveFolderId(null);
       await loadUniData();
@@ -2028,6 +2067,15 @@ export function AdminUniversitiesTab({
       if (studentsCleaned > 0) {
         console.info(`[admin] removed ${studentsCleaned} copied drive item(s) from restored students.`);
       }
+
+      notifyStudentsOfDbChange({
+        action: 'delete',
+        itemKind: driveItemToDelete.type === 'folder' ? 'folder' : 'file',
+        name: driveItemToDelete.name,
+        detail: doomed.length > 1
+          ? `«${driveItemToDelete.name}» وكل اللي جواه (${doomed.length} عنصر) اتشالوا من الدرايف المعتمد.`
+          : `«${driveItemToDelete.name}» اتشال من الدرايف المعتمد.`
+      });
 
       // Server-side (Edge Function) hard delete with client-side fallback.
       import('../../lib/backblaze').then(({ deleteMultipleFromB2 }) => {

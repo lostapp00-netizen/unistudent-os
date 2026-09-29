@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { v4 as uuidv4 } from 'uuid';
-import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, FeedbackMessage, DatabaseBackup, EmailBackupConfig, UniversityDatabase, UniversityPendingUpdate, GradeRule, GradeDistributionItem, GradingSystem } from '../types';
+import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, FeedbackSuggestion, FeedbackMessage, DatabaseBackup, EmailBackupConfig, UniversityDatabase, UniversityPendingUpdate, GradeRule, GradeDistributionItem, GradingSystem, StudentNotification } from '../types';
 import { normalizeSubjectName } from './academicTranslation';
 import { selectAcademicDriveFiles } from './utils';
 
@@ -223,14 +223,20 @@ export async function flushPendingWrites(userId: string): Promise<void> {
         let error: any = null;
         if (op.op === 'insert') {
           let payload = op.payload;
-          let res = await supabase.from(op.table).insert([payload]);
+          // The pending-updates queue retries requests that failed while the
+          // student was sending a change: the row may already exist (a re-sent
+          // request), so an upsert by id is the right write there.
+          const writeRow = () => op.table === 'university_pending_updates'
+            ? supabase.from(op.table).upsert([payload])
+            : supabase.from(op.table).insert([payload]);
+          let res = await writeRow();
           for (let i = 0; i < 4 && res.error; i++) {
             // Missing column (schema-cache/migration lag): drop and retry.
             const missing = missingColumnFromError(res.error);
             if (payload && missing && Object.prototype.hasOwnProperty.call(payload, missing)) {
               console.warn(`Flush ${op.table}: dropping missing column '${missing}' and retrying.`);
               delete payload[missing];
-              res = await supabase.from(op.table).insert([payload]);
+              res = await writeRow();
               continue;
             }
             // NOT NULL violation (legacy live schema requires a column the
@@ -241,7 +247,7 @@ export async function flushPendingWrites(userId: string): Promise<void> {
             if (payload && notNull && !Object.prototype.hasOwnProperty.call(payload, notNull)) {
               console.warn(`Flush ${op.table}: filling required column '${notNull}' and retrying.`);
               payload[notNull] = 'item';
-              res = await supabase.from(op.table).insert([payload]);
+              res = await writeRow();
               continue;
             }
             break;
@@ -2993,7 +2999,7 @@ export const db = {
     } catch {}
 
     try {
-      let query = supabase.from('university_pending_updates').select('*').order('created_at', { ascending: false });
+      let query = supabase.from('university_pending_updates').select('*').order('updated_at', { ascending: false });
       if (universityDbId) {
         query = query.eq('university_database_id', universityDbId);
       }
@@ -3036,7 +3042,11 @@ export const db = {
           }
         });
         const merged = Array.from(mergedMap.values());
-        merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        // Newest ACTIVITY first: a request the student edited after it was
+        // created must show up on top, not at the date it was first made.
+        merged.sort((a, b) =>
+          new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
+        );
         try {
           localStorage.setItem('unistudent_pending_updates', JSON.stringify(merged.slice(0, 150)));
         } catch {}
@@ -3046,7 +3056,9 @@ export const db = {
       console.warn('Supabase getPendingUpdates warning:', e);
     }
 
-    localList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    localList.sort((a, b) =>
+      new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
+    );
     return universityDbId ? localList.filter(p => p.universityDatabaseId === universityDbId) : localList;
   },
 
@@ -3195,6 +3207,7 @@ export const db = {
         data: cleanUpdate.data,
         status: cleanUpdate.status,
         created_at: cleanUpdate.createdAt,
+        updated_at: new Date().toISOString(),
         resolved_at: cleanUpdate.resolvedAt || null
       };
 
@@ -3217,10 +3230,34 @@ export const db = {
         const { error: fallbackErr } = await supabase.from('university_pending_updates').upsert(fallbackPayload);
         if (fallbackErr) {
           console.warn('Supabase recordPendingUpdate fallback failed:', fallbackErr);
+          // Losing a change in silence is what made the admin never receive the
+          // student's update: keep it queued for a retry and SAY it on screen.
+          recordFailedWrite({
+            userId: cleanUpdate.sourceUserId || '',
+            table: 'university_pending_updates',
+            op: 'insert',
+            payload: fullPayload,
+            errorMessage: describeError(fallbackErr)
+          });
         }
       }
     } catch (e) {
       console.warn('Supabase recordPendingUpdate exception:', e);
+      recordFailedWrite({
+        userId: cleanUpdate.sourceUserId || '',
+        table: 'university_pending_updates',
+        op: 'insert',
+        payload: {
+          id: cleanUpdate.id,
+          university_database_id: cleanUpdate.universityDatabaseId,
+          type: cleanUpdate.type,
+          description: cleanUpdate.description,
+          data: cleanUpdate.data,
+          status: cleanUpdate.status,
+          created_at: cleanUpdate.createdAt
+        },
+        errorMessage: describeError(e)
+      });
     }
   },
 
@@ -3425,6 +3462,13 @@ export const db = {
             updatedDb: currentDb,
             warnings: applyWarnings
           }).catch(() => {});
+
+          // Tell the students linked to this database exactly what was approved:
+          // a new file, a rename, a move, a deletion… (one notification per change).
+          for (const upd of byDb[dbId]) {
+            const change = describePendingUpdateForStudents(upd);
+            if (change) await this.notifyDatabaseChange(currentDb.id, change).catch(() => {});
+          }
         } catch (dbErr) {
           console.warn(`Error applying batch pending updates to database ${dbId}:`, dbErr);
           collectedWarnings.push(
@@ -3885,6 +3929,20 @@ export const db = {
       const filtered = existing.filter((n: any) => n.id !== notifId);
       localStorage.setItem(key, JSON.stringify([newNotif, ...filtered].slice(0, 50)));
     } catch {}
+
+    // Also store it on the server: the local copy only exists on the sender's
+    // device, so a message from the admin never reached the student.
+    await supabase.from('student_notifications').insert([{
+      id: notifId,
+      user_id: studentId,
+      audience: 'user',
+      scope: 'general',
+      type: notification.type || 'info',
+      title: notification.title,
+      message: notification.message,
+      created_at: newNotif.date,
+      updated_at: newNotif.date
+    }]).then(undefined, (e: any) => console.warn('Could not store the notification:', e?.message || e));
   },
 
   getStudentNotifications(studentId: string): Array<{
@@ -3916,9 +3974,243 @@ export const db = {
     } catch {}
   },
 
-  async notifyEnrolledStudentsOfDbUpdate(_universityDatabaseId: string, _message: string): Promise<void> {
-    // Disabled as requested: no update notifications sent to students
-    return;
+  // --- Student notification bell ---------------------------------------------------------
+  // Two kinds share one list: changes to the university database this student
+  // restored, and posts/messages from the admin. Read state is per student on
+  // the server, so the badge and the unread marks survive a change of device.
+
+  async getNotificationsForStudent(
+    userId: string,
+    linkedDatabaseIds: string[] = []
+  ): Promise<StudentNotification[]> {
+    const cacheKey = `unistudent_notifications_${userId}`;
+    const dbIds = Array.from(new Set((linkedDatabaseIds || []).filter(Boolean)));
+
+    try {
+      const queries = [
+        supabase.from('student_notifications').select('*')
+          .is('deleted_at', null).eq('audience', 'all')
+          .order('updated_at', { ascending: false }).limit(200),
+        supabase.from('student_notifications').select('*')
+          .is('deleted_at', null).eq('audience', 'user').eq('user_id', userId)
+          .order('updated_at', { ascending: false }).limit(200)
+      ];
+      if (dbIds.length > 0) {
+        queries.push(
+          supabase.from('student_notifications').select('*')
+            .is('deleted_at', null).eq('audience', 'database').in('university_database_id', dbIds)
+            .order('updated_at', { ascending: false }).limit(200)
+        );
+      }
+
+      const results = await Promise.all(queries);
+      const failed = results.some(r => r.error);
+      if (failed) {
+        const firstError = results.find(r => r.error)?.error;
+        console.warn('Could not read notifications (apply migration 202609300001_student_notifications.sql):', firstError?.message);
+        return this.readCachedNotifications(cacheKey);
+      }
+
+      const merged = new Map<string, any>();
+      results.forEach(r => (r.data || []).forEach((row: any) => merged.set(row.id, row)));
+
+      const { data: reads } = await supabase
+        .from('student_notification_reads')
+        .select('notification_id')
+        .eq('user_id', userId);
+      const readIds = new Set((reads || []).map((r: any) => r.notification_id));
+
+      const list: StudentNotification[] = Array.from(merged.values())
+        .map(row => mapNotificationFromDB(row, readIds.has(row.id)))
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+      try { localStorage.setItem(cacheKey, JSON.stringify(list)); } catch {}
+      return list;
+    } catch (e) {
+      console.warn('Notification read failed, using the cached list:', e);
+      return this.readCachedNotifications(cacheKey);
+    }
+  },
+
+  readCachedNotifications(cacheKey: string): StudentNotification[] {
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async markNotificationsRead(userId: string, notificationIds: string[]): Promise<void> {
+    const ids = Array.from(new Set((notificationIds || []).filter(Boolean)));
+    if (ids.length === 0) return;
+
+    const readAt = new Date().toISOString();
+    try {
+      const { error } = await supabase
+        .from('student_notification_reads')
+        .upsert(ids.map(id => ({ notification_id: id, user_id: userId, read_at: readAt })), {
+          onConflict: 'notification_id,user_id'
+        });
+      if (error) console.warn('Could not store the read state:', error.message);
+    } catch (e) {
+      console.warn('Could not store the read state:', e);
+    }
+
+    try {
+      const cacheKey = `unistudent_notifications_${userId}`;
+      const cached = this.readCachedNotifications(cacheKey);
+      const wanted = new Set(ids);
+      const updated = cached.map(n => wanted.has(n.id) ? { ...n, isRead: true } : n);
+      localStorage.setItem(cacheKey, JSON.stringify(updated));
+    } catch {}
+  },
+
+  // --- Admin posts & messages (المنشورات والرسائل العامة) --------------------------------
+  async createPostNotification(input: {
+    title: string;
+    message: string;
+    createdBy?: string;
+    targetUserId?: string;
+  }): Promise<{ ok: boolean; error?: string }> {
+    const title = (input.title || '').trim();
+    if (!title) return { ok: false, error: 'العنوان مطلوب' };
+
+    const now = new Date().toISOString();
+    const { error } = await supabase.from('student_notifications').insert([{
+      id: uuidv4(),
+      user_id: input.targetUserId || null,
+      audience: input.targetUserId ? 'user' : 'all',
+      scope: 'general',
+      type: 'info',
+      title,
+      message: (input.message || '').trim(),
+      created_by: input.createdBy || null,
+      created_at: now,
+      updated_at: now
+    }]);
+
+    if (error) {
+      console.warn('Could not publish the post:', error.message);
+      return { ok: false, error: error.message };
+    }
+    return { ok: true };
+  },
+
+  /**
+   * Editing a post keeps the SAME notification (no duplicate): the row is updated
+   * and its read marks are cleared, so every student sees it as a fresh unread
+   * message instead of getting a second copy of it.
+   */
+  async updatePostNotification(id: string, input: { title: string; message: string }): Promise<{ ok: boolean; error?: string }> {
+    const title = (input.title || '').trim();
+    if (!title) return { ok: false, error: 'العنوان مطلوب' };
+
+    const { error } = await supabase
+      .from('student_notifications')
+      .update({ title, message: (input.message || '').trim(), updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) {
+      console.warn('Could not update the post:', error.message);
+      return { ok: false, error: error.message };
+    }
+
+    try {
+      await supabase.from('student_notification_reads').delete().eq('notification_id', id);
+    } catch {}
+
+    return { ok: true };
+  },
+
+  async deletePostNotification(id: string): Promise<{ ok: boolean; error?: string }> {
+    const { error } = await supabase
+      .from('student_notifications')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) {
+      console.warn('Could not delete the post:', error.message);
+      return { ok: false, error: error.message };
+    }
+    try {
+      await supabase.from('student_notification_reads').delete().eq('notification_id', id);
+    } catch {}
+    return { ok: true };
+  },
+
+  async getPostNotifications(): Promise<StudentNotification[]> {
+    try {
+      const { data, error } = await supabase
+        .from('student_notifications')
+        .select('*')
+        .eq('scope', 'general')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .limit(200);
+      if (error) {
+        console.warn('Could not read posts (apply migration 202609300001_student_notifications.sql):', error.message);
+        return [];
+      }
+
+      const ids = (data || []).map((row: any) => row.id);
+      const readers = new Map<string, number>();
+      if (ids.length > 0) {
+        const { data: reads } = await supabase
+          .from('student_notification_reads')
+          .select('notification_id')
+          .in('notification_id', ids);
+        (reads || []).forEach((r: any) => readers.set(r.notification_id, (readers.get(r.notification_id) || 0) + 1));
+      }
+
+      return (data || []).map((row: any) => ({
+        ...mapNotificationFromDB(row, false),
+        readers: row.audience === 'user' ? undefined : (readers.get(row.id) || 0)
+      }));
+    } catch (e) {
+      console.warn('Post list failed:', e);
+      return [];
+    }
+  },
+
+  /**
+   * Tell every student linked to a database that something changed in it — the
+   * admin edited the database himself, or approved a change coming from the
+   * student the database was pulled from end.
+   */
+  async notifyDatabaseChange(
+    universityDatabaseId: string,
+    change: DatabaseChangeNotification
+  ): Promise<void> {
+    if (!universityDatabaseId) return;
+    const { title, message, type } = buildDatabaseChangeNotification(change);
+    const now = new Date().toISOString();
+
+    try {
+      const { error } = await supabase.from('student_notifications').insert([{
+        id: uuidv4(),
+        user_id: null,
+        audience: 'database',
+        scope: 'database',
+        university_database_id: universityDatabaseId,
+        type,
+        title,
+        message,
+        created_by: change.createdBy || null,
+        created_at: now,
+        updated_at: now
+      }]);
+      if (error) console.warn('Could not notify students about the database change:', error.message);
+    } catch (e) {
+      console.warn('Could not notify students about the database change:', e);
+    }
+  },
+
+  async notifyEnrolledStudentsOfDbUpdate(universityDatabaseId: string, message: string): Promise<void> {
+    await this.notifyDatabaseChange(universityDatabaseId, {
+      action: 'update',
+      itemKind: 'database',
+      detail: message
+    });
   },
 
   // --- Admin All Platform Data ---
@@ -5263,6 +5555,87 @@ function mapUniversityDatabaseFromDB(row: any): UniversityDatabase {
   };
 }
 
+/** Shape of a database change that is worth telling the linked students about. */
+export interface DatabaseChangeNotification {
+  action: 'add' | 'update' | 'rename' | 'delete' | 'move';
+  itemKind?: 'file' | 'folder' | 'subject' | 'grading' | 'database';
+  /** The item's name (or its new name when it was renamed). */
+  name?: string;
+  /** Previous name — only for a rename. */
+  previousName?: string;
+  /** Extra sentence (used for grading-scale and free-form messages). */
+  detail?: string;
+  createdBy?: string;
+}
+
+/**
+ * The sentence a student reads in the bell for a database change:
+ * "تم إضافة ملف ..." / "تم تغيير اسم ..." / "تم حذف ..." and so on.
+ */
+export function buildDatabaseChangeNotification(change: DatabaseChangeNotification): {
+  title: string;
+  message: string;
+  type: string;
+} {
+  const kind = change.itemKind || 'file';
+  const kindAr = kind === 'folder' ? 'مجلد' : kind === 'subject' ? 'مادة' : kind === 'grading' ? 'لائحة التقديرات' : kind === 'database' ? 'قاعدة البيانات' : 'ملف';
+  const name = (change.name || '').trim();
+  const previousName = (change.previousName || '').trim();
+  const quoted = name ? `«${name}»` : '';
+
+  switch (change.action) {
+    case 'add':
+      return {
+        title: `تم إضافة ${kindAr} جديد في قاعدة بيانات كليتك`,
+        message: `${quoted} اتضاف${kind === 'subject' ? 'ت' : ''} بعد موافقة الإدارة و بقى متاح في الدرايف المعتمد.`,
+        type: 'add'
+      };
+    case 'rename':
+      return {
+        title: `تم تغيير اسم ${kindAr} في قاعدة بيانات كليتك`,
+        message: previousName && name
+          ? `الاسم اتغيّر من «${previousName}» إلى «${name}».`
+          : `الاسم اتغيّر إلى ${quoted}.`,
+        type: 'rename'
+      };
+    case 'delete':
+      return {
+        title: `تم حذف ${kindAr} من قاعدة بيانات كليتك`,
+        message: `${quoted} اتشال من الدرايف المعتمد.`,
+        type: 'delete'
+      };
+    case 'move':
+      return {
+        title: `تم نقل ${kindAr} في قاعدة بيانات كليتك`,
+        message: `${quoted} اتنقل لمكان تاني جوه الدرايف المعتمد.`,
+        type: 'update'
+      };
+    default:
+      return {
+        title: `تم تعديل ${kindAr} في قاعدة بيانات كليتك`,
+        message: change.detail || `${quoted} اتعدّل بعد موافقة الإدارة.`,
+        type: 'update'
+      };
+  }
+}
+
+function mapNotificationFromDB(row: any, isRead: boolean): StudentNotification {
+  return {
+    id: String(row.id || ''),
+    audience: (row.audience || 'all') as StudentNotification['audience'],
+    scope: (row.scope || 'general') as StudentNotification['scope'],
+    userId: row.user_id ?? null,
+    universityDatabaseId: row.university_database_id ?? null,
+    type: row.type || 'info',
+    title: row.title || '',
+    message: row.message || '',
+    createdBy: row.created_by ?? null,
+    createdAt: row.created_at || new Date().toISOString(),
+    updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
+    isRead
+  };
+}
+
 function mapPendingUpdateFromDB(row: any): UniversityPendingUpdate {
   return {
     id: row.id,
@@ -5281,13 +5654,51 @@ function mapPendingUpdateFromDB(row: any): UniversityPendingUpdate {
     data: row.data || {},
     status: row.status || 'pending',
     createdAt: row.created_at || new Date().toISOString(),
+    updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
     resolvedAt: row.resolved_at
   };
 }
 
+/**
+ * What an approved (or admin-made) change means for the students linked to the
+ * database. Used both by the approval batch and by the admin's own edits, so the
+ * bell says "تم إضافة ملف …" / "تم تغيير اسم …" / "تم حذف …" in both cases.
+ */
+export function describePendingUpdateForStudents(update: UniversityPendingUpdate): DatabaseChangeNotification | null {
+  const data: any = update?.data || {};
+  const changed = changedFieldsOf(data);
+  const itemKind: DatabaseChangeNotification['itemKind'] = data.type === 'folder' ? 'folder' : 'file';
+  const name = (data.name || '').trim();
+  const previousName = (data.previous?.name || '').trim();
+  const isRename = changed.includes('name') && Boolean(previousName) && previousName !== name;
+  const isMove = changed.some((f: string) => ['parentId', 'yearIndex', 'semesterIndex', 'subjectId'].includes(f));
+
+  switch (update?.type) {
+    case 'add_file':
+      return { action: 'add', itemKind, name };
+    case 'update_file':
+      if (isRename) return { action: 'rename', itemKind, name, previousName };
+      if (isMove) return { action: 'move', itemKind, name };
+      return { action: 'update', itemKind, name };
+    case 'delete_file':
+      return { action: 'delete', itemKind, name };
+    case 'add_subject':
+      return { action: 'add', itemKind: 'subject', name };
+    case 'update_subject':
+      return isRename
+        ? { action: 'rename', itemKind: 'subject', name, previousName }
+        : { action: 'update', itemKind: 'subject', name };
+    case 'delete_subject':
+      return { action: 'delete', itemKind: 'subject', name };
+    case 'update_grading_scale':
+      return { action: 'update', itemKind: 'grading', detail: 'لائحة التقديرات المعتمدة اتحدّثت بعد موافقة الإدارة.' };
+    default:
+      return null;
+  }
+}
+
 /** Did the student explicitly move/relocate this item (vs. just rename it)? */
-function changedFieldsOf(data: any): string[] {
-  const raw = data?.changedFields || data?.changed_fields;
+function changedFieldsOf(data: any): string[] {  const raw = data?.changedFields || data?.changed_fields;
   // Callers pass the changed fields either as a list of names or as an object
   // of field -> new value (the shape the store uses). Support both.
   if (Array.isArray(raw)) return raw.map((f: any) => String(f));

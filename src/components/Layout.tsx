@@ -4,10 +4,9 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, BookOpen, Calendar, LayoutDashboard, Settings, Sun, Moon, 
   ChevronDown, ChevronRight, CheckSquare, StickyNote, HardDrive, 
-  Clock, AlertTriangle, Library, ListTodo, Menu, X, Calculator, Target, LogOut, HelpCircle, Sparkles, Bell } from 'lucide-react';
+  Clock, AlertTriangle, Library, ListTodo, Menu, X, Calculator, Target, LogOut, HelpCircle, Sparkles } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { supabase } from '../lib/supabase';
-import { db } from '../lib/db';
 import { getWarningThreshold, isSubjectAtWarningRisk } from '../lib/academic';
 import { cn } from '../lib/utils';
 
@@ -19,21 +18,6 @@ export function Layout() {
   const [academicExpanded, setAcademicExpanded] = useState(location.pathname.startsWith('/academic'));
   const [productivityExpanded, setProductivityExpanded] = useState(location.pathname.startsWith('/productivity'));
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [studentNotifications, setStudentNotifications] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (userId) {
-      const notifs = db.getStudentNotifications(userId);
-      setStudentNotifications(notifs.filter(n => n.type !== 'update' && !n.title?.includes('تحديث معتمد') && !n.title?.includes('تحديث جديد')));
-    }
-  }, [userId]);
-
-  const handleDismissNotif = (notifId: string) => {
-    if (userId) {
-      db.dismissStudentNotification(userId, notifId);
-      setStudentNotifications(prev => prev.filter(n => n.id !== notifId));
-    }
-  };
 
   // Compute warning subjects count for red notification badge
   const currentSemester = settings.semesters.find(s => s.isCurrent);
@@ -326,35 +310,6 @@ export function Layout() {
         </div>
 
         <div className="w-full max-w-7xl mx-auto p-4 md:p-8 min-h-full flex flex-col space-y-4">
-          {studentNotifications.map(notif => (
-            <div 
-              key={notif.id}
-              className="p-4 rounded-2xl bg-gradient-to-r from-purple-500/10 to-indigo-500/10 dark:from-purple-950/40 dark:to-indigo-950/40 border border-purple-200 dark:border-purple-800/60 flex items-center justify-between gap-3 animate-in slide-in-from-top-2 shadow-xs"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                  <Sparkles size={16} />
-                </div>
-                <div>
-                  <h4 className="font-black text-xs sm:text-sm text-zinc-900 dark:text-white">
-                    {notif.title}
-                  </h4>
-                  <p className="text-xs text-zinc-600 dark:text-zinc-300 mt-0.5">
-                    {notif.message}
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => handleDismissNotif(notif.id)}
-                className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-200/50 dark:hover:bg-zinc-800 rounded-xl cursor-pointer shrink-0 transition-colors"
-                title={settings.language === 'ar' ? 'إغلاق الإشعار' : 'Dismiss'}
-              >
-                <X size={16} />
-              </button>
-            </div>
-          ))}
-
           <Outlet />
         </div>
       </main>

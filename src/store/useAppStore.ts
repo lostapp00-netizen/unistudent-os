@@ -2260,7 +2260,23 @@ export async function checkAndNotifySourceUpdate(
     }
 
     const uniDbs = await db.getUniversityDatabases();
-    if (!uniDbs || uniDbs.length === 0) return;
+    if (!uniDbs || uniDbs.length === 0) {
+      // The student is linked to a database but not a single row could be read,
+      // so this change cannot be matched to its database and would be dropped in
+      // silence — that silence is how an update "never arrives" at the admin.
+      if (storeState.settings.universityDatabaseId || storeState.settings.specializationDatabaseId) {
+        try {
+          window.dispatchEvent(new CustomEvent('unistudent-save-error', {
+            detail: {
+              table: 'university_pending_updates',
+              message: 'تعذّر الوصول لقاعدة بيانات كليتك دلوقتي، فالتغيير ده مااتسجلش عند الإدارة — جرّب تاني بعد لحظة.',
+              pendingCount: 0
+            }
+          }));
+        } catch {}
+      }
+      return;
+    }
     
     // Find all databases where this student is the registered source user
     // or actively enrolled and designated as source

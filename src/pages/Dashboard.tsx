@@ -5,6 +5,7 @@ import { calculateGPA, calculateSubjectGrade, getWarningThreshold, isSubjectAtWa
 import { BookOpen, AlertTriangle, CheckCircle, Clock, Award } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { UnifiedSemesterFilter, UnifiedFilterBadge } from '../components/ui/UnifiedSemesterFilter';
+import { NotificationsBell } from '../components/student/NotificationsBell';
 
 export function Dashboard() {
   const { t } = useTranslation();
@@ -81,6 +82,9 @@ export function Dashboard() {
             setFilterYears={setFilterYears}
             setFilterSemesters={setFilterSemesters}
           />
+
+          {/* جرس الإشعارات: تحديثات قاعدة بيانات كليتك + رسائل وإعلانات الإدارة */}
+          <NotificationsBell />
 
           {/* نظام الحساب: GPA أو النقط */}
           {gradingSystem === 'points' ? (

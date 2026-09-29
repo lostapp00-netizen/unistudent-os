@@ -360,6 +360,12 @@ export type UniversityPendingUpdate = {
   data: any;
   status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
+  /**
+   * Last activity on this request. A student editing the same item twice before
+   * the admin reviews it updates the request in place, so this is what puts it
+   * back on top of the admin's list instead of leaving it at its old date.
+   */
+  updatedAt?: string;
   resolvedAt?: string;
 };
 
@@ -408,5 +414,39 @@ export type DatabaseBackup = {
     totalSchedule?: number;
     totalGroups?: number;
   };
+};
+
+/**
+ * A student's notification — the bell on the dashboard.
+ *
+ * Two kinds share one list:
+ *   scope 'database' → something changed in the university database this student
+ *                      restored (the admin edited it, or approved a change from
+ *                      the student the database was pulled from);
+ *   scope 'general'  → a post / message the admin published.
+ *
+ * `audience` decides who sees it: everyone, one student, or every student linked
+ * to a given database — so a database change needs no per-student copies and a
+ * student who links later still sees the notice.
+ */
+export type StudentNotification = {
+  id: string;
+  audience: 'all' | 'user' | 'database';
+  scope: 'general' | 'database';
+  /** Set when audience is 'user'. */
+  userId?: string | null;
+  /** Set when audience is 'database'. */
+  universityDatabaseId?: string | null;
+  /** 'info' | 'add' | 'update' | 'delete' | 'rename' | 'update' */
+  type: string;
+  title: string;
+  message: string;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Read state of the current student. */
+  isRead: boolean;
+  /** How many students read it — shown in the admin's log. */
+  readers?: number;
 };
 

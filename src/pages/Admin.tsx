@@ -60,6 +60,7 @@ import {
   Lock,
   Unlock,
   CheckCheck,
+  Megaphone,
   Image as ImageIcon
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
@@ -71,6 +72,7 @@ import { ConfirmModal } from '../components/ui/CustomModal';
 import { formatDateTime, getAcademicEvaluation } from '../lib/utils';
 import { normalizeSubjectName } from '../lib/academicTranslation';
 import { AdminUniversitiesTab } from '../components/admin/AdminUniversitiesTab';
+import { AdminPostsTab } from '../components/admin/AdminPostsTab';
 
 export function Admin() {
   const { t, i18n } = useTranslation();
@@ -96,7 +98,7 @@ export function Admin() {
   });
 
   // --- Sidebar & Tabs ---
-  type TabType = 'overview' | 'students' | 'universities' | 'suggestions' | 'backup';
+  type TabType = 'overview' | 'students' | 'universities' | 'suggestions' | 'posts' | 'backup';
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     try {
       const saved = sessionStorage.getItem('unistudent_admin_active_tab') as TabType;
@@ -1067,7 +1069,25 @@ export function Admin() {
             )}
           </button>
 
-          {/* 5. Backup & Email */}
+          {/* 5. Public posts & messages */}
+          <button
+            onClick={() => {
+              setActiveTab('posts');
+              setIsMobileSidebarOpen(false);
+            }}
+            className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'posts'
+                ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 shadow-xs border border-blue-200/80 dark:border-blue-800/60 font-black'
+                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Megaphone className={`w-4 h-4 ${activeTab === 'posts' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'}`} />
+              <span>{isAr ? 'المنشورات والرسائل العامة' : 'Posts & Messages'}</span>
+            </div>
+          </button>
+
+          {/* 6. Backup & Email */}
           <button
             onClick={() => {
               setActiveTab('backup');
@@ -1791,6 +1811,11 @@ export function Admin() {
                 )}
               </div>
             </div>
+          )}
+
+          {/* TAB: PUBLIC POSTS & MESSAGES */}
+          {activeTab === 'posts' && (
+            <AdminPostsTab studentsList={studentsList} />
           )}
 
           {/* TAB 4: BACKUP & EMAIL SCHEDULER */}
