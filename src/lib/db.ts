@@ -4485,11 +4485,14 @@ export const db = {
   /**
    * The admin's decision on queued update notices: approve → they go out to the
    * linked students, reject → they are never sent.
+   *
+   * Approving also sends the same notice by email (see emailApprovedNotices), so
+   * the student gets it in the bell and in the inbox at the same moment.
    */
   async setNotificationsReviewState(
     ids: string[],
     state: 'pending' | 'approved' | 'rejected'
-  ): Promise<{ ok: boolean; error?: string; count: number }> {
+  ): Promise<{ ok: boolean; error?: string; count: number; email?: { ok: boolean; sent: number; failed: number; error?: string } }> {
     const list = Array.from(new Set((ids || []).filter(Boolean)));
     if (list.length === 0) return { ok: true, count: 0 };
 
@@ -4508,7 +4511,52 @@ export const db = {
       await supabase.from('student_notification_reads').delete().in('notification_id', list);
     } catch {}
 
-    return { ok: true, count: list.length };
+    const email = state === 'approved' ? await this.emailApprovedNotices(list) : undefined;
+    return { ok: true, count: list.length, ...(email ? { email } : {}) };
+  },
+
+  /**
+   * Sends the approved update notices to the students by email.
+   *
+   * The edge function `send-update-email` renders one message per student — in
+   * the language they picked on the site, with the exact wording the bell shows —
+   * and sends it over the same account the backups use (a Resend key, or the
+   * Gmail sender + app password saved in the admin's email settings).
+   */
+  async emailApprovedNotices(ids: string[]): Promise<{ ok: boolean; sent: number; failed: number; error?: string }> {
+    const list = Array.from(new Set((ids || []).filter(Boolean)));
+    if (list.length === 0) return { ok: true, sent: 0, failed: 0 };
+
+    const config = this.getEmailBackupConfig();
+    let siteUrl = 'https://unistudent-os.vercel.app';
+    try {
+      if (typeof window !== 'undefined' && window.location?.origin) siteUrl = window.location.origin;
+    } catch {}
+
+    try {
+      const { data, error } = await supabase.functions.invoke('send-update-email', {
+        body: {
+          notificationIds: list,
+          siteUrl,
+          senderName: 'UniStudent OS',
+          senderEmail: config.senderEmail || '',
+          appPassword: config.appPassword || '',
+          resendApiKey: (config as any).resendApiKey || ''
+        }
+      });
+      if (error) {
+        console.warn('Update-notice email failed (is the send-update-email function deployed?):', error.message);
+        return { ok: false, sent: 0, failed: list.length, error: error.message };
+      }
+      const result: any = data || {};
+      if (result.success === false) {
+        return { ok: false, sent: 0, failed: list.length, error: result.message || result.error || 'failed' };
+      }
+      return { ok: true, sent: Number(result.sent || 0), failed: Number(result.failed || 0) };
+    } catch (e: any) {
+      console.warn('Update-notice email failed:', e);
+      return { ok: false, sent: 0, failed: list.length, error: e?.message || String(e) };
+    }
   },
 
   /** عدد رسائل التحديث المستنية موافقة الأدمن — بتستخدم في شارة القائمة الجانبية. */

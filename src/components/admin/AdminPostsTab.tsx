@@ -99,10 +99,24 @@ export function AdminPostsTab({
     try {
       const result = await db.setNotificationsReviewState(ids, state);
       if (!result.ok) throw new Error(result.error || 'failed');
+
+      // Approving also mails the notice. Say what really happened: sent mails,
+      // mails that bounced, or a transport that is not configured yet.
+      const email = state === 'approved' ? result.email : undefined;
+      const emailNote = !email
+        ? ''
+        : email.sent > 0
+          ? (isAr
+              ? ` واتبعتت ${email.sent} إيميل كمان${email.failed > 0 ? ` (فشل ${email.failed})` : ''}.`
+              : ` Emailed to ${email.sent} student(s)${email.failed > 0 ? ` (${email.failed} failed)` : ''}.`)
+          : (isAr
+              ? ' — أما الإيميل فمااتبعش: ظبّط بريد الإرسال أو مفتاح Resend من تبويب «النسخ الاحتياطي والأتمتة».'
+              : ' — email was not sent: configure the sender address or a Resend key in the Backup tab.');
+
       setSuccess(state === 'approved'
         ? (isAr
-            ? `تم إرسال ${result.count} رسالة تحديث للطلاب المربوطين بقاعدة البيانات.`
-            : `${result.count} notice(s) sent to the linked students.`)
+            ? `تم إرسال ${result.count} رسالة تحديث للطلاب المربوطين بقاعدة البيانات.${emailNote}`
+            : `${result.count} notice(s) sent to the linked students.${emailNote}`)
         : (isAr
             ? `تم رفض ${result.count} رسالة — مش هتتبعت للطلاب.`
             : `${result.count} notice(s) rejected — they will not be sent.`));
