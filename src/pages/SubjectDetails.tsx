@@ -25,6 +25,7 @@ import {
   X
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { previewFile, downloadFile } from '../lib/backblaze';
 import { calculateSubjectGrade } from '../lib/academic';
 import { GradeDistributionItem, DriveFile } from '../types';
 import { DistributionItemCard } from '../components/academic/DistributionItemCard';
@@ -215,32 +216,32 @@ export function SubjectDetails() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
-  const handleDriveItemClick = (file: DriveFile) => {
+  // Open and download through the same helper the drive uses: it builds a fresh
+  // signed link from the file's B2 key. Opening the stored public URL directly
+  // hit Backblaze's "not found" whenever that stored URL was stale (it can point
+  // at an older object than the key the file really has).
+  const handleDriveItemClick = async (file: DriveFile) => {
     if (file.type === 'folder') {
       setCurrentDriveFolderId(file.id);
-    } else if (file.url) {
-      window.open(file.url, '_blank');
+      return;
+    }
+    try {
+      await previewFile(file);
+    } catch (err) {
+      console.error('Error previewing file:', err);
+      if (file.url) window.open(file.url, '_blank');
     }
   };
 
   const handleDownloadDriveFile = async (e: React.MouseEvent, file: DriveFile) => {
     e.stopPropagation();
-    if (file.type === 'folder' || !file.url) return;
+    if (file.type === 'folder') return;
     setDownloadingFileId(file.id);
     try {
-      const res = await fetch(file.url);
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = file.name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(blobUrl);
+      await downloadFile(file);
     } catch (err) {
       console.error('Download failed, opening directly:', err);
-      window.open(file.url, '_blank');
+      if (file.url) window.open(file.url, '_blank');
     } finally {
       setDownloadingFileId(null);
     }
