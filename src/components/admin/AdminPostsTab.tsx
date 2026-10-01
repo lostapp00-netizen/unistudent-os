@@ -62,6 +62,19 @@ export function AdminPostsTab({
 
   const pendingNotices = updateNotices.filter(n => stateOf(n) === 'pending');
 
+  /** One sentence about what happened to the emails, for the banner. */
+  const emailNoteFor = (email?: { ok: boolean; sent: number; failed: number; error?: string } | null): string => {
+    if (!email) return '';
+    if (email.sent > 0) {
+      return isAr
+        ? `واتبعتت ${email.sent} إيميل${email.failed > 0 ? ` (فشل ${email.failed})` : ''}.`
+        : `Emailed to ${email.sent} student(s)${email.failed > 0 ? ` (${email.failed} failed)` : ''}.`;
+    }
+    return isAr
+      ? 'الإيميل مااتبعش — ظبّط بريد الإرسال أو مفتاح Resend من تبويب «النسخ الاحتياطي والأتمتة».'
+      : 'Email was not sent — configure the sender address or a Resend key in the Backup tab.';
+  };
+
   const load = async () => {
     setIsLoading(true);
     try {
@@ -102,21 +115,12 @@ export function AdminPostsTab({
 
       // Approving also mails the notice. Say what really happened: sent mails,
       // mails that bounced, or a transport that is not configured yet.
-      const email = state === 'approved' ? result.email : undefined;
-      const emailNote = !email
-        ? ''
-        : email.sent > 0
-          ? (isAr
-              ? ` واتبعتت ${email.sent} إيميل كمان${email.failed > 0 ? ` (فشل ${email.failed})` : ''}.`
-              : ` Emailed to ${email.sent} student(s)${email.failed > 0 ? ` (${email.failed} failed)` : ''}.`)
-          : (isAr
-              ? ' — أما الإيميل فمااتبعش: ظبّط بريد الإرسال أو مفتاح Resend من تبويب «النسخ الاحتياطي والأتمتة».'
-              : ' — email was not sent: configure the sender address or a Resend key in the Backup tab.');
+      const emailNote = state === 'approved' ? emailNoteFor(result.email) : '';
 
       setSuccess(state === 'approved'
         ? (isAr
-            ? `تم إرسال ${result.count} رسالة تحديث للطلاب المربوطين بقاعدة البيانات.${emailNote}`
-            : `${result.count} notice(s) sent to the linked students.${emailNote}`)
+            ? `تم إرسال ${result.count} رسالة تحديث للطلاب المربوطين بقاعدة البيانات. ${emailNote}`.trim()
+            : `${result.count} notice(s) sent to the linked students. ${emailNote}`.trim())
         : (isAr
             ? `تم رفض ${result.count} رسالة — مش هتتبعت للطلاب.`
             : `${result.count} notice(s) rejected — they will not be sent.`));
@@ -146,9 +150,14 @@ export function AdminPostsTab({
 
     setIsSaving(true);
     try {
+      let noticeId: string | undefined;
+      // A post that did not change a single word is not worth a fresh email.
+      const textChanged = !editingPost || editingPost.title !== title.trim() || editingPost.message !== message.trim();
+
       if (editingPost) {
         const result = await db.updatePostNotification(editingPost.id, { title, message });
         if (!result.ok) throw new Error(result.error || 'failed');
+        noticeId = editingPost.id;
         setSuccess(editingPost.scope === 'database'
           ? (isAr
               ? 'تم تعديل رسالة التحديث — هتظهر للطلاب تاني كرسالة جديدة (من غير نسخة مكررة).'
@@ -164,12 +173,22 @@ export function AdminPostsTab({
           targetUserId: targetUserId || undefined
         });
         if (!result.ok) throw new Error(result.error || 'failed');
+        noticeId = result.id;
         setSuccess(targetUserId
           ? (isAr ? 'تم إرسال الرسالة للطالب.' : 'Message sent to the student.')
           : (isAr ? 'تم نشر الرسالة لكل الطلاب.' : 'Published to all students.'));
       }
       resetForm();
       await load();
+
+      // The students' inbox gets it too. A platform-wide post takes a little
+      // while to send, so this runs in the background and the banner is updated
+      // with the real number when it is done.
+      if (noticeId && textChanged) {
+        db.emailApprovedNotices([noticeId])
+          .then(email => setSuccess(prev => `${prev || ''} ${emailNoteFor(email)}`.trim()))
+          .catch(() => {});
+      }
     } catch (err: any) {
       setError(err?.message || (isAr ? 'تعذّر الحفظ — اتأكد إن migration الإشعارات متشغّل.' : 'Could not save.'));
     } finally {

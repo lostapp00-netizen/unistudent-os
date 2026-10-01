@@ -32,49 +32,60 @@ const DEFAULT_SITE_URL = "https://unistudent-os.vercel.app";
 const BRAND = "UniStudent OS";
 
 type Lang = "ar" | "en";
+/** Which kind of message this is — it decides the framing, not the text. */
+type MailKind = "database" | "general";
 
 /** Everything the email says around the notice text itself. */
 const I18N: Record<Lang, {
   dir: "rtl" | "ltr";
-  subject: (n: number) => string;
-  eyebrow: string;
+  subject: (n: number, kind: MailKind) => string;
+  eyebrow: (kind: MailKind) => string;
   greeting: (name: string) => string;
-  intro: string;
-  introOne: string;
-  cardTitle: string;
+  intro: (kind: MailKind) => string;
+  introOne: (kind: MailKind) => string;
   cta: string;
-  footerWhy: string;
+  footerWhy: (kind: MailKind) => string;
   footerDatabase: string;
   footerAuto: string;
   kind: Record<string, string>;
 }> = {
   ar: {
     dir: "rtl",
-    subject: (n) => (n > 1 ? `تحديثات جديدة في قاعدة بيانات كليتك (${n})` : "تحديث جديد في قاعدة بيانات كليتك"),
-    eyebrow: "جرس الإشعارات · UniStudent OS",
+    subject: (n, kind) =>
+      kind === "general"
+        ? (n > 1 ? `رسائل جديدة من إدارة UniStudent OS (${n})` : "رسالة جديدة من إدارة UniStudent OS")
+        : (n > 1 ? `تحديثات جديدة في قاعدة بيانات كليتك (${n})` : "تحديث جديد في قاعدة بيانات كليتك"),
+    eyebrow: (kind) => (kind === "general" ? "رسالة من الإدارة" : "تحديث قاعدة بيانات كليتك"),
     greeting: (name) => (name ? `أهلاً ${name}،` : "أهلاً بيك،"),
-    intro: "في تحديثات جديدة في قاعدة بيانات كليتك:",
-    introOne: "في تحديث جديد في قاعدة بيانات كليتك:",
-    cardTitle: "ملخص التحديث",
+    intro: (kind) => (kind === "general" ? "في رسايل جديدة من إدارة المنصة:" : "في تحديثات جديدة في قاعدة بيانات كليتك:"),
+    introOne: (kind) => (kind === "general" ? "في رسالة جديدة من إدارة المنصة:" : "في تحديث جديد في قاعدة بيانات كليتك:"),
     cta: "افتح UniStudent OS",
-    footerWhy: "وصلتك الرسالة دي لأن كليتك مربوطة بقاعدة بيانات على UniStudent OS.",
+    footerWhy: (kind) =>
+      kind === "general"
+        ? "وصلتك الرسالة دي لأن عندك حساب على UniStudent OS."
+        : "وصلتك الرسالة دي لأن كليتك مربوطة بقاعدة بيانات على UniStudent OS.",
     footerDatabase: "قاعدة البيانات",
     footerAuto: "رسالة تلقائية — مش محتاجة رد.",
-    kind: { add: "إضافة", update: "تعديل", delete: "حذف", rename: "تغيير اسم", full_sync: "مزامنة" },
+    kind: { add: "إضافة", update: "تعديل", delete: "حذف", rename: "تغيير اسم", full_sync: "مزامنة", info: "إعلان" },
   },
   en: {
     dir: "ltr",
-    subject: (n) => (n > 1 ? `${n} new updates in your college database` : "New update in your college database"),
-    eyebrow: "Notification bell · UniStudent OS",
+    subject: (n, kind) =>
+      kind === "general"
+        ? (n > 1 ? `${n} new messages from UniStudent OS` : "A new message from UniStudent OS")
+        : (n > 1 ? `${n} new updates in your college database` : "New update in your college database"),
+    eyebrow: (kind) => (kind === "general" ? "Message from the admin" : "Your college database update"),
     greeting: (name) => (name ? `Hi ${name},` : "Hi there,"),
-    intro: "There are new updates in your college database:",
-    introOne: "There is a new update in your college database:",
-    cardTitle: "Update summary",
+    intro: (kind) => (kind === "general" ? "There are new messages from the platform team:" : "There are new updates in your college database:"),
+    introOne: (kind) => (kind === "general" ? "There is a new message from the platform team:" : "There is a new update in your college database:"),
     cta: "Open UniStudent OS",
-    footerWhy: "You received this because your college is linked to a database on UniStudent OS.",
+    footerWhy: (kind) =>
+      kind === "general"
+        ? "You received this because you have a UniStudent OS account."
+        : "You received this because your college is linked to a database on UniStudent OS.",
     footerDatabase: "Database",
     footerAuto: "Automatic message — no reply needed.",
-    kind: { add: "Added", update: "Updated", delete: "Deleted", rename: "Renamed", full_sync: "Synced" },
+    kind: { add: "Added", update: "Updated", delete: "Deleted", rename: "Renamed", full_sync: "Synced", info: "Announcement" },
   },
 };
 
@@ -127,8 +138,14 @@ function renderEmail(opts: {
 }): { html: string; subject: string } {
   const { lang, studentName, databaseLabel, notices, siteUrl } = opts;
   const t = I18N[lang];
-  const subject = t.subject(notices.length);
+  // A message about the database and a general announcement are framed
+  // differently, even when they arrive together.
+  const kind: MailKind = notices.some((n) => n.scope === "database") ? "database" : "general";
+  const subject = t.subject(notices.length, kind);
   const cards = notices.map((n) => noticeCard(n, lang)).join("");
+  const databaseFooter = kind === "database" && databaseLabel
+    ? `<p style="margin:0 0 6px;font-size:11px;color:#52525b;font-weight:700;">${escapeHtml(t.footerDatabase)}: ${escapeHtml(databaseLabel)}</p>`
+    : "";
 
   const html = `<!DOCTYPE html>
 <html dir="${t.dir}" lang="${lang}">
@@ -145,13 +162,13 @@ function renderEmail(opts: {
           <tr>
             <td style="background:linear-gradient(135deg,#4f46e5 0%,#2563eb 100%);padding:28px 24px;text-align:center;">
               <p style="margin:0;font-size:20px;font-weight:800;color:#ffffff;letter-spacing:.2px;">${BRAND}</p>
-              <p style="margin:8px 0 0;font-size:12px;color:rgba(255,255,255,.85);">${escapeHtml(t.eyebrow)}</p>
+              <p style="margin:8px 0 0;font-size:12px;color:rgba(255,255,255,.85);">${escapeHtml(t.eyebrow(kind))}</p>
             </td>
           </tr>
           <tr>
             <td style="padding:26px 24px 8px;">
               <p style="margin:0 0 10px;font-size:15px;font-weight:700;">${escapeHtml(t.greeting(studentName.trim()))}</p>
-              <p style="margin:0 0 18px;font-size:13px;color:#52525b;line-height:1.8;">${escapeHtml(notices.length > 1 ? t.intro : t.introOne)}</p>
+              <p style="margin:0 0 18px;font-size:13px;color:#52525b;line-height:1.8;">${escapeHtml(notices.length > 1 ? t.intro(kind) : t.introOne(kind))}</p>
               ${cards}
             </td>
           </tr>
@@ -162,8 +179,8 @@ function renderEmail(opts: {
           </tr>
           <tr>
             <td style="background:#fafafa;border-top:1px solid #f4f4f5;padding:18px 24px;text-align:center;">
-              <p style="margin:0 0 6px;font-size:11px;color:#71717a;line-height:1.7;">${escapeHtml(t.footerWhy)}</p>
-              ${databaseLabel ? `<p style="margin:0 0 6px;font-size:11px;color:#52525b;font-weight:700;">${escapeHtml(t.footerDatabase)}: ${escapeHtml(databaseLabel)}</p>` : ""}
+              <p style="margin:0 0 6px;font-size:11px;color:#71717a;line-height:1.7;">${escapeHtml(t.footerWhy(kind))}</p>
+              ${databaseFooter}
               <p style="margin:0;font-size:10px;color:#a1a1aa;">${escapeHtml(t.footerAuto)} · ${BRAND}</p>
             </td>
           </tr>
@@ -222,17 +239,22 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // 1. The notices that were just approved — the same rows the bell shows.
+    // 1. The notices to email — the same rows the bell shows: database updates
+    //    (for the students linked to that database) and the admin's own posts
+    //    (everyone, or one student).
     const { data: notices, error: noticesError } = await supabase
       .from("student_notifications")
-      .select("id, title, message, type, scope, audience, university_database_id, review_state, created_at, deleted_at")
+      .select("id, title, message, type, scope, audience, user_id, university_database_id, review_state, created_at, deleted_at")
       .in("id", ids)
       .is("deleted_at", null);
     if (noticesError) throw noticesError;
 
-    const emailable = (notices || []).filter(
-      (n: any) => n.scope === "database" && n.audience === "database" && n.university_database_id && n.review_state === "approved"
-    );
+    const emailable = (notices || []).filter((n: any) => {
+      if (n.review_state !== "approved") return false;
+      if (n.scope === "database") return n.audience === "database" && Boolean(n.university_database_id);
+      if (n.scope === "general") return n.audience === "all" || (n.audience === "user" && Boolean(n.user_id));
+      return false;
+    });
     if (emailable.length === 0) {
       return new Response(
         JSON.stringify({ success: true, sent: 0, skipped: ids.length, message: "nothing to email" }),
@@ -240,38 +262,50 @@ serve(async (req) => {
       );
     }
 
-    // 2. Recipients per database: the students whose site is linked to it.
-    const dbIds = Array.from(new Set(emailable.map((n: any) => n.university_database_id)));
-    const { data: databases } = await supabase
-      .from("university_databases")
-      .select("id, college_name_ar, college_name_en, university_name_ar, university_name_en, cohort_name")
-      .in("id", dbIds);
-    const dbById = new Map((databases || []).map((d: any) => [d.id, d]));
+    // 2. Who gets what: a database notice goes to the students linked to that
+    //    database, a general post to everyone (or to the one student it names).
+    const dbIds = Array.from(new Set(emailable.filter((n: any) => n.scope === "database").map((n: any) => n.university_database_id)));
+    const dbById = new Map<string, any>();
+    if (dbIds.length > 0) {
+      const { data: databases } = await supabase
+        .from("university_databases")
+        .select("id, college_name_ar, college_name_en, university_name_ar, university_name_en, cohort_name")
+        .in("id", dbIds);
+      (databases || []).forEach((d: any) => dbById.set(d.id, d));
+    }
 
     const { data: students, error: studentsError } = await supabase
       .from("settings")
-      .select("user_id, name, email, language, university_database_id, specialization_database_id")
-      .or(dbIds.map((id) => `university_database_id.eq.${id},specialization_database_id.eq.${id}`).join(","));
+      .select("user_id, name, email, language, university_database_id, specialization_database_id");
     if (studentsError) throw studentsError;
 
-    // One email per student: all their notices for this database, in one message.
-    const perStudent = new Map<string, { email: string; name: string; lang: Lang; dbId: string; notices: any[] }>();
+    const reaches = (student: any, notice: any): boolean => {
+      if (notice.scope === "database") {
+        return (
+          student.university_database_id === notice.university_database_id ||
+          student.specialization_database_id === notice.university_database_id
+        );
+      }
+      if (notice.audience === "all") return true;
+      return String(student.user_id) === String(notice.user_id);
+    };
+
+    // One email per student: everything that reached them in this action.
+    const perStudent = new Map<string, { email: string; name: string; lang: Lang; dbId: string | null; notices: any[] }>();
     for (const student of students || []) {
       const email = String(student.email || "").trim();
       if (!email) continue;
       for (const notice of emailable) {
-        if (
-          student.university_database_id !== notice.university_database_id &&
-          student.specialization_database_id !== notice.university_database_id
-        ) continue;
+        if (!reaches(student, notice)) continue;
         const key = `${student.user_id}`;
         const entry = perStudent.get(key) || {
           email,
           name: String(student.name || "").trim(),
           lang: (String(student.language || "ar").startsWith("en") ? "en" : "ar") as Lang,
-          dbId: notice.university_database_id,
+          dbId: notice.scope === "database" ? notice.university_database_id : null,
           notices: [],
         };
+        if (!entry.dbId && notice.scope === "database") entry.dbId = notice.university_database_id;
         if (!entry.notices.some((n) => n.id === notice.id)) entry.notices.push(notice);
         perStudent.set(key, entry);
       }
@@ -281,7 +315,7 @@ serve(async (req) => {
       const { html, subject } = renderEmail({
         lang: entry.lang,
         studentName: entry.name,
-        databaseLabel: databaseLabelOf(dbById.get(entry.dbId)),
+        databaseLabel: entry.dbId ? databaseLabelOf(dbById.get(entry.dbId)) : "",
         notices: entry.notices,
         siteUrl,
       });
@@ -301,7 +335,9 @@ serve(async (req) => {
       );
     }
 
-    // 3. Send — small batches so a Gmail account is not throttled.
+    // 3. Send — small batches so a Gmail account is not throttled. Pooling keeps
+    //    the SMTP connection alive, which matters when a general post goes to the
+    //    whole platform.
     let transporter: any = null;
     if (useGmail) {
       const nodemailer = (await import("npm:nodemailer@6.9.16")).default;
@@ -310,6 +346,8 @@ serve(async (req) => {
         host: "smtp.gmail.com",
         port: 465,
         secure: true,
+        pool: true,
+        maxConnections: 5,
         auth: { user: senderEmail, pass: appPassword },
       });
     }

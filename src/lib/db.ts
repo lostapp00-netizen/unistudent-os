@@ -4314,13 +4314,14 @@ export const db = {
     message: string;
     createdBy?: string;
     targetUserId?: string;
-  }): Promise<{ ok: boolean; error?: string }> {
+  }): Promise<{ ok: boolean; error?: string; id?: string }> {
     const title = (input.title || '').trim();
     if (!title) return { ok: false, error: 'العنوان مطلوب' };
 
     const now = new Date().toISOString();
+    const id = uuidv4();
     const { error } = await supabase.from('student_notifications').insert([{
-      id: uuidv4(),
+      id,
       user_id: input.targetUserId || null,
       audience: input.targetUserId ? 'user' : 'all',
       scope: 'general',
@@ -4338,7 +4339,9 @@ export const db = {
       console.warn('Could not publish the post:', error.message);
       return { ok: false, error: error.message };
     }
-    return { ok: true };
+    // The id is handed back so the caller can mail the post as well — the bell
+    // and the inbox are meant to receive it together.
+    return { ok: true, id };
   },
 
   /**
