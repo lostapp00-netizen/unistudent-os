@@ -163,6 +163,30 @@ export interface AppState {
 // back" bug) — while still letting an explicit restore (استرداد) download them
 // again for good. See src/lib/driveTombstones.ts for the full rule.
 
+/**
+ * The drive as it really is: what is in memory PLUS what the server has.
+ *
+ * Both the restore and the sync decide "is this item already here?" by looking
+ * at this list. With a cold state (a fresh session, a drive load that failed,
+ * the app opened straight into settings) the in-memory list is empty, every
+ * database item looks new, and the whole tree gets copied a second time — the
+ * student then sees two "First Year" folders side by side. Reading the server
+ * rows first means the existing copies are recognised and reused instead.
+ */
+async function driveSnapshotWithServer(userId: string, inMemory: DriveFile[]): Promise<DriveFile[]> {
+  const snapshot = [...(inMemory || [])];
+  try {
+    const fresh = await db.getDriveFiles(userId);
+    const known = new Set(snapshot.map(f => f.id));
+    for (const row of fresh || []) {
+      if (row?.id && !known.has(row.id)) snapshot.push(row);
+    }
+  } catch (e) {
+    console.warn('Could not read the drive from the server, using what is in memory:', e);
+  }
+  return snapshot;
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   userId: null,
   userEmail: null,
@@ -1191,7 +1215,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           const clonedFiles: DriveFile[] = [];
           const clonedTemplateIds = new Set<string>();
           const idMap = new Map<string, string>();
-          const currentDriveSnapshot = [...(get().files || [])];
+          // What the drive really holds — a cold in-memory list must never read
+          // as "nothing is here yet" (that is how a whole second copy of the tree
+          // used to be created).
+          const currentDriveSnapshot = await driveSnapshotWithServer(userId, get().files || []);
 
           // Parent-first (topological) clone: a folder is always resolved
           // before its children so idMap can link them. Dedup matches the
@@ -1561,6 +1588,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       const { userId, userEmail, settings } = get();
       if (!userId) return;
 
+      // A restore is rebuilding the drive right now. Syncing against a half-built
+      // list is what put a second copy of every folder next to the first one, so
+      // this run steps aside — the restore heals its own result at the end, and
+      // the next sync follows it.
+      if (isImportInProgress) {
+        console.info('[sync] a restore is in progress — skipping this sync.');
+        return;
+      }
+
       try {
       // The database row is the ONLY source for the link. No localStorage
       // fallback — an unlink must stay unlinked on every subsequent boot.
@@ -1693,7 +1729,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       let hasSubjectChanges = false;
       let hasFileChanges = false;
       let currentSubjects = [...get().subjects];
-      let currentFiles = [...get().files];
+      // Same as the restore: the drive has to be read from the server too, or a
+      // cold state makes every database item look missing and copies the tree.
+      let currentFiles = await driveSnapshotWithServer(userId, get().files || []);
 
       // Auto-deduplicate any pre-existing duplicate subjects
       const { clean: dedupedSubjects, duplicatesToRemove } = deduplicateSubjects(currentSubjects);
