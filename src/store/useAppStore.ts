@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, GraduationGradeRule, UniversityDatabase, AlternatingLecture } from '../types';
 import { db, flushPendingWrites, matchDriveItemInDatabase, matchSubjectInDatabase } from '../lib/db';
 import { normalizeSubjectName } from '../lib/academicTranslation';
-import { matchesDriveItem, reconcileTemplateDriveFiles, reattachOrphans, staleTemplateItemIds, templateNameVerdict } from '../lib/utils';
+import { matchesDriveItem, reconcileTemplateDriveFiles, reattachOrphans, staleTemplateItemIds, templateNameVerdict, templateParentVerdict } from '../lib/utils';
 import {
   addDeletedTemplateFileId,
   forgetDeletedTemplateFileIds,
@@ -1989,6 +1989,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         combinedDriveFiles.forEach(f => deletedTemplateFileIds.delete(f.id));
       }
 
+      // Items this student changed themselves and the admin has not decided on
+      // yet. Their own arrangement stands until that decision — the sync never
+      // "corrects" it back to what the database currently says.
+      let pendingLocalChangeIds = new Set<string>();
+      try {
+        const pending = await db.getPendingUpdates();
+        pendingLocalChangeIds = new Set(
+          pending
+            .filter(u => u.status === 'pending' && u.sourceUserId === userId)
+            .map(u => String((u.data as any)?.id || ''))
+            .filter(Boolean)
+        );
+      } catch {}
+
       if (combinedDriveFiles.length > 0) {
         const templateFileMap = new Map(combinedDriveFiles.map((f: DriveFile) => [f.id, f]));
         const templateNames = new Set(combinedDriveFiles.map((f: DriveFile) => (f.name || '').trim().toLowerCase()));
@@ -2073,9 +2087,28 @@ export const useAppStore = create<AppState>((set, get) => ({
             const nameVerdict = templateNameVerdict(existingFile, tFile.name);
             const databaseRenamed = nameVerdict === 'apply-database';
 
+            // Is the item sitting where the database says it lives? A folder the
+            // database could not resolve at approval time used to leave the file
+            // one level up (or in a same-named folder elsewhere) — that is put
+            // right here. A move the student made themselves is left alone until
+            // the admin decides on it.
+            const currentParentRow = existingFile.parentId
+              ? currentFiles.find(f => f.id === existingFile.parentId)
+              : undefined;
+            const parentVerdict = templateParentVerdict(existingFile, {
+              localParentId: expectedParentId,
+              parentIsDatabaseFolder: !existingFile.parentId || Boolean(currentParentRow?.universityTemplateId),
+              hasPendingMove: pendingLocalChangeIds.has(existingFile.id)
+            });
+            // Only when the database's folder is really here: a folder that was
+            // not imported (deleted on purpose, or missing) must not scatter the
+            // item to the root.
+            const restoreParent = parentVerdict === 'apply-database' && (!tFile.parentId || Boolean(expectedParentId));
+
             const needUpdate =
               (tFile.url && existingFile.url !== tFile.url) ||
               databaseRenamed ||
+              restoreParent ||
               existingFile.universityTemplateId !== tFile.id ||
               (expectedParentId && !existingFile.parentId) ||
               (tFile.yearIndex !== undefined && existingFile.yearIndex !== tFile.yearIndex) ||
@@ -2091,9 +2124,11 @@ export const useAppStore = create<AppState>((set, get) => ({
                 existingFile.renamedFromName = null;
               }
               existingFile.universityTemplateId = tFile.id;
-              // Re-attach an item that was left at the root because its parent
-              // was unresolvable when it was first pulled.
-              if (expectedParentId && !existingFile.parentId) existingFile.parentId = expectedParentId;
+              // Put the item back inside the folder the database has it in, or
+              // re-attach one that was left at the root.
+              if (restoreParent || (expectedParentId && !existingFile.parentId)) {
+                existingFile.parentId = expectedParentId;
+              }
               if (tFile.yearIndex !== undefined) existingFile.yearIndex = tFile.yearIndex;
               if (tFile.semesterIndex !== undefined) existingFile.semesterIndex = tFile.semesterIndex;
               if (mappedSubjectId) existingFile.subjectId = mappedSubjectId;

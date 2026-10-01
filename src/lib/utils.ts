@@ -271,6 +271,40 @@ export function templateNameVerdict(
   return 'apply-database';
 }
 
+/**
+ * Should a copy of a database item be put back where the database says it lives?
+ *
+ * The folder tree belongs to the database — a file can only end up outside its
+ * folder when an approval could not place it (the folder was not in the database
+ * yet, so the file was left one level up or in a same-named folder elsewhere).
+ * That is repaired on the next sync. Two things are respected instead of being
+ * "corrected":
+ *
+ *   · the student moved the item themselves and the decision is still pending
+ *     (the database is not the one that moved it);
+ *   · the item sits in a folder the student made — their own arrangement.
+ */
+export type TemplateParentVerdict = 'same' | 'keep-local' | 'apply-database';
+
+export function templateParentVerdict(
+  file: { parentId?: string | null },
+  opts: {
+    /** Local folder that copies the database item's folder (null = the root). */
+    localParentId: string | null;
+    /** Is the folder the item sits in now one that came from a database? */
+    parentIsDatabaseFolder: boolean;
+    /** The student moved it and the admin has not decided yet. */
+    hasPendingMove: boolean;
+  }
+): TemplateParentVerdict {
+  const current = file?.parentId || null;
+  const expected = opts.localParentId || null;
+  if (current === expected) return 'same';
+  if (opts.hasPendingMove) return 'keep-local';
+  if (!opts.parentIsDatabaseFolder) return 'keep-local';
+  return 'apply-database';
+}
+
 export function matchesDriveItem(file: DriveFile, template: DriveFile, parentId: string | null): boolean {
   if (file.universityTemplateId && file.universityTemplateId === template.id) return true;
   if ((file as any).originId && (file as any).originId === template.id) return true;

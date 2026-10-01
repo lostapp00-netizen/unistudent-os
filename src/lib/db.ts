@@ -1942,6 +1942,87 @@ export const db = {
   },
 
   /**
+   * Adds the folders an approved update needs but the database does not have yet.
+   *
+   * The database is pulled from a student, so the folder already exists on their
+   * drive — with the id the update refers to. Copying it in (keeping that id, so
+   * every later lookup by id keeps working) means the approval puts the file back
+   * inside its folder instead of leaving it one level up or dropping it into a
+   * same-named folder somewhere else.
+   *
+   * Mutates `db.driveFiles` in place and returns how many folders were added.
+   */
+  async materialiseMissingParentFolders(
+    db: UniversityDatabase,
+    updates: UniversityPendingUpdate[]
+  ): Promise<number> {
+    const sourceUserId = db.sourceUserId || (db as any).source_user_id;
+    if (!sourceUserId) return 0;
+
+    const wanted = new Set<string>();
+    const collect = (data: any) => {
+      const parentId = data?.parentId ?? data?.parent_id;
+      if (parentId) wanted.add(String(parentId));
+      const previous = data?.previous;
+      const previousParentId = previous?.parentId ?? previous?.parent_id;
+      if (previousParentId) wanted.add(String(previousParentId));
+    };
+    (updates || []).forEach(u => collect(u?.data));
+    if (wanted.size === 0) return 0;
+
+    const folders = (db.driveFiles || []).filter(f => f.type === 'folder');
+    const known = (id: string) => folders.some(f => f.id === id || (f as any).originId === id);
+    const missing = Array.from(wanted).filter(id => !known(id));
+    if (missing.length === 0) return 0;
+
+    const { data: rows, error } = await supabase
+      .from('drive_files')
+      .select('id, name, type, parent_id, year_index, semester_index, subject_id, created_at')
+      .eq('user_id', sourceUserId);
+    if (error || !rows) return 0;
+
+    const byId = new Map((rows as any[]).map(r => [r.id, r]));
+    const added = new Map<string, DriveFile>();
+
+    const addChain = (id: string): void => {
+      if (added.has(id)) return;
+      const row = byId.get(id);
+      if (!row || row.type !== 'folder') return;
+      added.set(id, null as any); // guard against a loop in the parent chain
+      if (row.parent_id && !known(String(row.parent_id)) && !added.has(String(row.parent_id))) {
+        addChain(String(row.parent_id));
+      }
+      const all = [...(db.driveFiles || []), ...Array.from(added.values()).filter(Boolean)];
+      const parentMatch = row.parent_id
+        ? all.find(f => f.type === 'folder' && (f.id === row.parent_id || (f as any).originId === row.parent_id))
+        : null;
+      // The database's own subject for this folder. Ids usually match (the
+      // database was copied from the student); when they do not, the folder is
+      // still placed correctly, it just carries no subject link.
+      const subject = row.subject_id
+        ? (db.subjects || []).find(s => s.id === row.subject_id)
+        : undefined;
+      added.set(id, {
+        id: row.id,
+        originId: row.id,
+        name: row.name || '',
+        size: 0,
+        type: 'folder',
+        parentId: parentMatch ? parentMatch.id : null,
+        createdAt: row.created_at || new Date().toISOString(),
+        yearIndex: Number(row.year_index) || undefined,
+        semesterIndex: Number(row.semester_index) || undefined,
+        subjectId: subject?.id
+      } as DriveFile);
+    };
+
+    missing.forEach(addChain);
+    const list = Array.from(added.values()).filter(Boolean) as DriveFile[];
+    if (list.length > 0) db.driveFiles = [...(db.driveFiles || []), ...list];
+    return list.length;
+  },
+
+  /**
    * مين لسه محتاج ملفات B2 دي؟
    *
    * لما الأدمن يسحب قاعدة بيانات من طالب، القاعدة بتشارك ملفات الطالب نفسه (نفس
@@ -3495,6 +3576,20 @@ export const db = {
           console.log(`[batchRespond] Step 3: currentDb → driveFiles=${currentDb.driveFiles.length}, subjects=${currentDb.subjects.length}`);
 
           const dbUpdates = sortUpdatesByParentOrder(byDb[dbId]);
+
+          // A folder the student put a file into may not exist in the database
+          // yet (its own update is still waiting, or was approved later). The
+          // old resolution then fell back to a same-named folder somewhere else,
+          // or gave up and left the file one level up — the file escaped its
+          // folder. Materialise the missing folder chain from the student's own
+          // drive first, under the same ids, so the file lands where it belongs.
+          const materialised = await this.materialiseMissingParentFolders(currentDb, dbUpdates).catch((e) => {
+            console.warn('[batchRespond] could not materialise missing folders:', e);
+            return 0;
+          });
+          if (materialised > 0) {
+            console.log(`[batchRespond] Step 3b: added ${materialised} missing folder(s) from the student drive`);
+          }
 
           const removedDriveFileIds = new Set<string>();
           const removedSubjectIds = new Set<string>();
