@@ -130,7 +130,12 @@ export interface AppState {
   deleteSubject: (id: string) => void;
   addFile: (file: DriveFile) => void;
   updateFile: (id: string, file: Partial<DriveFile>) => void;
-  deleteFile: (id: string) => void;
+  /**
+   * Deletes a drive item. `skipObjectCleanup` is for folder deletes: the caller
+   * removes every row first and then checks all the objects in one go, instead of
+   * checking once per file.
+   */
+  deleteFile: (id: string, options?: { skipObjectCleanup?: boolean }) => Promise<void>;
   addNote: (note: Note) => void;
   updateNote: (id: string, note: Partial<Note>) => void;
   deleteNote: (id: string) => void;
@@ -597,7 +602,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
     }
   },
-  deleteFile: (id) => {
+  deleteFile: async (id, options) => {
     const { userId, files, subjects, userEmail, settings } = get();
     if (!userId) return;
     const target = files.find(f => f.id === id);
@@ -610,15 +615,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       // sync will never re-import them.
       if (target.universityTemplateId) {
         addDeletedTemplateFileId(userId, target.universityTemplateId);
-      } else {
-        // Only the student's OWN uploads own their B2 object. Template-derived
-        // clones share the source's B2 object, so it must never be deleted.
-        import('../lib/backblaze').then(({ deleteFromB2, extractB2KeyFromUrl }) => {
-          const key = target.b2FileId || extractB2KeyFromUrl(target.url);
-          if (key) {
-            deleteFromB2(key).catch(console.error);
-          }
-        }).catch(console.error);
       }
 
       checkAndNotifySourceUpdate(
@@ -644,7 +640,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
     }
     set((state) => ({ files: state.files.filter(f => f.id !== id) }));
-    db.deleteDriveFile(userId, id);
+
+    await db.deleteDriveFile(userId, id);
+
+    // Only the student's OWN uploads own their B2 object, and it leaves B2 only
+    // after nothing needs it any more: a database pulled from this student still
+    // lists the file, and so do the clones the other students hold. It goes for
+    // good once the database no longer has it either. Template-derived clones
+    // share the source object, so they never touch it.
+    if (target && !target.universityTemplateId && !options?.skipObjectCleanup) {
+      const key = target.b2FileId || target.url;
+      if (key) await db.deleteUnreferencedDriveObjects([key]);
+    }
   },
 
   addNote: (note) => {

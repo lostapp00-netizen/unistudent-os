@@ -2099,9 +2099,10 @@ export function AdminUniversitiesTab({
       );
 
       // Every student who restored this database keeps their own copy of these
-      // items, and the stored file object is gone with them — a copy left behind
-      // shows up as a tile that looks fine and downloads nothing. Delete the
-      // students' copies as well, so the item disappears from their drive too.
+      // items. The items are gone from the database, so their copies go with
+      // them — otherwise they keep a tile for something the database no longer
+      // has. A student the database no longer serves (excluded, unlinked) keeps
+      // their copy, and the object stays in B2 so their copy keeps opening.
       const studentsCleaned = await db
         .deleteTemplateDriveItemsFromStudents([selectedCollegeDb.id], [...doomedIds])
         .catch(() => 0);
@@ -2119,14 +2120,22 @@ export function AdminUniversitiesTab({
           : undefined
       });
 
-      // Server-side (Edge Function) hard delete with client-side fallback.
-      import('../../lib/backblaze').then(({ deleteMultipleFromB2 }) => {
-        const b2Keys = doomed
-          .filter(f => f.type === 'file')
-          .map(f => f.b2FileId || f.url || '')
-          .filter(Boolean);
-        if (b2Keys.length > 0) deleteMultipleFromB2(b2Keys).catch(console.error);
-      }).catch(console.error);
+      // The object leaves B2 only when nobody references it any more. A file the
+      // source student also owns (the database was pulled from them) stays in B2
+      // so it keeps opening for them; so does a clone of a kept template item.
+      // It goes for good once the student deletes their own copy too.
+      const b2Keys = doomed
+        .filter(f => f.type === 'file')
+        .map(f => f.b2FileId || f.url || '')
+        .filter(Boolean);
+      const keptInB2 = b2Keys.length > 0
+        ? (await db.deleteUnreferencedDriveObjects(b2Keys).catch(() => ({ deleted: [], kept: [] as string[] }))).kept
+        : [];
+      if (keptInB2.length > 0) {
+        alert(isAr
+          ? `اتشال من قاعدة البيانات، بس ${keptInB2.length} ملف مااتمسحوش من باك بليز لأن صاحبهم الأصلي لسه عنده نسخة (الطالب اللي القاعدة مسحوبة منه) — يعني لسه يقدر يفتحهم وينزّلهم. هيتشالوا من باك بليز لما يمسحهم هو كمان.`
+          : `${keptInB2.length} file(s) were removed from the database but kept in B2 because their original owner still has a copy.`);
+      }
 
       setDriveItemToDelete(null);
       await loadUniData();

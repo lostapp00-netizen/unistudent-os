@@ -24,6 +24,7 @@ import {
   Layers
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
+import { db } from '../../lib/db';
 import { DriveFile } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
 import { ConfirmModal } from '../ui/CustomModal';
@@ -348,32 +349,27 @@ export function DriveTab() {
       const allTargetIds = [file.id, ...descendantIds];
       // Only the student's OWN uploads own their B2 object — template-derived
       // clones share the source's object and must never be deleted from B2.
-      const descendantFiles = files.filter(f => allTargetIds.includes(f.id) && f.type === 'file' && !f.universityTemplateId);
+      const ownUploadKeys = files
+        .filter(f => allTargetIds.includes(f.id) && f.type === 'file' && !f.universityTemplateId)
+        .map(f => f.b2FileId || f.url)
+        .filter(Boolean) as string[];
 
-      try {
-        const { deleteMultipleFromB2, extractB2KeyFromUrl } = await import('../../lib/backblaze');
-        const b2Keys = descendantFiles.map(f => f.b2FileId || extractB2KeyFromUrl(f.url)).filter(Boolean);
-        if (b2Keys.length > 0) {
-          await deleteMultipleFromB2(b2Keys);
+      // Remove every row first, then ask once whether their objects are still
+      // needed: a database pulled from this student keeps its own reference, and
+      // so do the clones the other students hold, so those objects survive.
+      await Promise.all(Array.from(new Set(allTargetIds)).map(id => deleteFile(id, { skipObjectCleanup: true })));
+
+      if (ownUploadKeys.length > 0) {
+        try {
+          await db.deleteUnreferencedDriveObjects(ownUploadKeys);
+        } catch (err) {
+          console.error('Error batch deleting folder files from B2:', err);
         }
-      } catch (err) {
-        console.error('Error batch deleting folder files from B2:', err);
       }
-
-      allTargetIds.forEach(id => deleteFile(id));
     } else {
-      if (!file.universityTemplateId) {
-        const b2Key = file.b2FileId || (file.url ? (await import('../../lib/backblaze')).extractB2KeyFromUrl(file.url) : null);
-        if (b2Key) {
-          try {
-            const { deleteFromB2 } = await import('../../lib/backblaze');
-            await deleteFromB2(b2Key);
-          } catch (err) {
-            console.error('Error deleting single file from B2:', err);
-          }
-        }
-      }
-      deleteFile(file.id);
+      // The store removes the row and then deletes the object only if nothing
+      // else needs it.
+      await deleteFile(file.id);
     }
     setFileToDelete(null);
   };

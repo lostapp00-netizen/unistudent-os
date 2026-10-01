@@ -1930,6 +1930,102 @@ export const db = {
     return removed;
   },
 
+  /**
+   * مين لسه محتاج ملفات B2 دي؟
+   *
+   * لما الأدمن يسحب قاعدة بيانات من طالب، القاعدة بتشارك ملفات الطالب نفسه (نفس
+   * b2FileId)، وكل طالب عامل استرداد للقاعدة عنده نسخة بتشاور على نفس الملف
+   * كمان. فلو الملف اتشال من B2 وفي حد لسه بيشاور عليه، صاحب النسخة هيفضل شايف
+   * الملف في الدرايف ومش هيعرف يفتحه ولا ينزّله.
+   *
+   * علشان كده الملف بيتشال من B2 بس لما مافيش أي إشارة ليه: لا صف درايف عند
+   * طالب، ولا ملف جوه أي قاعدة بيانات.
+   */
+  async findStillReferencedDriveObjects(keys: string[]): Promise<Set<string>> {
+    const normalizeKey = (value?: string | null): string => {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      const marker = '/Unistudent-os-drive/';
+      const at = raw.indexOf(marker);
+      if (raw.startsWith('http') && at >= 0) return raw.slice(at + marker.length);
+      return raw;
+    };
+
+    // المفتاح بالمقارنة → القيمة الأصلية اللي جاية من المستدعي
+    const wanted = new Map<string, string>();
+    (keys || []).forEach(k => {
+      const normalized = normalizeKey(k);
+      if (normalized) wanted.set(normalized, String(k));
+    });
+    const inUse = new Set<string>();
+    if (wanted.size === 0) return inUse;
+
+    const hitFor = (value?: string | null): string | null => {
+      const normalized = normalizeKey(value);
+      if (!normalized) return null;
+      if (wanted.has(normalized)) return wanted.get(normalized)!;
+      const partial = Array.from(wanted.keys()).find(k => normalized.endsWith(k) || k.endsWith(normalized));
+      return partial ? wanted.get(partial)! : null;
+    };
+
+    // 1) صفوف الدرايف عند الطلبة (رفعهم الشخصي، أو نسخة من قاعدة بيانات)
+    try {
+      const { data } = await supabase
+        .from('drive_files')
+        .select('b2_file_id, url')
+        .in('b2_file_id', Array.from(wanted.keys()));
+      (data || []).forEach((row: any) => {
+        const hit = hitFor(row?.b2_file_id) || hitFor(row?.url);
+        if (hit) inUse.add(hit);
+      });
+    } catch (e) {
+      console.warn('Could not check the students drive for the file:', e);
+    }
+
+    // 2) ملفات قواعد البيانات نفسها
+    try {
+      const { data } = await supabase
+        .from('university_databases')
+        .select('id, drive_files');
+      (data || []).forEach((row: any) => {
+        const files = Array.isArray(row?.drive_files) ? row.drive_files : [];
+        files.forEach((file: any) => {
+          const hit = hitFor(file?.b2FileId) || hitFor(file?.b2_file_id) || hitFor(file?.url);
+          if (hit) inUse.add(hit);
+        });
+      });
+    } catch (e) {
+      console.warn('Could not check the university databases for the file:', e);
+    }
+
+    return inUse;
+  },
+
+  /**
+   * يمسح من B2 الملفات اللي مافيش حد بيشاور عليها، وبيسيب اللي لسه مستخدم —
+   * زي ملف الطالب اللي قاعدة البيانات مسحوبة منه، أو نسخ الطلبة التانيين.
+   * بيرجّع اللي اتمسح واللي اتحفظ علشان الشاشة تقول للأدمن الحقيقة.
+   */
+  async deleteUnreferencedDriveObjects(keys: string[]): Promise<{ deleted: string[]; kept: string[] }> {
+    const wanted = Array.from(new Set((keys || []).filter((k): k is string => Boolean(k && String(k).trim()))));
+    if (wanted.length === 0) return { deleted: [], kept: [] };
+
+    const inUse = await this.findStillReferencedDriveObjects(wanted);
+    const deletable = wanted.filter(k => !inUse.has(k));
+    const kept = wanted.filter(k => inUse.has(k));
+
+    if (deletable.length > 0) {
+      try {
+        const { deleteMultipleFromB2 } = await import('./backblaze');
+        await deleteMultipleFromB2(deletable);
+      } catch (e) {
+        console.warn('Could not delete the unreferenced drive objects from B2:', e);
+      }
+    }
+
+    return { deleted: deletable, kept };
+  },
+
   async createUniversityDatabase(dbData: UniversityDatabase): Promise<void> {
     // 1. Local storage cache
     try {
@@ -3477,6 +3573,29 @@ export const db = {
                 `⚠️ رسالة التحديث مش اتسجلت في سجل الإشعارات (${queued.error || 'خطأ غير معروف'}) — افتح «المنشورات والرسائل العامة» وتأكد إن migration 202609300001 متشغّل.`
               );
             }
+          }
+
+          // Files the source student deleted: once the database no longer lists
+          // them and no student holds a copy, their objects can leave B2. As long
+          // as anything still references one (the student's own drive, a copy at
+          // another student), it stays so it keeps opening for whoever has it.
+          const deletedObjectKeys = byDb[dbId]
+            .filter(u => u.type === 'delete_file')
+            .flatMap(u => {
+              const data: any = u.data || {};
+              return [data.b2FileId || data.b2_file_id, data.url];
+            })
+            .filter((k): k is string => Boolean(k));
+          if (deletedObjectKeys.length > 0) {
+            // The item leaves the linked students' drives too — same as when the
+            // admin deletes it himself. Students the database no longer serves
+            // (excluded, unlinked) keep their copy, so the object stays for them.
+            if (removedDriveFileIds.size > 0) {
+              await this
+                .deleteTemplateDriveItemsFromStudents([currentDb.id], [...removedDriveFileIds])
+                .catch(() => 0);
+            }
+            await this.deleteUnreferencedDriveObjects(deletedObjectKeys).catch(() => ({ deleted: [], kept: [] }));
           }
         } catch (dbErr) {
           console.warn(`Error applying batch pending updates to database ${dbId}:`, dbErr);
