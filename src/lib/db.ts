@@ -1367,7 +1367,8 @@ export const db = {
       ...baseRow,
       year_index: file.yearIndex ?? null,
       semester_index: file.semesterIndex ?? null,
-      subject_id: file.subjectId ?? null
+      subject_id: file.subjectId ?? null,
+      renamed_from_name: file.renamedFromName ?? null
     };
 
     // Primary insert includes the phase columns. If the database schema predates
@@ -1407,6 +1408,8 @@ export const db = {
     if (file.yearIndex !== undefined) payload.year_index = file.yearIndex;
     if (file.semesterIndex !== undefined) payload.semester_index = file.semesterIndex;
     if (file.subjectId !== undefined) payload.subject_id = file.subjectId;
+    // undefined = leave it alone; null = the database name is authoritative again.
+    if (file.renamedFromName !== undefined) payload.renamed_from_name = file.renamedFromName || null;
 
     await resilientWrite('updateDriveFile', () =>
       supabase.from('drive_files').update(payload).eq('id', id).eq('user_id', userId),
@@ -1920,8 +1923,16 @@ export const db = {
           .map((r: any) => r.id);
         if (doomed.length === 0) continue;
 
-        const { error } = await supabase.from('drive_files').delete().in('id', doomed);
-        if (!error) removed += doomed.length;
+        const { data: deletedRows, error } = await supabase
+          .from('drive_files')
+          .delete()
+          .in('id', doomed)
+          .select('id');
+        // Count what really left the table. Trusting "no error" here made the
+        // admin's delete report copies as removed while every row stayed put
+        // (the anon role cannot touch them without the migration that allows it).
+        if (error) console.warn('Could not remove deleted template items from a student:', error.message);
+        else removed += (deletedRows || []).length;
       }
     } catch (e) {
       console.warn('Could not remove deleted template items from students:', e);
@@ -5662,6 +5673,7 @@ function mapDriveFileFromDB(row: any): DriveFile {
     insertedAt: row.created_at || row.insertedAt || undefined,
     parentId: row.parent_id !== undefined ? (row.parent_id || null) : (row.parentId !== undefined ? (row.parentId || null) : null),
     b2FileId: row.b2_file_id ?? row.b2FileId,
+    renamedFromName: row.renamed_from_name ?? row.renamedFromName ?? undefined,
     yearIndex: parseNum(row.year_index !== undefined ? row.year_index : row.yearIndex),
     semesterIndex: parseNum(row.semester_index !== undefined ? row.semester_index : row.semesterIndex),
     subjectId: row.subject_id ?? row.subjectId ?? undefined

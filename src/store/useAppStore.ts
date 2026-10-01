@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { UserSettings, Subject, DriveFile, Note, Task, Appointment, ScheduleItem, Group, GraduationGradeRule, UniversityDatabase, AlternatingLecture } from '../types';
 import { db, flushPendingWrites, matchDriveItemInDatabase, matchSubjectInDatabase } from '../lib/db';
 import { normalizeSubjectName } from '../lib/academicTranslation';
-import { matchesDriveItem, reconcileTemplateDriveFiles, reattachOrphans, staleTemplateItemIds } from '../lib/utils';
+import { matchesDriveItem, reconcileTemplateDriveFiles, reattachOrphans, staleTemplateItemIds, templateNameVerdict } from '../lib/utils';
 import {
   addDeletedTemplateFileId,
   forgetDeletedTemplateFileIds,
@@ -568,11 +568,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { userId, userEmail, settings, files, subjects } = get();
     if (!userId) return;
     const oldFile = files.find(f => f.id === id);
-    set((state) => ({ files: state.files.map(f => f.id === id ? { ...f, ...updatedFields } : f) }));
-    db.updateDriveFile(userId, id, updatedFields);
+
+    // A student who renames a database item keeps the name they chose: the sync
+    // with the university database used to see a different name and put the old
+    // one back on every load. `renamedFromName` remembers the database name this
+    // rename moved away from, so the sync only takes over once the database item
+    // really is renamed (by the admin, or by an approved update).
+    const fields: Partial<DriveFile> = { ...updatedFields };
+    const renamed = updatedFields.name !== undefined && oldFile && updatedFields.name !== oldFile.name;
+    if (renamed && oldFile?.universityTemplateId && fields.renamedFromName === undefined) {
+      fields.renamedFromName = oldFile.renamedFromName || oldFile.name || null;
+    }
+
+    set((state) => ({ files: state.files.map(f => f.id === id ? { ...f, ...fields } : f) }));
+    db.updateDriveFile(userId, id, fields);
 
     if (oldFile) {
-      const mergedFile = { ...oldFile, ...updatedFields };
+      const mergedFile = { ...oldFile, ...fields };
       const parentName = mergedFile.parentId
         ? (files.find(f => f.id === mergedFile.parentId)?.name || '')
         : '';
@@ -598,7 +610,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             subjectName: oldSubName
           }
         },
-        updatedFields
+        fields
       );
     }
   },
@@ -2054,9 +2066,16 @@ export const useAppStore = create<AppState>((set, get) => ({
           } else {
             templateToLocalId.set(tFile.id, existingFile.id);
 
+            // Did the student rename this item themselves? Then the database's
+            // name at the time of the rename is only "old": keep the name they
+            // chose. A database name that changed to something else is a real
+            // rename from the other side, and it takes over.
+            const nameVerdict = templateNameVerdict(existingFile, tFile.name);
+            const databaseRenamed = nameVerdict === 'apply-database';
+
             const needUpdate =
               (tFile.url && existingFile.url !== tFile.url) ||
-              (tFile.name && existingFile.name !== tFile.name) ||
+              databaseRenamed ||
               existingFile.universityTemplateId !== tFile.id ||
               (expectedParentId && !existingFile.parentId) ||
               (tFile.yearIndex !== undefined && existingFile.yearIndex !== tFile.yearIndex) ||
@@ -2066,7 +2085,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             if (needUpdate) {
               if (tFile.url) existingFile.url = tFile.url;
               if (tFile.b2FileId) existingFile.b2FileId = tFile.b2FileId;
-              if (tFile.name) existingFile.name = tFile.name;
+              if (databaseRenamed) {
+                existingFile.name = tFile.name;
+                // The database is in charge of the name again.
+                existingFile.renamedFromName = null;
+              }
               existingFile.universityTemplateId = tFile.id;
               // Re-attach an item that was left at the root because its parent
               // was unresolvable when it was first pulled.
@@ -2083,7 +2106,8 @@ export const useAppStore = create<AppState>((set, get) => ({
                 yearIndex: existingFile.yearIndex,
                 semesterIndex: existingFile.semesterIndex,
                 subjectId: existingFile.subjectId,
-                universityTemplateId: tFile.id
+                universityTemplateId: tFile.id,
+                ...(databaseRenamed ? { renamedFromName: null } : {})
               }).catch(() => {});
               hasFileChanges = true;
             }

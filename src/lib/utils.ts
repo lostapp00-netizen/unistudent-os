@@ -245,6 +245,32 @@ export function selectAcademicDriveFiles(
   });
 }
 
+/**
+ * What should happen to a local drive item's name when the university database
+ * says something different?
+ *
+ *   'same'           — nothing to do, both sides already agree.
+ *   'keep-local'     — the student renamed this item themselves and the database
+ *                      still carries the name it had back then, so the name they
+ *                      typed must stay (this is what used to be reverted on every
+ *                      sync, right after saving).
+ *   'apply-database' — the database item really was renamed (by the admin, or by
+ *                      an approved update), so the new name belongs to everyone.
+ */
+export type TemplateNameVerdict = 'same' | 'keep-local' | 'apply-database';
+
+export function templateNameVerdict(
+  file: { name?: string; renamedFromName?: string | null },
+  templateName?: string
+): TemplateNameVerdict {
+  const databaseName = (templateName || '').trim();
+  const localName = (file?.name || '').trim();
+  if (!databaseName || databaseName === localName) return 'same';
+  const renamedFrom = (file?.renamedFromName || '').trim();
+  if (renamedFrom && renamedFrom === databaseName) return 'keep-local';
+  return 'apply-database';
+}
+
 export function matchesDriveItem(file: DriveFile, template: DriveFile, parentId: string | null): boolean {
   if (file.universityTemplateId && file.universityTemplateId === template.id) return true;
   if ((file as any).originId && (file as any).originId === template.id) return true;

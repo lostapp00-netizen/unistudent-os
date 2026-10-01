@@ -71,6 +71,11 @@ export type DriveFile = {
   insertedAt?: string;
   url?: string;
   b2FileId?: string;
+  // The student renamed this item themselves. It holds the database item's name
+  // at the moment of the rename, so the next sync with the university database
+  // keeps the name they chose instead of restoring the old one; once the
+  // database name really changes, the new one wins and this is cleared.
+  renamedFromName?: string | null;
   // Academic phase this file belongs to (drives general-vs-spec routing)
   yearIndex?: number;
   semesterIndex?: number;
