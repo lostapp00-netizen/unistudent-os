@@ -672,7 +672,10 @@ export function SubjectDetails() {
                         {item.type === 'folder' ? <Folder size={20} /> : <FileText size={20} />}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="font-bold text-xs sm:text-sm text-zinc-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                        {/* The name wraps instead of being cut off: the card is
+                            narrow, and a long file name has to stay readable in
+                            full — it continues on the next line. */}
+                        <p className="font-bold text-xs sm:text-sm text-zinc-900 dark:text-white break-words [overflow-wrap:anywhere] group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                           {item.name}
                         </p>
                         <p className="text-[11px] text-zinc-400 mt-0.5">
@@ -907,9 +910,9 @@ export function SubjectDetails() {
               <div className="flex items-center gap-2.5 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-2">
                 <div className="flex-1 min-w-0 text-xs px-1">
                   {uploadFileSelected ? (
-                    <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
-                      <FileText size={13} className="shrink-0" />
-                      <span className="truncate">
+                    <span className="flex items-start gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
+                      <FileText size={13} className="shrink-0 mt-0.5" />
+                      <span className="break-words [overflow-wrap:anywhere]">
                         {uploadFileSelected.name} • {(uploadFileSelected.size / 1024).toFixed(0)} KB
                       </span>
                     </span>
