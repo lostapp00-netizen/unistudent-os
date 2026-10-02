@@ -172,7 +172,13 @@ export async function getPresignedDownloadUrl(
   let contentDisposition: string | undefined = undefined;
 
   if (downloadFilename) {
-    const safeAsciiName = downloadFilename.replace(/[^\x20-\x7E]/g, '_');
+    // B2 validates the baked-in b2-content-disposition with a strict token
+    // parser: anything outside the RFC token set — parentheses in names like
+    // "Backup (1).pdf", Arabic letters, quotes — makes the whole request fail
+    // with "invalid b2-content-disposition". So the plain filename keeps only
+    // token characters, and the real (any-language) name rides the RFC 5987
+    // filename* parameter, which is percent-encoded and always token-safe.
+    const safeAsciiName = downloadFilename.replace(/[^\w!#$%&'*+\-.^`|~]/g, '_');
     const utf8Encoded = encodeURIComponent(downloadFilename);
     contentDisposition = `attachment; filename="${safeAsciiName}"; filename*=UTF-8''${utf8Encoded}`;
   } else if (inline) {
