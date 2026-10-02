@@ -70,9 +70,16 @@ export function AdminPostsTab({
         ? `واتبعتت ${email.sent} إيميل${email.failed > 0 ? ` (فشل ${email.failed})` : ''}.`
         : `Emailed to ${email.sent} student(s)${email.failed > 0 ? ` (${email.failed} failed)` : ''}.`;
     }
+    if (email.ok && !email.error) {
+      // The function ran fine but found nobody to email — say it plainly so a
+      // quiet approval does not read like a failure.
+      return isAr
+        ? 'مفيش طالب مربوط بالقاعدة دي (أو مفيش حد سجّل إيميل).'
+        : 'No linked student with an email on file was found.';
+    }
     return isAr
-      ? 'الإيميل مااتبعش — ظبّط بريد الإرسال أو مفتاح Resend من تبويب «النسخ الاحتياطي والأتمتة».'
-      : 'Email was not sent — configure the sender address or a Resend key in the Backup tab.';
+      ? `الإيميل مااتبعتش${email.error ? ` (${email.error})` : ''} — ظبّط بريد الإرسال أو مفتاح Resend من تبويب «النسخ الاحتياطي والأتمتة».`
+      : `Email was not sent${email.error ? ` (${email.error})` : ''} — configure the sender address or a Resend key in the Backup tab.`;
   };
 
   const load = async () => {

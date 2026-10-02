@@ -287,48 +287,23 @@ export async function triggerBrowserDownload(url: string, filename: string): Pro
     return;
   }
 
-  // 3. Try CORS fetch to download as Blob
-  try {
-    const res = await fetch(url, { mode: 'cors' });
-    if (res.ok) {
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      setTimeout(() => {
-        window.URL.revokeObjectURL(blobUrl);
-        if (document.body.contains(link)) document.body.removeChild(link);
-      }, 2000);
-      return;
-    }
-  } catch (e) {
-    // CORS or fetch error: fallback to anchor / iframe
-  }
-
-  // 4. Fallback for cross-origin or presigned URLs
-  try {
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = url;
-    document.body.appendChild(iframe);
-    setTimeout(() => {
-      if (document.body.contains(iframe)) document.body.removeChild(iframe);
-    }, 5000);
-  } catch {
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', filename);
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(() => {
-      if (document.body.contains(link)) document.body.removeChild(link);
-    }, 2000);
-  }
+  // 3. http(s) URL: click an anchor straight away. The presigned URL carries a
+  //    Content-Disposition: attachment header (baked into the signature), so the
+  //    browser downloads it natively with the right filename — no CORS rule on
+  //    the bucket is needed. The old path first fetched the WHOLE file through
+  //    CORS into a blob and fell back to a hidden iframe; when the bucket had no
+  //    matching CORS rule both detours failed silently and the download button
+  //    appeared to do nothing.
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename; // honored same-origin; cross-origin relies on the response disposition
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => {
+    if (document.body.contains(link)) document.body.removeChild(link);
+  }, 2000);
 }
 
 /**

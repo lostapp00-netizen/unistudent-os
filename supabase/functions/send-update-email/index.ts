@@ -279,6 +279,20 @@ serve(async (req) => {
       .select("user_id, name, email, language, university_database_id, specialization_database_id");
     if (studentsError) throw studentsError;
 
+    // Some students never typed an email in their settings — their account
+    // email in auth.users is the fallback (read with the service-role key).
+    const authEmailById = new Map<string, string>();
+    try {
+      const { data: authUsers } = await supabase.auth.admin.listUsers();
+      (authUsers?.users || []).forEach((u: any) => {
+        if (u?.id && u?.email) authEmailById.set(String(u.id), String(u.email));
+      });
+    } catch (e) {
+      console.warn("Could not list auth users for the email fallback:", e);
+    }
+
+    let noEmailCount = 0;
+
     const reaches = (student: any, notice: any): boolean => {
       if (notice.scope === "database") {
         return (
@@ -293,8 +307,12 @@ serve(async (req) => {
     // One email per student: everything that reached them in this action.
     const perStudent = new Map<string, { email: string; name: string; lang: Lang; dbId: string | null; notices: any[] }>();
     for (const student of students || []) {
-      const email = String(student.email || "").trim();
-      if (!email) continue;
+      let email = String(student.email || "").trim();
+      if (!email) email = authEmailById.get(String(student.user_id)) || "";
+      if (!email) {
+        noEmailCount++;
+        continue;
+      }
       for (const notice of emailable) {
         if (!reaches(student, notice)) continue;
         const key = `${student.user_id}`;
@@ -404,6 +422,7 @@ serve(async (req) => {
         recipients: messages.length,
         sent,
         failed: results.length - sent,
+        noEmail: noEmailCount,
         results,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
