@@ -415,14 +415,20 @@ serve(async (req) => {
     }
 
     const sent = results.filter((r) => r.ok).length;
+    const failed = results.length - sent;
+    // Surface the first real transport error (e.g. a Gmail App Password
+    // rejected by Google) so the admin banner can show it instead of a
+    // generic "not sent" message.
+    const firstError = results.find((r) => !r.ok && r.error)?.error;
     return new Response(
       JSON.stringify({
         success: sent > 0 || messages.length === 0,
         transport: useResend ? "resend" : "gmail",
         recipients: messages.length,
         sent,
-        failed: results.length - sent,
+        failed,
         noEmail: noEmailCount,
+        ...(firstError ? { firstError } : {}),
         results,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }

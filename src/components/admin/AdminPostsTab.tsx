@@ -77,9 +77,12 @@ export function AdminPostsTab({
         ? 'مفيش طالب مربوط بالقاعدة دي (أو مفيش حد سجّل إيميل).'
         : 'No linked student with an email on file was found.';
     }
+    // Show the real reason (e.g. a Gmail App Password rejected by Google) so
+    // the admin knows what to fix instead of seeing a generic message.
+    const detail = email.error && email.error.length > 220 ? email.error.slice(0, 220) + '…' : email.error;
     return isAr
-      ? `الإيميل مااتبعتش${email.error ? ` (${email.error})` : ''} — ظبّط بريد الإرسال أو مفتاح Resend من تبويب «النسخ الاحتياطي والأتمتة».`
-      : `Email was not sent${email.error ? ` (${email.error})` : ''} — configure the sender address or a Resend key in the Backup tab.`;
+      ? `الإيميل مااتبعتش${detail ? ` — السبب: ${detail}` : ''}. ظبّط بريد الإرسال أو مفتاح Resend من تبويب «النسخ الاحتياطي والأتمتة».`
+      : `Email was not sent${detail ? ` — reason: ${detail}` : ''}. Configure the sender address or a Resend key in the Backup tab.`;
   };
 
   const load = async () => {

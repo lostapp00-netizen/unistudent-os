@@ -4555,7 +4555,15 @@ export const db = {
       if (result.success === false) {
         return { ok: false, sent: 0, failed: list.length, error: result.message || result.error || 'failed' };
       }
-      return { ok: true, sent: Number(result.sent || 0), failed: Number(result.failed || 0) };
+      // Pass through the first real transport error (e.g. Gmail rejected the
+      // App Password) so the admin banner shows the actual reason.
+      const transportError = result.firstError || (Number(result.failed || 0) > 0 ? 'some emails failed' : undefined);
+      return {
+        ok: true,
+        sent: Number(result.sent || 0),
+        failed: Number(result.failed || 0),
+        ...(transportError ? { error: String(transportError) } : {}),
+      };
     } catch (e: any) {
       console.warn('Update-notice email failed:', e);
       return { ok: false, sent: 0, failed: list.length, error: e?.message || String(e) };
