@@ -109,9 +109,9 @@ export function ProductivitySidebar({ activeGroupId, setActiveGroupId }: Product
                 }`}
                 onClick={() => setActiveGroupId(group.id)}
               >
-                <div className="flex items-center gap-3 truncate">
-                  <Folder size={16} />
-                  <span className="truncate">{group.name}</span>
+                <div className="flex items-center gap-3 min-w-0">
+                  <Folder size={16} className="shrink-0" />
+                  <span className="break-words">{group.name}</span>
                 </div>
                 
                 <button 
@@ -148,7 +148,7 @@ export function ProductivitySidebar({ activeGroupId, setActiveGroupId }: Product
                   <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
                     <Folder size={18} />
                   </div>
-                  <h3 className="font-bold text-sm text-zinc-900 dark:text-white truncate">
+                  <h3 className="font-bold text-sm text-zinc-900 dark:text-white break-words">
                     {selectedOptionsGroup.name}
                   </h3>
                 </div>

@@ -80,7 +80,7 @@ export function GroupsManager({ embedded = false }: GroupsManagerProps) {
             </div>
           ) : (
             <>
-              <span className="font-medium text-xs sm:text-sm text-zinc-800 dark:text-zinc-200 px-1 truncate min-w-0 flex-1">
+              <span className="font-medium text-xs sm:text-sm text-zinc-800 dark:text-zinc-200 px-1 break-words min-w-0 flex-1">
                 {group.name}
               </span>
               <div className="flex items-center gap-1 shrink-0">

@@ -9,6 +9,14 @@ interface ProductivityGroupTabsProps {
   setActiveGroupId: (id: string) => void;
 }
 
+/**
+ * Width for an inline group-name box so it follows the text being typed or
+ * renamed. A fixed width (w-24 / w-28) used to cut long names off.
+ */
+function inlineInputWidth(value: string, minCh: number): React.CSSProperties {
+  return { width: `${Math.max(minCh, Math.round(value.length * 1.15) + 2)}ch` };
+}
+
 export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: ProductivityGroupTabsProps) {
   const { t } = useTranslation();
   const { groups, addGroup, updateGroup, deleteGroup, settings } = useAppStore();
@@ -95,7 +103,8 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   onKeyDown={(e) => handleKeyDown(e, handleSaveEdit)}
-                  className="w-24 bg-transparent outline-none text-sm font-medium px-1"
+                  style={inlineInputWidth(editName, 8)}
+                  className="bg-transparent outline-none text-sm font-medium px-1"
                   autoFocus
                 />
                 <button
@@ -126,8 +135,8 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
                 }`}
                 onClick={() => setActiveGroupId(group.id)}
               >
-                <Folder size={16} className={activeGroupId === group.id ? 'text-indigo-200' : 'text-zinc-400'} />
-                <span className="truncate max-w-[120px]">{group.name}</span>
+                <Folder size={16} className={`shrink-0 ${activeGroupId === group.id ? 'text-indigo-200' : 'text-zinc-400'}`} />
+                <span className="whitespace-nowrap">{group.name}</span>
                 
                 <button 
                   onClick={(e) => {
@@ -156,7 +165,8 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
               onChange={(e) => setNewGroupName(e.target.value)}
               onKeyDown={(e) => handleKeyDown(e, handleAddGroup)}
               placeholder={isAr ? 'اسم المجموعة...' : 'Group name...'}
-              className="w-28 bg-transparent outline-none text-sm font-medium px-1"
+              style={inlineInputWidth(newGroupName, 14)}
+              className="bg-transparent outline-none text-sm font-medium px-1"
               autoFocus
             />
             <button
@@ -204,7 +214,7 @@ export function ProductivityGroupTabs({ activeGroupId, setActiveGroupId }: Produ
                 <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
                   <Folder size={18} />
                 </div>
-                <h3 className="font-bold text-sm text-zinc-900 dark:text-white truncate">
+                <h3 className="font-bold text-sm text-zinc-900 dark:text-white break-words">
                   {selectedOptionsGroup.name}
                 </h3>
               </div>

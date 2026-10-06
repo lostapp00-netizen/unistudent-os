@@ -441,6 +441,8 @@ export function reconcileTemplateDriveFiles(
     (childrenOf.get(file.id) || []).forEach(child => queue.push(child));
 
     let parentId = parentOf(file);
+    /** The copy that goes away, and the copy it is merged into. */
+    let doomed: DriveFile | undefined;
     let survivor: DriveFile | undefined;
 
     // 1. A copy sitting at the root while the template says where it belongs is
@@ -474,20 +476,33 @@ export function reconcileTemplateDriveFiles(
     }
 
     // 2. Same name, type and content in the same place is one item, not two.
-    if (!survivor && isTemplateDerived(file)) {
+    //    Which copy is reached first is an accident of the walk order — a
+    //    stranded root copy is reached before a properly placed child — so the
+    //    older row is the one that survives: it is the original, the row the
+    //    student's own items were placed in.
+    if (!doomed && isTemplateDerived(file)) {
       const key = [
         normalizeName(file.name),
         file.type,
         parentId || 'root',
         file.type === 'folder' ? '' : (file.b2FileId || file.url || '')
       ].join('|');
-      survivor = keptByKey.get(key);
-      if (!survivor) keptByKey.set(key, file);
+      const registered = keptByKey.get(key);
+      if (!registered) {
+        keptByKey.set(key, file);
+      } else if (byAge(file, registered) < 0) {
+        keptByKey.set(key, file);
+        doomed = registered;
+        survivor = file;
+      } else {
+        doomed = file;
+        survivor = registered;
+      }
     }
 
     if (survivor) {
-      mergeCopy(file, survivor);
-      continue;
+      mergeCopy(doomed || file, survivor);
+      if ((doomed || file) === file) continue;
     }
 
     if (parentId !== (file.parentId || null)) {
