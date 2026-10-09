@@ -180,7 +180,7 @@ export function NotesTab() {
             >
               <div className="flex justify-between items-start mb-3">
                 <div className="space-y-1 min-w-0 pr-2 rtl:pr-0 rtl:pl-2">
-                  <h4 className="font-extrabold text-base sm:text-lg text-zinc-900 dark:text-white leading-tight">{note.title}</h4>
+                  <h4 className="font-extrabold text-base sm:text-lg text-zinc-900 dark:text-white leading-tight break-words">{note.title}</h4>
                   <div className="flex items-center gap-2 text-xs font-medium text-zinc-400">
                     {note.date && <span className="flex items-center gap-1"><CalendarIcon size={12}/> {note.date}</span>}
                     {note.groupId && (

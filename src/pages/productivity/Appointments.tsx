@@ -432,7 +432,7 @@ export function Appointments() {
                                       </span>
                                     )}
                                   </div>
-                                  <h4 className="font-black text-xs sm:text-sm text-zinc-900 dark:text-white leading-tight line-clamp-2">
+                                  <h4 className="font-black text-xs sm:text-sm text-zinc-900 dark:text-white leading-tight break-words">
                                     {app.title}
                                   </h4>
                                 </div>

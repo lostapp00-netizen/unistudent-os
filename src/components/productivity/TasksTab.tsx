@@ -322,7 +322,7 @@ export function TasksTab() {
                                 }`}
                               >
                                 <div className="flex items-start justify-between gap-1.5">
-                                  <div className="flex items-center gap-1.5 min-w-0">
+                                  <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -335,7 +335,7 @@ export function TasksTab() {
                                     >
                                       {task.isCompleted ? <CheckCircle2 size={16} /> : <Circle size={16} />}
                                     </button>
-                                    <h4 className={`text-xs font-bold truncate ${
+                                    <h4 className={`text-xs font-bold break-words min-w-0 ${
                                       task.isCompleted ? 'line-through text-zinc-400 dark:text-zinc-500' : 'text-zinc-900 dark:text-white'
                                     }`}>
                                       {task.title}
@@ -418,7 +418,7 @@ export function TasksTab() {
                   <div className="flex-grow min-w-0">
                     <h4 
                       onClick={() => setPreviewEntity({ type: 'task', id: task.id })}
-                      className={`text-base font-bold truncate cursor-pointer hover:text-blue-600 transition-colors ${
+                      className={`text-base font-bold break-words cursor-pointer hover:text-blue-600 transition-colors ${
                         task.isCompleted ? 'line-through text-zinc-400 dark:text-zinc-500' : 'text-zinc-900 dark:text-white'
                       }`}
                     >

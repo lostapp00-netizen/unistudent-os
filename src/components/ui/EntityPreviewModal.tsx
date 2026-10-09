@@ -242,7 +242,7 @@ export function EntityPreviewModal({ preview, onClose, onEdit }: EntityPreviewMo
             <div className="p-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-2xl shrink-0">
               {badgeIcon}
             </div>
-            <h3 className="font-black text-lg text-zinc-900 dark:text-white truncate">{title}</h3>
+            <h3 className="font-black text-lg text-zinc-900 dark:text-white break-words min-w-0">{title}</h3>
           </div>
           <button
             type="button"
